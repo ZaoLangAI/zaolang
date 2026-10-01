@@ -142,8 +142,8 @@ def test_a_scene_is_scoped_to_its_owner(db: Session, author: User) -> None:
         scenes_service.get_scene(db, user_id=author.id, scene_id=scene.id)
 
 
-def test_create_rejects_more_than_four_reference_assets(db: Session, author: User) -> None:
-    assets = [_asset(db, author) for _ in range(5)]
+def test_create_rejects_more_than_the_reference_cap(db: Session, author: User) -> None:
+    assets = [_asset(db, author) for _ in range(scenes_service.MAX_REFERENCE_ASSETS + 1)]
     with pytest.raises(ValidationFailed):
         scenes_service.create_scene(
             db,
@@ -304,3 +304,67 @@ def test_withdraw_returns_a_published_scene_to_draft(db: Session, author: User) 
     withdrawn = scenes_service.withdraw_scene(db, user_id=author.id, scene_id=scene.id)
     assert withdrawn.status == "draft"
     assert withdrawn.visibility == "private"
+
+
+# ---- Variants: pinned master, default subset and per-job selection --------
+
+
+def _scene(db: Session, author: User):
+    return scenes_service.create_scene(
+        db, user_id=author.id, name="客厅", description=None, reference_asset_ids=[]
+    )
+
+
+def _attach_shot(db: Session, author: User, scene_id: str, *, label: str | None = None):
+    asset = _asset(db, author)
+    scenes_service.append_reference_asset(
+        db, user_id=author.id, scene_id=scene_id, asset_id=asset.id, label=label
+    )
+    return asset
+
+
+def test_trimming_never_evicts_the_master_plate(db: Session, author: User) -> None:
+    scene = _scene(db, author)
+    master = _attach_shot(db, author, scene.id)
+    variants = [
+        _attach_shot(db, author, scene.id, label=f"变体{i}")
+        for i in range(scenes_service.MAX_REFERENCE_ASSETS + 1)
+    ]
+    ids = scenes_service.get_scene(db, user_id=author.id, scene_id=scene.id).reference_asset_ids
+    assert len(ids) == scenes_service.MAX_REFERENCE_ASSETS
+    assert master.id in ids
+    assert variants[0].id not in ids
+    assert variants[-1].id in ids
+
+
+def test_apply_scene_refs_skips_labelled_variants_by_default(db: Session, author: User) -> None:
+    scene = _scene(db, author)
+    master = _attach_shot(db, author, scene.id)
+    _attach_shot(db, author, scene.id, label="黄昏")
+    params: dict[str, object] = {"scene_ids": [scene.id]}
+    scenes_service.apply_scene_refs(db, user_id=author.id, params=params)
+    assert params["reference_asset_ids"] == [master.id]
+
+
+def test_apply_scene_refs_honours_the_callers_selection(db: Session, author: User) -> None:
+    scene = _scene(db, author)
+    _attach_shot(db, author, scene.id)
+    dusk = _attach_shot(db, author, scene.id, label="黄昏")
+    params: dict[str, object] = {
+        "scene_ids": [scene.id],
+        "scene_ref_selection": [{"scene_id": scene.id, "asset_ids": [dusk.id]}],
+    }
+    scenes_service.apply_scene_refs(db, user_id=author.id, params=params)
+    assert params["reference_asset_ids"] == [dusk.id]
+
+
+def test_apply_scene_refs_rejects_a_foreign_selection(db: Session, author: User) -> None:
+    scene = _scene(db, author)
+    _attach_shot(db, author, scene.id)
+    stranger = _asset(db, author)
+    params: dict[str, object] = {
+        "scene_ids": [scene.id],
+        "scene_ref_selection": [{"scene_id": scene.id, "asset_ids": [stranger.id]}],
+    }
+    with pytest.raises(ValidationFailed):
+        scenes_service.apply_scene_refs(db, user_id=author.id, params=params)

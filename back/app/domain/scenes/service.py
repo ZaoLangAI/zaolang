@@ -36,7 +36,12 @@ from app.models.enums import (
     MediaType,
 )
 
-MAX_REFERENCE_ASSETS = 4
+# Room for a master plate plus several lighting/weather/state/period
+# variants; jobs only ingest the default subset or what the caller picked
+# (`default_reference_asset_ids`, `scene_ref_selection`).
+MAX_REFERENCE_ASSETS = 8
+MAX_DEFAULT_JOB_REFERENCES = 2
+MASTER_VIEW = "establishing"
 # Mirrors GenerationParams.reference_asset_ids in jobs.py — kept here too so a
 # validation error names the right limit before a job ever reaches the API
 # schema, same rationale as `characters.service.MAX_JOB_REFERENCE_ASSETS`.
@@ -162,6 +167,18 @@ def _validate_reference_assets(
     return deduped
 
 
+def _entries_keeping_tags(
+    existing: list[dict[str, Any]], asset_ids: list[str]
+) -> list[dict[str, Any]]:
+    """A content edit's flat `reference_asset_ids` list, in its order, but
+    keeping each already-known asset's `view`/`label`/`created_at` — an edit
+    form that only knows ids must not erase which entry is the 婚礼 outfit
+    or the 黄昏 variant. Unknown ids become fresh untagged entries."""
+    known = {str(entry.get("asset_id")): entry for entry in existing}
+    fresh = {str(entry["asset_id"]): entry for entry in _entries_from_flat_ids(asset_ids)}
+    return [known.get(asset_id) or fresh[asset_id] for asset_id in asset_ids]
+
+
 def _entries_from_flat_ids(asset_ids: list[str]) -> list[dict[str, Any]]:
     now = utcnow().isoformat()
     return [
@@ -235,7 +252,7 @@ def update_scene(
         skill.description = _short_description(clean)
     if reference_asset_ids is not None:
         refs = _validate_reference_assets(session, user_id=user_id, asset_ids=reference_asset_ids)
-        payload["reference_assets"] = _entries_from_flat_ids(refs)
+        payload["reference_assets"] = _entries_keeping_tags(_reference_assets(skill), refs)
     _set_payload(skill, payload)
     # Editing a shared skill's content withdraws it from the marketplace
     # until the owner re-publishes — same rule as any other `CreationSkill`
@@ -253,6 +270,74 @@ def delete_scene(session: Session, *, user_id: str, scene_id: str) -> None:
 # ---- Per-image reference asset management --------------------------------
 
 
+def _label_key(label: object) -> str | None:
+    return label.strip() or None if isinstance(label, str) else None
+
+
+def master_entry(entries: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The scene's master plate: the first `establishing` shot, else its
+    oldest unlabelled entry. Variants are generated *from* it, so it is the
+    one entry `_trim_to_cap` never evicts."""
+    for entry in entries:
+        if entry.get("view") == MASTER_VIEW:
+            return entry
+    return next((e for e in entries if _label_key(e.get("label")) is None), None)
+
+
+def _trim_to_cap(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    kept = list(entries)
+    master = master_entry(kept)
+    while len(kept) > MAX_REFERENCE_ASSETS:
+        victim = next((e for e in kept if e is not master), None)
+        if victim is None:
+            break
+        kept.remove(victim)
+    return kept
+
+
+def default_reference_asset_ids(scene: SceneView) -> list[str]:
+    """What a job gets for this scene when the caller picked nothing: the
+    master plate plus the next unlabelled shot. Labelled variants (黄昏/战损…)
+    only go in when picked — a dusk plate must not tint a daytime scene."""
+    entries = [e for e in scene.reference_assets if e.get("asset_id")]
+    master = master_entry(entries)
+    ordered = ([master] if master else []) + [
+        e for e in entries if e is not master and _label_key(e.get("label")) is None
+    ]
+    pool = ordered or entries
+    return [str(e["asset_id"]) for e in pool[:MAX_DEFAULT_JOB_REFERENCES]]
+
+
+def _selected_reference_ids(
+    params: dict[str, Any], scenes: list[SceneView]
+) -> dict[str, list[str]]:
+    """`scene_ref_selection` as `{scene_id: [asset_id, …]}`, each id checked
+    to be one of that scene's own references."""
+    raw = params.get("scene_ref_selection") or []
+    if not isinstance(raw, list):
+        return {}
+    by_id = {scene.id: scene for scene in scenes}
+    selection: dict[str, list[str]] = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        scene = by_id.get(str(item.get("scene_id") or ""))
+        if scene is None:
+            raise ValidationFailed(
+                "所选参考图的场景不在本次选择的场景中。",
+                fields={"params.scene_ref_selection": "场景必须同时出现在 scene_ids"},
+            )
+        owned = set(scene.reference_asset_ids)
+        asset_ids = [str(a) for a in item.get("asset_ids") or []]
+        if not asset_ids or any(asset_id not in owned for asset_id in asset_ids):
+            raise ValidationFailed(
+                f"场景「{scene.name}」的参考图选择无效。",
+                fields={"params.scene_ref_selection": "只能选择该场景自己的参考图"},
+            )
+        selection[scene.id] = list(dict.fromkeys(asset_ids))
+    return selection
+
+
 def append_reference_asset(
     session: Session,
     *,
@@ -267,8 +352,9 @@ def append_reference_asset(
     Called both by the scene library UI's per-image upload and by
     `app.workflows.nodes.execute_asset_output_link` when a generation job's
     output is auto-attached. Unlike a character's fixed views, shots sharing
-    a `view` accumulate up to the cap (oldest dropped first); only re-adding
-    the same asset replaces its entry.
+    a `view` accumulate up to the cap (oldest dropped first, but never the
+    master plate — see `_trim_to_cap`); only re-adding the same asset
+    replaces its entry.
     """
     skill = _owned_scene_skill(session, user_id=user_id, scene_id=scene_id)
     _validate_reference_assets(session, user_id=user_id, asset_ids=[asset_id])
@@ -282,9 +368,7 @@ def append_reference_asset(
             "created_at": utcnow().isoformat(),
         }
     )
-    if len(entries) > MAX_REFERENCE_ASSETS:
-        entries = entries[-MAX_REFERENCE_ASSETS:]
-    payload["reference_assets"] = entries
+    payload["reference_assets"] = _trim_to_cap(entries)
     _set_payload(skill, payload)
     session.flush()
     return SceneView(skill)
@@ -399,10 +483,11 @@ def apply_scene_refs(session: Session, *, user_id: str, params: dict[str, Any]) 
     scenes = [
         SceneView(_owned_scene_skill(session, user_id=user_id, scene_id=sid)) for sid in scene_ids
     ]
+    selection = _selected_reference_ids(params, scenes)
 
     merged_refs = list(params.get("reference_asset_ids") or [])
     for scene in scenes:
-        for asset_id in scene.reference_asset_ids:
+        for asset_id in selection.get(scene.id) or default_reference_asset_ids(scene):
             if asset_id not in merged_refs and len(merged_refs) < MAX_JOB_REFERENCE_ASSETS:
                 merged_refs.append(asset_id)
     params["reference_asset_ids"] = merged_refs

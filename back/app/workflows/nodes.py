@@ -25,6 +25,11 @@ from app.domain.characters import service as characters_service
 from app.domain.costs import service as costs_service
 from app.domain.credits.pricing import settlement_credits
 from app.domain.errors import NotFound, ValidationFailed
+from app.domain.image_assets.vocabulary import (
+    EXPRESSION_PRESETS,
+    scene_preset_label,
+    scene_presets_from,
+)
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
 from app.domain.jobs.cancellation import honor_user_cancel
@@ -894,15 +899,32 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
             # the output stays a plain generated asset.
         elif asset_kind == ImageAssetKind.CHARACTER.value:
             target_id = ctx.params.get("target_character_id")
+            expressions = ctx.params.get("character_expressions")
             for entry in outputs:
-                target_id = _link_character_output(
-                    ctx,
-                    config,
-                    asset_id=str(entry.get("asset_id")),
-                    view=str(entry.get("view") or CharacterViewAngle.FRONT.value),
-                    subject_name=subject_name,
-                    target_id=target_id,
-                )
+                # One output failing to attach must not drop the others; the
+                # savepoint keeps a failed SQL statement from poisoning the
+                # job's own transaction.
+                try:
+                    with ctx.session.begin_nested():
+                        target_id = _link_character_output(
+                            ctx,
+                            config,
+                            asset_id=str(entry.get("asset_id")),
+                            # A composite expression image is a free-form extra,
+                            # never a front/side/back sheet view it could replace.
+                            view=CharacterViewAngle.GENERAL.value
+                            if expressions
+                            else str(entry.get("view") or CharacterViewAngle.FRONT.value),
+                            label=_character_output_label(ctx.params),
+                            subject_name=subject_name,
+                            target_id=target_id,
+                        )
+                except Exception:
+                    logger.exception(
+                        "job %s could not attach character output %s",
+                        ctx.job.id,
+                        entry.get("asset_id"),
+                    )
             # Recorded on the job row (not just `ctx.state`) so it survives
             # into `GenerationJobResponse` — the script studio's "返回文案
             # 创作" jump-back reads this to know which card to auto-relink.
@@ -919,14 +941,21 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
         elif asset_kind == ImageAssetKind.SCENE.value:
             target_id = ctx.params.get("target_scene_id")
             for entry in outputs:
-                target_id = _link_scene_output(
-                    ctx,
-                    config,
-                    asset_id=str(entry.get("asset_id")),
-                    view=str(entry.get("view") or ""),
-                    subject_name=subject_name,
-                    target_id=target_id,
-                )
+                try:
+                    with ctx.session.begin_nested():
+                        target_id = _link_scene_output(
+                            ctx,
+                            config,
+                            asset_id=str(entry.get("asset_id")),
+                            view=str(entry.get("view") or ""),
+                            label=_scene_output_label(ctx.params, entry),
+                            subject_name=subject_name,
+                            target_id=target_id,
+                        )
+                except Exception:
+                    logger.exception(
+                        "job %s could not attach scene output %s", ctx.job.id, entry.get("asset_id")
+                    )
             if target_id:
                 ctx.job.linked_scene_id = target_id
                 ctx.session.flush()
@@ -943,6 +972,31 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
     return NodeResult(port="ok")
 
 
+def _character_output_label(params: dict[str, Any]) -> str | None:
+    """The reference-entry label a character output is filed under: the
+    outfit name for a sheet, or `表情·冷笑/隐忍…` for a composite expression
+    image (≤60, the label column's own limit)."""
+    expressions = params.get("character_expressions")
+    if isinstance(expressions, list) and expressions:
+        names = [
+            EXPRESSION_PRESETS[str(key)].label
+            for key in expressions
+            if str(key) in EXPRESSION_PRESETS
+        ]
+        return f"表情·{'/'.join(names)}"[:60] if names else "表情"
+    outfit = params.get("character_outfit_label")
+    return str(outfit).strip()[:60] or None if isinstance(outfit, str) else None
+
+
+def _scene_output_label(params: dict[str, Any], entry: dict[str, Any]) -> str | None:
+    """A scene output's label: its own variant label (a variant group sets
+    one per image), else the single-image presets' combined label."""
+    own = entry.get("label")
+    if isinstance(own, str) and own.strip():
+        return own.strip()[:60]
+    return scene_preset_label(scene_presets_from(params))[:60] or None
+
+
 def _link_character_output(
     ctx: WorkflowContext,
     config: AssetOutputLinkConfig,
@@ -951,6 +1005,7 @@ def _link_character_output(
     view: str,
     subject_name: str,
     target_id: str | None,
+    label: str | None = None,
 ) -> str | None:
     """Attaches one output to `target_id`, auto-creating a character from
     scratch on the first call if there was none — also the fallback when
@@ -974,6 +1029,7 @@ def _link_character_output(
                 character_id=str(target_id),
                 asset_id=asset_id,
                 view=view,
+                label=label,
             )
             return target_id
         except NotFound:
@@ -1000,6 +1056,7 @@ def _link_character_output(
             character_id=existing.id,
             asset_id=asset_id,
             view=view,
+            label=label,
         )
         return existing.id
     try:
@@ -1026,6 +1083,7 @@ def _link_character_output(
         character_id=character.id,
         asset_id=asset_id,
         view=view,
+        label=label,
     )
     return character.id
 
@@ -1038,6 +1096,7 @@ def _link_scene_output(
     view: str,
     subject_name: str,
     target_id: str | None,
+    label: str | None = None,
 ) -> str | None:
     """Attaches one output to `target_id`, auto-creating a scene from
     scratch on the first call if there was none — mirrors
@@ -1059,6 +1118,7 @@ def _link_scene_output(
                 scene_id=str(target_id),
                 asset_id=asset_id,
                 view=view,
+                label=label,
             )
             return target_id
         except NotFound:
@@ -1077,7 +1137,12 @@ def _link_scene_output(
         reference_asset_ids=[],
     )
     scenes_service.append_reference_asset(
-        ctx.session, user_id=ctx.job.user_id, scene_id=scene.id, asset_id=asset_id, view=view
+        ctx.session,
+        user_id=ctx.job.user_id,
+        scene_id=scene.id,
+        asset_id=asset_id,
+        view=view,
+        label=label,
     )
     ctx.state["created_scene_id"] = scene.id
     return scene.id

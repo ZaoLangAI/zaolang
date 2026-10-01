@@ -40,7 +40,17 @@ from app.models.enums import (
 )
 from app.presenters import media_urls
 
-MAX_REFERENCE_ASSETS = 4
+# Room for a few outfits' sheets plus extras: jobs no longer ingest every
+# entry (see `default_reference_asset_ids` / `character_ref_selection`), so
+# the roster can hold more than the 9-slot job budget.
+MAX_REFERENCE_ASSETS = 12
+# Default per-character subset a job gets when the caller picked nothing.
+MAX_DEFAULT_JOB_REFERENCES = 3
+_SHEET_VIEWS = (
+    CharacterViewAngle.FRONT.value,
+    CharacterViewAngle.SIDE.value,
+    CharacterViewAngle.BACK.value,
+)
 # Mirrors GenerationParams.reference_asset_ids / character_ids in jobs.py —
 # kept here too so a validation error names the right limit before a job ever
 # reaches the API schema.
@@ -235,6 +245,71 @@ def _validate_reference_assets(
     return deduped
 
 
+def _label_key(label: object) -> str | None:
+    """A reference entry's label as a replace/eviction key (`None` = the
+    character's default, unnamed look)."""
+    return label.strip() or None if isinstance(label, str) else None
+
+
+def _is_pinned(entry: dict[str, Any]) -> bool:
+    """The default look's front/side/back sheet: never evicted to make room."""
+    return entry.get("view") in _SHEET_VIEWS and _label_key(entry.get("label")) is None
+
+
+def _trim_to_cap(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drops entries oldest-first until the roster fits `MAX_REFERENCE_ASSETS`:
+    free-form `general` extras (expression sheets, uploads) go before named
+    outfits' views, and the default look's sheet views go never — the old
+    `entries[-4:]` trim could evict the very sheet everything else is
+    generated from."""
+    kept = list(entries)
+    tiers = (
+        lambda e: e.get("view") not in _SHEET_VIEWS,
+        lambda e: not _is_pinned(e),
+        lambda e: True,
+    )
+    for evictable in tiers:
+        while len(kept) > MAX_REFERENCE_ASSETS:
+            victim = next((e for e in kept if evictable(e)), None)
+            if victim is None:
+                break
+            kept.remove(victim)
+    return kept
+
+
+def default_reference_asset_ids(character: CharacterView) -> list[str]:
+    """The references a job gets for this character when the caller didn't
+    pick any (`GenerationParams.character_ref_selection`).
+
+    The default look's sheet (unlabelled front/side/back, in that order);
+    a character with no sheet falls back to its oldest unlabelled entries,
+    then to its oldest entries at all. Named outfits and expression sheets
+    only go in when picked, so a 婚礼 sheet never sneaks into a 日常 scene.
+    """
+    entries = [e for e in character.reference_assets if e.get("asset_id")]
+    sheet = sorted(
+        (e for e in entries if _is_pinned(e)), key=lambda e: _SHEET_VIEWS.index(e["view"])
+    )
+    pool = sheet or [e for e in entries if _label_key(e.get("label")) is None] or entries
+    return [str(e["asset_id"]) for e in pool[:MAX_DEFAULT_JOB_REFERENCES]]
+
+
+def reference_entry(character: CharacterView, asset_id: str) -> dict[str, Any] | None:
+    return next((e for e in character.reference_assets if e.get("asset_id") == asset_id), None)
+
+
+def _entries_keeping_tags(
+    existing: list[dict[str, Any]], asset_ids: list[str]
+) -> list[dict[str, Any]]:
+    """A content edit's flat `reference_asset_ids` list, in its order, but
+    keeping each already-known asset's `view`/`label`/`created_at` — an edit
+    form that only knows ids must not erase which entry is the 婚礼 outfit
+    or the 黄昏 variant. Unknown ids become fresh untagged entries."""
+    known = {str(entry.get("asset_id")): entry for entry in existing}
+    fresh = {str(entry["asset_id"]): entry for entry in _entries_from_flat_ids(asset_ids)}
+    return [known.get(asset_id) or fresh[asset_id] for asset_id in asset_ids]
+
+
 def _entries_from_flat_ids(asset_ids: list[str]) -> list[dict[str, Any]]:
     now = utcnow().isoformat()
     return [
@@ -360,7 +435,7 @@ def update_character(
         payload["voice_description"] = voice_description.strip() or None
     if reference_asset_ids is not None:
         refs = _validate_reference_assets(session, user_id=user_id, asset_ids=reference_asset_ids)
-        payload["reference_assets"] = _entries_from_flat_ids(refs)
+        payload["reference_assets"] = _entries_keeping_tags(_reference_assets(skill), refs)
     _set_payload(skill, payload)
     # Editing a shared skill's content withdraws it from the marketplace
     # until the owner re-publishes — same rule as any other `CreationSkill`
@@ -394,26 +469,31 @@ def append_reference_asset(
     `app.workflows.nodes.execute_asset_output_link` when a generation job's
     output is auto-attached. A second image for the same non-general view
     replaces the earlier one instead of piling up near-duplicate shots of
-    the same pose; `general` (freeform, no fixed pose) can accumulate up to
-    the cap.
+    the same pose — keyed by `(view, label)`, so each named outfit keeps its
+    own sheet (a new 婚礼 front never replaces the 日常 one); `general`
+    (freeform, no fixed pose) accumulates. Over the cap, `_trim_to_cap`
+    evicts extras before outfits and never the default look's sheet.
     """
     skill = _owned_character_skill(session, user_id=user_id, character_id=character_id)
     _validate_reference_assets(session, user_id=user_id, asset_ids=[asset_id])
     payload = _payload(skill)
+    clean_label = _label_key(label)
     entries = [e for e in _reference_assets(skill) if e.get("asset_id") != asset_id]
     if view != CharacterViewAngle.GENERAL.value:
-        entries = [e for e in entries if e.get("view") != view]
+        entries = [
+            e
+            for e in entries
+            if not (e.get("view") == view and _label_key(e.get("label")) == clean_label)
+        ]
     entries.append(
         {
             "asset_id": asset_id,
             "view": view,
-            "label": (label or "").strip() or None,
+            "label": clean_label,
             "created_at": utcnow().isoformat(),
         }
     )
-    if len(entries) > MAX_REFERENCE_ASSETS:
-        entries = entries[-MAX_REFERENCE_ASSETS:]
-    payload["reference_assets"] = entries
+    payload["reference_assets"] = _trim_to_cap(entries)
     _set_payload(skill, payload)
     session.flush()
     return CharacterView(skill)
@@ -589,10 +669,12 @@ def apply_character_refs(session: Session, *, user_id: str, params: dict[str, An
         CharacterView(_owned_character_skill(session, user_id=user_id, character_id=cid))
         for cid in character_ids
     ]
+    selection = _selected_reference_ids(params, characters)
 
     merged_refs = list(params.get("reference_asset_ids") or [])
     for character in characters:
-        for asset_id in character.reference_asset_ids:
+        picked = selection.get(character.id) or default_reference_asset_ids(character)
+        for asset_id in picked:
             if asset_id not in merged_refs and len(merged_refs) < MAX_JOB_REFERENCE_ASSETS:
                 merged_refs.append(asset_id)
     params["reference_asset_ids"] = merged_refs
@@ -608,3 +690,49 @@ def apply_character_refs(session: Session, *, user_id: str, params: dict[str, An
         if character.voice_description
     ]
     params["extra"] = extra
+
+
+def _selected_reference_ids(
+    params: dict[str, Any], characters: list[CharacterView]
+) -> dict[str, list[str]]:
+    """`character_ref_selection` as `{character_id: [asset_id, …]}`, every id
+    checked to be one of that character's own references — a selection can
+    narrow what a character contributes, never smuggle in another asset."""
+    raw = params.get("character_ref_selection") or []
+    if not isinstance(raw, list):
+        return {}
+    by_id = {character.id: character for character in characters}
+    selection: dict[str, list[str]] = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        character = by_id.get(str(item.get("character_id") or ""))
+        if character is None:
+            raise ValidationFailed(
+                "所选参考图的角色不在本次选择的角色中。",
+                fields={"params.character_ref_selection": "角色必须同时出现在 character_ids"},
+            )
+        owned = set(character.reference_asset_ids)
+        asset_ids = [str(a) for a in item.get("asset_ids") or []]
+        if not asset_ids or any(asset_id not in owned for asset_id in asset_ids):
+            raise ValidationFailed(
+                f"角色「{character.name}」的参考图选择无效。",
+                fields={"params.character_ref_selection": "只能选择该角色自己的参考图"},
+            )
+        selection[character.id] = list(dict.fromkeys(asset_ids))
+    return selection
+
+
+def ensure_expression_reference(session: Session, *, user_id: str, params: dict[str, Any]) -> None:
+    """A composite expression image is drawn *from* the character's sheet:
+    when the caller sent no reference at all but named its target
+    character, borrow that character's default sheet as reference 1."""
+    if not params.get("character_expressions") or params.get("reference_asset_ids"):
+        return
+    target_id = params.get("target_character_id")
+    if not target_id:
+        return
+    character = CharacterView(
+        _owned_character_skill(session, user_id=user_id, character_id=str(target_id))
+    )
+    params["reference_asset_ids"] = default_reference_asset_ids(character)

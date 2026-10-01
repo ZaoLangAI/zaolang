@@ -9035,6 +9035,8 @@ export interface components {
             character_outfit_label?: string | null;
             /** Character Ref Selection */
             character_ref_selection?: components["schemas"]["CharacterRefSelection"][] | null;
+            /** Scene Ref Selection */
+            scene_ref_selection?: components["schemas"]["SceneRefSelection"][] | null;
             /** Scene Lighting */
             scene_lighting?: ("dawn" | "day" | "dusk" | "night_interior" | "night_exterior" | "candle" | "neon" | "overcast") | null;
             /** Scene Weather */
@@ -11791,6 +11793,18 @@ export interface components {
             state?: ("intact" | "messy" | "searched" | "damage_light" | "damage_medium" | "damage_heavy" | "ruins" | "festive") | null;
             /** Period */
             period?: ("ancient" | "republic" | "1980s" | "1990s" | "contemporary" | "near_future") | null;
+        };
+        /**
+         * SceneRefSelection
+         * @description Scene-side twin of `CharacterRefSelection`: which of one scene's
+         *     reference images (master plate, a 黄昏 variant, …) a job should use
+         *     instead of the default subset (`scenes.service.default_reference_asset_ids`).
+         */
+        SceneRefSelection: {
+            /** Scene Id */
+            scene_id: string;
+            /** Asset Ids */
+            asset_ids: string[];
         };
         /** SceneReferenceAsset */
         SceneReferenceAsset: {

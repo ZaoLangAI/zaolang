@@ -1001,3 +1001,138 @@ def test_progress_is_unchanged_for_a_single_view_character_job(db: Session, auth
     events = sm.events_since(db, ctx.job.id, 0)
     assert len(events) == 1
     assert events[0].progress == 16
+
+
+# ---- labelled write-back (outfits, expressions, scene variants) ----------
+
+
+def test_asset_output_link_files_an_outfit_sheet_under_its_label(
+    db: Session, author: User
+) -> None:
+    character = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林夏",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    daily = _asset(db, author)
+    characters_service.append_reference_asset(
+        db, user_id=author.id, character_id=character.id, asset_id=daily.id, view="front"
+    )
+    wedding = _asset(db, author)
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "target_character_id": character.id,
+            "character_outfit_label": "婚礼",
+        },
+    )
+    ctx.state["asset_id"] = wedding.id
+    execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    entries = characters_service.get_character(
+        db, user_id=author.id, character_id=character.id
+    ).reference_assets
+    by_id = {entry["asset_id"]: entry for entry in entries}
+    assert by_id[daily.id]["label"] is None
+    assert by_id[wedding.id]["view"] == "front"
+    assert by_id[wedding.id]["label"] == "婚礼"
+
+
+def test_asset_output_link_files_an_expression_sheet_as_a_labelled_extra(
+    db: Session, author: User
+) -> None:
+    character = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林夏",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    front = _asset(db, author)
+    characters_service.append_reference_asset(
+        db, user_id=author.id, character_id=character.id, asset_id=front.id, view="front"
+    )
+    sheet = _asset(db, author)
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "target_character_id": character.id,
+            "character_expressions": ["smirk", "restrained"],
+        },
+    )
+    ctx.state["asset_id"] = sheet.id
+    execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    by_id = {
+        entry["asset_id"]: entry
+        for entry in characters_service.get_character(
+            db, user_id=author.id, character_id=character.id
+        ).reference_assets
+    }
+    assert front.id in by_id
+    assert by_id[sheet.id]["view"] == CharacterViewAngle.GENERAL.value
+    assert by_id[sheet.id]["label"] == "表情·冷笑/隐忍"
+
+
+def test_asset_output_link_labels_a_scene_variant_with_its_presets(
+    db: Session, author: User
+) -> None:
+    scene = scenes_service.create_scene(
+        db, user_id=author.id, name="客厅", description=None, reference_asset_ids=[]
+    )
+    asset = _asset(db, author)
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "asset_kind": ImageAssetKind.SCENE.value,
+            "target_scene_id": scene.id,
+            "scene_lighting": "night_interior",
+            "scene_state": "damage_medium",
+        },
+    )
+    ctx.state["asset_id"] = asset.id
+    execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    entries = scenes_service.get_scene(db, user_id=author.id, scene_id=scene.id).reference_assets
+    assert entries[-1]["label"] == "夜·室内 / 战损·中"
+
+
+def test_asset_output_link_keeps_attaching_after_one_output_fails(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    character = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林夏",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    good = _asset(db, author)
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "target_character_id": character.id,
+        },
+    )
+    ctx.state["asset_outputs"] = [
+        {"asset_id": "ast_missing", "view": "front"},
+        {"asset_id": good.id, "view": "side"},
+    ]
+    execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    ids = characters_service.get_character(
+        db, user_id=author.id, character_id=character.id
+    ).reference_asset_ids
+    assert ids == [good.id]

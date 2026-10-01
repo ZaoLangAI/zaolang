@@ -13,6 +13,7 @@ import datetime as dt
 from pydantic import Field
 
 from app.api.schemas.common import ApiModel, Timestamped
+from app.domain.characters.service import MAX_REFERENCE_ASSETS
 from app.models.enums import CharacterViewAngle, CreationSkillStatus, CreationSkillVisibility
 
 
@@ -20,14 +21,14 @@ class CharacterCreateRequest(ApiModel):
     # Stored as `CreationSkill.title` (`VARCHAR(80)`).
     name: str = Field(min_length=1, max_length=80)
     description: str | None = Field(default=None, max_length=2000)
-    reference_asset_ids: list[str] = Field(default_factory=list, max_length=4)
+    reference_asset_ids: list[str] = Field(default_factory=list, max_length=MAX_REFERENCE_ASSETS)
     voice_description: str | None = Field(default=None, max_length=500)
 
 
 class CharacterUpdateRequest(ApiModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
     description: str | None = Field(default=None, max_length=2000)
-    reference_asset_ids: list[str] | None = Field(default=None, max_length=4)
+    reference_asset_ids: list[str] | None = Field(default=None, max_length=MAX_REFERENCE_ASSETS)
     voice_description: str | None = Field(default=None, max_length=500)
 
 

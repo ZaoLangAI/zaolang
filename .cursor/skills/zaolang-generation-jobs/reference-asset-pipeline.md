@@ -35,7 +35,8 @@
 1. The only node that mutates something outside job/Work/Draft. No-op on `dry_run`, no outputs, no axis, or `auto_attach_asset=False`; never fails the job (logs and skips).
 2. Character: first output appends to (or auto-creates) the character skill's `params_json["character"]["reference_assets"]`; later views reuse that same id. A stale `target_*_id` (deleted since) falls back to auto-create; character auto-create first reuses an owned same-name card (`find_owned_character_by_name` — titles are unique per owner, else 422). Scene: same against `params_json["scene"]["reference_assets"]` (no name reuse).
 3. Video `character_action` → `characters_service.append_action_clip` (`action_clips`, never `reference_assets`; same-name reuse as above). `transition_video` / `cover_video` / image `cover` attach nowhere.
-4. Stamps `GenerationJob.linked_character_id` / `linked_scene_id` (used by the script studio's jump-back). Copy nested `params_json` before mutating — see `zaolang-data-model`.
+4. Labels: `_character_output_label` (outfit name, or `表情·冷笑/隐忍…` for an expression image, filed as view `general`) and `_scene_output_label` (the entry's own variant label, else the presets' combined label). Each output attaches in its own savepoint — one failure never drops the rest.
+5. Stamps `GenerationJob.linked_character_id` / `linked_scene_id` (used by the script studio's jump-back). Copy nested `params_json` before mutating — see `zaolang-data-model`.
 
 ## Default graphs (`back/app/workflows/defaults.py`)
 
