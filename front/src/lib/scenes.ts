@@ -32,11 +32,14 @@ export function sceneImageStudioHref(input: {
   return `/create/new?${params.toString()}`;
 }
 
-/** The one image a scene card shows — prefer an explicit establishing tag,
- * else the first asset. Extra historical refs stay on the card strip. */
+/** The one image a scene card shows — its master plate: an explicit
+ * establishing tag, else the first unlabelled asset (labelled ones are
+ * 黄昏/战损… variants), else the first asset. Mirrors the backend's
+ * `scenes.service.master_entry`. Extra refs stay on the card strip. */
 export function sceneHeroAsset(scene: Scene): SceneReferenceAsset | undefined {
   return (
     scene.reference_assets?.find((asset) => asset.view === 'establishing') ??
+    scene.reference_assets?.find((asset) => !asset.label?.trim()) ??
     scene.reference_assets?.[0]
   );
 }

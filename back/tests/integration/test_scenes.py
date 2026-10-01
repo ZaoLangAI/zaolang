@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.models import Asset, User
 from app.models.base import new_id
 from app.models.enums import AssetRole, MediaType, ModerationStatus, Visibility
+from app.domain.scenes import service as scenes_service
 from tests.conftest import auth_header
 
 
@@ -67,10 +68,10 @@ def test_create_scene_rejects_audio_references(
     assert response.status_code == 422
 
 
-def test_create_scene_rejects_more_than_four_references(
+def test_create_scene_rejects_more_than_the_reference_cap(
     client: TestClient, db: Session, author: User
 ) -> None:
-    assets = [_asset(db, author) for _ in range(5)]
+    assets = [_asset(db, author) for _ in range(scenes_service.MAX_REFERENCE_ASSETS + 1)]
     response = client.post(
         "/v1/scenes",
         json={"name": "太多素材", "reference_asset_ids": [a.id for a in assets]},

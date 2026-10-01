@@ -54,3 +54,15 @@ describe('sceneHeroAsset', () => {
     ).toBe('ast_any');
   });
 });
+
+describe('sceneHeroAsset with variants', () => {
+  it('skips labelled variants when no establishing tag exists', () => {
+    const scene = {
+      reference_assets: [
+        { asset_id: 'ast_dusk', view: 'general', label: '黄昏', url: 'https://cdn/dusk.png' },
+        { asset_id: 'ast_master', view: 'general', label: null, url: 'https://cdn/m.png' },
+      ],
+    } as Scene;
+    expect(sceneHeroAsset(scene)?.asset_id).toBe('ast_master');
+  });
+});

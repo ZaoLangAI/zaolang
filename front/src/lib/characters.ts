@@ -75,7 +75,10 @@ export function referenceByView(
   character: Character,
   view: 'front' | 'side' | 'back',
 ): CharacterReferenceAsset | undefined {
-  return character.reference_assets?.find((asset) => asset.view === view);
+  // The default (unnamed) look first: a labelled entry is another outfit's
+  // sheet, kept alongside it (`characters.service.append_reference_asset`).
+  const matches = character.reference_assets?.filter((asset) => asset.view === view) ?? [];
+  return matches.find((asset) => !asset.label?.trim()) ?? matches[0];
 }
 
 /**

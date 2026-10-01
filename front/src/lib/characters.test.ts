@@ -146,3 +146,24 @@ describe('findCompletionJobFor', () => {
     expect(findCompletionJobFor([front, failed, succeeded], front)?.id).toBe('job_ok');
   });
 });
+
+describe('referenceByView', () => {
+  it('prefers the default look over a named outfit for the same view', () => {
+    const character = {
+      reference_assets: [
+        { asset_id: 'ast_wedding', view: 'front', label: '婚礼', url: 'https://cdn/w.png' },
+        { asset_id: 'ast_daily', view: 'front', label: null, url: 'https://cdn/d.png' },
+      ],
+    } as Character;
+    expect(characterSheetAsset(character)?.asset_id).toBe('ast_daily');
+  });
+
+  it('falls back to a named outfit when it is the only one for that view', () => {
+    const character = {
+      reference_assets: [
+        { asset_id: 'ast_wedding', view: 'front', label: '婚礼', url: 'https://cdn/w.png' },
+      ],
+    } as Character;
+    expect(characterSheetAsset(character)?.asset_id).toBe('ast_wedding');
+  });
+});

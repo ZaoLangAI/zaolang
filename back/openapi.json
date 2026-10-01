@@ -25755,7 +25755,7 @@
               "type": "string"
             },
             "type": "array",
-            "maxItems": 4,
+            "maxItems": 12,
             "title": "Reference Asset Ids"
           },
           "voice_description": {
@@ -26046,7 +26046,7 @@
                   "type": "string"
                 },
                 "type": "array",
-                "maxItems": 4
+                "maxItems": 12
               },
               {
                 "type": "null"
@@ -30550,6 +30550,21 @@
               }
             ],
             "title": "Character Ref Selection"
+          },
+          "scene_ref_selection": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SceneRefSelection"
+                },
+                "type": "array",
+                "maxItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Ref Selection"
           },
           "scene_lighting": {
             "anyOf": [
@@ -37519,7 +37534,7 @@
               "type": "string"
             },
             "type": "array",
-            "maxItems": 4,
+            "maxItems": 8,
             "title": "Reference Asset Ids"
           }
         },
@@ -37614,6 +37629,31 @@
         "type": "object",
         "title": "ScenePresetCombo",
         "description": "One image of a scene variant group (`GenerationParams.scene_variants`):\nthe preset combination that image should show."
+      },
+      "SceneRefSelection": {
+        "properties": {
+          "scene_id": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Scene Id"
+          },
+          "asset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Asset Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scene_id",
+          "asset_ids"
+        ],
+        "title": "SceneRefSelection",
+        "description": "Scene-side twin of `CharacterRefSelection`: which of one scene's\nreference images (master plate, a 黄昏 variant, …) a job should use\ninstead of the default subset (`scenes.service.default_reference_asset_ids`)."
       },
       "SceneReferenceAsset": {
         "properties": {
@@ -37792,7 +37832,7 @@
                   "type": "string"
                 },
                 "type": "array",
-                "maxItems": 4
+                "maxItems": 8
               },
               {
                 "type": "null"

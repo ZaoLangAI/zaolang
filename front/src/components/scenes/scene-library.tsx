@@ -40,7 +40,8 @@ import { sceneHeroAsset, sceneImageStudioHref } from '@/lib/scenes';
 import { useMinWidth } from '@/lib/use-media-query';
 import { uploadFile } from '@/lib/upload';
 
-const MAX_REFERENCE_ASSETS = 4;
+// Mirrors `scenes.service.MAX_REFERENCE_ASSETS` (master plate + variants).
+const MAX_REFERENCE_ASSETS = 8;
 
 // Reuses `skillLibrary`'s own status vocabulary — a scene is a
 // `CreationSkillCategory.SCENE_ASSET` skill under the hood (see

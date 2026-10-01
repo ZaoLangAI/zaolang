@@ -350,6 +350,15 @@ class CharacterRefSelection(ApiModel):
     asset_ids: list[str] = Field(min_length=1, max_length=4)
 
 
+class SceneRefSelection(ApiModel):
+    """Scene-side twin of `CharacterRefSelection`: which of one scene's
+    reference images (master plate, a 黄昏 variant, …) a job should use
+    instead of the default subset (`scenes.service.default_reference_asset_ids`)."""
+
+    scene_id: str = Field(max_length=40)
+    asset_ids: list[str] = Field(min_length=1, max_length=4)
+
+
 class ScenePresetCombo(ApiModel):
     """One image of a scene variant group (`GenerationParams.scene_variants`):
     the preset combination that image should show."""
@@ -372,6 +381,13 @@ class ReferenceLabel(ApiModel):
 
     asset_id: str = Field(max_length=40)
     label: str = Field(max_length=60)
+
+
+def _check_selection(picked: list[str], allowed: list[str], *, field: str, noun: str) -> None:
+    if len(set(picked)) != len(picked):
+        raise ValueError(f"{field} 中同一{noun}只能出现一次。")
+    if any(item not in allowed for item in picked):
+        raise ValueError(f"{field} 中的{noun}必须同时被选中。")
 
 
 class GenerationParams(ApiModel):
@@ -490,6 +506,9 @@ class GenerationParams(ApiModel):
     # `CharacterRefSelection`); characters not listed use their default
     # subset. Every `character_id` must also be in `character_ids`.
     character_ref_selection: list[CharacterRefSelection] | None = Field(default=None, max_length=4)
+    # Per-scene pick of which reference images to send; same rules as
+    # `character_ref_selection` against `scene_ids`.
+    scene_ref_selection: list[SceneRefSelection] | None = Field(default=None, max_length=4)
     # `asset_kind=scene` only: one preset per axis for a single scene image.
     scene_lighting: SceneLighting | None = None
     scene_weather: SceneWeather | None = None
@@ -526,16 +545,18 @@ class GenerationParams(ApiModel):
             raise ValueError("场景光照/天气/状态/时期仅适用于 asset_kind=scene。")
         if has_scene_preset and self.scene_variants:
             raise ValueError("单张场景预设与场景变体组不能同时使用。")
-        if self.character_ref_selection:
-            seen: set[str] = set()
-            for entry in self.character_ref_selection:
-                if entry.character_id not in self.character_ids:
-                    raise ValueError(
-                        "character_ref_selection 中的角色必须同时出现在 character_ids。"
-                    )
-                if entry.character_id in seen:
-                    raise ValueError("character_ref_selection 中同一角色只能出现一次。")
-                seen.add(entry.character_id)
+        _check_selection(
+            [entry.character_id for entry in self.character_ref_selection or []],
+            self.character_ids,
+            field="character_ref_selection",
+            noun="角色",
+        )
+        _check_selection(
+            [entry.scene_id for entry in self.scene_ref_selection or []],
+            self.scene_ids,
+            field="scene_ref_selection",
+            noun="场景",
+        )
         return self
 
     @model_validator(mode="after")

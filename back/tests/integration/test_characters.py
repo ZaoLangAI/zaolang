@@ -17,6 +17,7 @@ from app.models.enums import (
     ModerationStatus,
     Visibility,
 )
+from app.domain.characters import service as characters_service
 from tests.conftest import auth_header
 
 
@@ -74,10 +75,10 @@ def test_create_character_rejects_audio_references(
     assert response.status_code == 422
 
 
-def test_create_character_rejects_more_than_four_references(
+def test_create_character_rejects_more_than_the_reference_cap(
     client: TestClient, db: Session, author: User
 ) -> None:
-    assets = [_asset(db, author) for _ in range(5)]
+    assets = [_asset(db, author) for _ in range(characters_service.MAX_REFERENCE_ASSETS + 1)]
     response = client.post(
         "/v1/characters",
         json={"name": "太多素材", "reference_asset_ids": [a.id for a in assets]},
