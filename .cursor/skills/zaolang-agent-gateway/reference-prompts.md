@@ -45,7 +45,7 @@ Copy coaches, asset-kind prompt rules, scene skill packs, follow-up questions. S
 
 ## Reference legend
 
-- At submit `back/app/domain/image_assets/reference_labels.py:label_references` writes `params["reference_labels"]` (`角色「林夏」设定图`, `角色「林夏」·婚礼`, `场景「客厅」主图`, `场景「客厅」·黄昏`) for references belonging to the job's picked/targeted characters and scenes.
+- At submit `back/app/domain/image_assets/reference_resolver.py:resolve` writes `params["reference_labels"]` (`asset_variants.service.entry_label`: `角色「林夏」·设定图`, `角色「林夏」·婚礼·设定图`, `场景「客厅」·主图`, `场景「客厅」·黄昏·机位`) for references belonging to the job's picked/targeted characters and scenes.
 - `nodes._with_reference_legend` prefixes `prompt_builder.reference_legend` (`参考图说明：图1 是…；图2 是…`) onto the provider prompt only; it numbers generic image references (`ProviderReference.asset_id`, no `frame_type`) truncated to `ProviderCapability.max_image_references` (`media_endpoints._max_image_references`: DMXAPI image profile, AiHubMix `image_reference_cap` — gpt-image-2 edits = 1, minimax_v2/fal video caps) and stays silent when the cap is unknown, <2 images, first/last frames are present, or nothing is labelled.
 - The GENERATING event logs `prompt` (with legend) and `base_prompt` (without); `fast_retry._resolved_prompt` reads `base_prompt` / `strip_reference_legend` so a retry never doubles it.
 

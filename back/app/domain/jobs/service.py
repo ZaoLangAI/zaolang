@@ -15,7 +15,6 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.domain.characters import service as characters_service
 from app.domain.consent import service as consent_service
 from app.domain.credits import service as credits_service
 from app.domain.credits.pricing import Quote
@@ -29,11 +28,10 @@ from app.domain.errors import (
     SpendLimitExceeded,
     ValidationFailed,
 )
-from app.domain.image_assets import reference_labels
+from app.domain.image_assets import reference_resolver
 from app.domain.jobs import state_machine as sm
 from app.domain.media import service as media_service
 from app.domain.notifications import push as notifications
-from app.domain.scenes import service as scenes_service
 from app.domain.shortform import service as shortform_service
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import Draft, GenerationJob, JobEvent
@@ -230,12 +228,7 @@ def submit(
 
     # Before quoting: a spec mismatch, or an unowned character, must not cost
     # the user a reservation.
-    # `reference_labels` is server-written below; a client never sets it.
-    params.pop("reference_labels", None)
-    characters_service.apply_character_refs(session, user_id=user_id, params=params)
-    characters_service.ensure_expression_reference(session, user_id=user_id, params=params)
-    scenes_service.apply_scene_refs(session, user_id=user_id, params=params)
-    reference_labels.label_references(session, user_id=user_id, params=params)
+    reference_resolver.resolve(session, user_id=user_id, params=params)
     media_service.attach_licensed_source_video(
         session, params=params, source_work_version_id=source_work_version_id
     )

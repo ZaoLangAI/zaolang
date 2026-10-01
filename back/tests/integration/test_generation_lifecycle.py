@@ -464,8 +464,8 @@ def test_labelled_references_reach_the_provider_with_a_legend(db: Session, funde
         idempotency_key=new_id("idk"),
     ).job
     assert job.request_json["reference_labels"] == [
-        {"asset_id": sheet.id, "label": "角色「林夏」设定图"},
-        {"asset_id": plate.id, "label": "场景「客厅」主图"},
+        {"asset_id": sheet.id, "label": "角色「林夏」·设定图"},
+        {"asset_id": plate.id, "label": "场景「客厅」·主图"},
     ]
 
     pipeline.run_generation_pipeline(db, job.id)
@@ -475,7 +475,7 @@ def test_labelled_references_reach_the_provider_with_a_legend(db: Session, funde
     )
     assert event is not None
     prompt = event.payload_json["prompt"]
-    assert prompt.startswith("参考图说明：图1 是角色「林夏」设定图；图2 是场景「客厅」主图")
+    assert prompt.startswith("参考图说明：图1 是角色「林夏」·设定图；图2 是场景「客厅」·主图")
     assert not event.payload_json["base_prompt"].startswith("参考图说明")
     assert prompt.endswith(event.payload_json["base_prompt"])
 

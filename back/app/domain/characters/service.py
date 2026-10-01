@@ -47,7 +47,7 @@ from app.presenters import media_urls
 # rest; nothing is silently evicted any more.
 MAX_REFERENCE_ASSETS = asset_variants_service.MAX_ENTRIES_PER_VARIANT
 # Default per-character subset a job gets when the caller picked nothing.
-MAX_DEFAULT_JOB_REFERENCES = 3
+MAX_DEFAULT_JOB_REFERENCES = asset_variants_service.MAX_DEFAULT_CHARACTER_REFERENCES
 # Mirrors GenerationParams.reference_asset_ids / character_ids in jobs.py —
 # kept here too so a validation error names the right limit before a job ever
 # reaches the API schema.
@@ -231,47 +231,21 @@ def _validate_reference_assets(
     return deduped
 
 
-_SHEET_ORDER = {
-    CharacterViewAngle.FRONT.value: 0,
-    CharacterViewAngle.SIDE.value: 1,
-    CharacterViewAngle.BACK.value: 2,
-}
 _EXPRESSION_LABEL_PREFIX = "表情"
 
 
-def default_reference_asset_ids(character: CharacterView) -> list[str]:
-    """What a job gets for this character when the caller didn't pick any
-    (`GenerationParams.character_ref_selection`).
-
-    The anchor (定妆照/设定图) first, then the default look's approved sheet
-    and single views in front → side → back order; a card with neither falls
-    back to the default look's other images, then to anything. At most
-    `MAX_DEFAULT_JOB_REFERENCES`. Other looks and expression sheets only go
-    in when picked, so a 婚礼 sheet never sneaks into a 日常 scene.
-    """
-    skill = character.skill
-    picked: list[str] = []
-    anchor = asset_variants_service.anchor(skill)
-    if anchor is not None and anchor.status == "approved":
-        picked.append(anchor.asset_id)
-    default = asset_variants_service.find_default(skill)
-    default_entries = list(default.entries) if default else []
-    sheets = sorted(
-        (
-            e
-            for e in default_entries
-            if e.status == "approved"
-            and e.entry_type in (AssetEntryType.CHARACTER_SHEET, AssetEntryType.VIEW)
-        ),
-        key=lambda e: _SHEET_ORDER.get(
-            "front" if e.entry_type == AssetEntryType.CHARACTER_SHEET else (e.view or ""), 3
-        ),
+def default_reference_asset_ids(
+    character: CharacterView, variant_id: str | None = None
+) -> list[str]:
+    """What a job gets for this character when the caller picked no images:
+    the default look (or `variant_id`'s look) subset — see
+    `asset_variants.service.default_subset`. Other looks and expression
+    sheets only go in when picked, so a 婚礼 sheet never sneaks into a 日常
+    scene."""
+    variant = (
+        asset_variants_service.find_variant(character.skill, variant_id) if variant_id else None
     )
-    pool = sheets or [e for e in default_entries if e.entry_type != AssetEntryType.EXPRESSION_SHEET]
-    for entry in pool or asset_variants_service.entries(skill):
-        if entry.asset_id not in picked:
-            picked.append(entry.asset_id)
-    return picked[:MAX_DEFAULT_JOB_REFERENCES]
+    return asset_variants_service.default_subset(character.skill, variant)
 
 
 def reference_entry(character: CharacterView, asset_id: str) -> dict[str, Any] | None:
@@ -438,6 +412,8 @@ def append_reference_asset(
     view: str = CharacterViewAngle.GENERAL.value,
     label: str | None = None,
     source_job_id: str | None = None,
+    variant_id: str | None = None,
+    expressions: list[str] | None = None,
 ) -> CharacterView:
     """Files one image under a look — the P0 `(view, label)` call shape,
     translated: a non-expression `label` names the look (created on first
@@ -445,7 +421,9 @@ def append_reference_asset(
     view picks the entry type. A sheet or single view replaces the same
     slot in that look (one front sheet per outfit); extras accumulate up to
     the look's cap (422 beyond it). The first sheet becomes the card's
-    anchor when it has none.
+    anchor when it has none. `variant_id` (a look of this card) wins over the
+    label; a stale one falls back to the label/default. `expressions` names
+    an expression sheet's faces.
 
     Called by the character library UI and by
     `app.workflows.nodes.execute_asset_output_link`.
@@ -454,9 +432,13 @@ def append_reference_asset(
     _validate_reference_assets(session, user_id=user_id, asset_ids=[asset_id])
     clean_label = (label or "").strip() or None
     entry_type, entry_view = _legacy_entry_type(view, clean_label)
-    variant = asset_variants_service.find_or_create_variant(
+    variant = (
+        asset_variants_service.find_variant(skill, variant_id) if variant_id else None
+    ) or asset_variants_service.find_or_create_variant(
         session, skill, name=_legacy_variant_name(clean_label)
     )
+    if expressions:
+        entry_type, entry_view = AssetEntryType.EXPRESSION_SHEET.value, None
     if entry_type in (AssetEntryType.CHARACTER_SHEET, AssetEntryType.VIEW):
         for stale in [
             e
@@ -473,6 +455,7 @@ def append_reference_asset(
         entry_type=entry_type,
         view=entry_view,
         label=clean_label if entry_type == AssetEntryType.EXPRESSION_SHEET else None,
+        expressions=expressions,
         source_job_id=source_job_id,
     )
     # The anchor is the default look's sheet: another outfit's sheet must
@@ -661,11 +644,18 @@ def apply_character_refs(session: Session, *, user_id: str, params: dict[str, An
         CharacterView(_owned_character_skill(session, user_id=user_id, character_id=cid))
         for cid in character_ids
     ]
-    selection = _selected_reference_ids(params, characters)
+    selection = _selection_items(params, characters)
 
     merged_refs = list(params.get("reference_asset_ids") or [])
     for character in characters:
-        picked = selection.get(character.id) or default_reference_asset_ids(character)
+        item = selection.get(character.id)
+        picked = asset_variants_service.select_assets(
+            character.skill,
+            variant_id=item.get("variant_id") if item else None,
+            asset_ids=list(item.get("asset_ids") or []) if item else None,
+            owner=f"角色「{character.name}」",
+            field="params.character_ref_selection",
+        )
         for asset_id in picked:
             if asset_id not in merged_refs and len(merged_refs) < MAX_JOB_REFERENCE_ASSETS:
                 merged_refs.append(asset_id)
@@ -684,47 +674,24 @@ def apply_character_refs(session: Session, *, user_id: str, params: dict[str, An
     params["extra"] = extra
 
 
-def _selected_reference_ids(
+def _selection_items(
     params: dict[str, Any], characters: list[CharacterView]
-) -> dict[str, list[str]]:
-    """`character_ref_selection` as `{character_id: [asset_id, …]}`, every id
-    checked to be one of that character's own references — a selection can
-    narrow what a character contributes, never smuggle in another asset."""
+) -> dict[str, dict[str, Any]]:
+    """`character_ref_selection` keyed by character id; every named
+    character must be one of this job's `character_ids`."""
     raw = params.get("character_ref_selection") or []
     if not isinstance(raw, list):
         return {}
-    by_id = {character.id: character for character in characters}
-    selection: dict[str, list[str]] = {}
+    known = {character.id for character in characters}
+    items: dict[str, dict[str, Any]] = {}
     for item in raw:
         if not isinstance(item, dict):
             continue
-        character = by_id.get(str(item.get("character_id") or ""))
-        if character is None:
+        character_id = str(item.get("character_id") or "")
+        if character_id not in known:
             raise ValidationFailed(
                 "所选参考图的角色不在本次选择的角色中。",
                 fields={"params.character_ref_selection": "角色必须同时出现在 character_ids"},
             )
-        owned = set(character.reference_asset_ids)
-        asset_ids = [str(a) for a in item.get("asset_ids") or []]
-        if not asset_ids or any(asset_id not in owned for asset_id in asset_ids):
-            raise ValidationFailed(
-                f"角色「{character.name}」的参考图选择无效。",
-                fields={"params.character_ref_selection": "只能选择该角色自己的参考图"},
-            )
-        selection[character.id] = list(dict.fromkeys(asset_ids))
-    return selection
-
-
-def ensure_expression_reference(session: Session, *, user_id: str, params: dict[str, Any]) -> None:
-    """A composite expression image is drawn *from* the character's sheet:
-    when the caller sent no reference at all but named its target
-    character, borrow that character's default sheet as reference 1."""
-    if not params.get("character_expressions") or params.get("reference_asset_ids"):
-        return
-    target_id = params.get("target_character_id")
-    if not target_id:
-        return
-    character = CharacterView(
-        _owned_character_skill(session, user_id=user_id, character_id=str(target_id))
-    )
-    params["reference_asset_ids"] = default_reference_asset_ids(character)
+        items[character_id] = item
+    return items

@@ -27,10 +27,11 @@ from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.domain.moderation_policy import assert_allowed, text_values
 from app.domain.moderation_queue import service as moderation_queue
 from app.domain.skill_library import catalog as skill_catalog
-from app.models import Asset, CreationSkill, ModerationQueueItem, Profile
+from app.models import Asset, CreationSkill, ModerationQueueItem, Profile, SkillAssetEntry
 from app.models.base import utcnow
 from app.models.enums import (
     IMAGE_ASSET_SKILL_CATEGORIES,
+    AssetEntryStatus,
     AssetEntryType,
     AssetRole,
     CharacterViewAngle,
@@ -362,25 +363,40 @@ def viewer_has_access(session: Session, skill: CreationSkill, viewer_id: str | N
 def asset_is_usable_skill_reference(
     session: Session, *, asset: Asset, viewer_id: str | None
 ) -> bool:
-    """A published marketplace skill's public cover may be sent as a
-    generation reference by anyone who can use that skill — the still is
-    already `PUBLIC_VIEW_ONLY`, and attaching it is how an image-asset
-    recipe becomes an img2img reference without cloning the row into the
-    viewer's own roster."""
-    if asset.media_type != MediaType.IMAGE:
+    """A published marketplace skill's images may be sent as a generation
+    reference by anyone who can use that skill (owner, free, or unlocked):
+
+    - its public cover — already `PUBLIC_VIEW_ONLY`; attaching it is how an
+      image-asset recipe becomes an img2img reference without cloning the row
+      into the viewer's own roster;
+    - an approved image filed on one of a character/scene card's looks — the
+      look/variant is what the buyer unlocked. The asset itself stays
+      private: only the provider ever receives a signed URL for it.
+    """
+    if asset.media_type == MediaType.IMAGE and asset.visibility != Visibility.PRIVATE:
+        skill = session.scalar(
+            select(CreationSkill).where(
+                CreationSkill.cover_asset_id == asset.id,
+                CreationSkill.status == CreationSkillStatus.PUBLISHED,
+                CreationSkill.visibility == CreationSkillVisibility.PUBLIC,
+            )
+        )
+        if skill is not None and viewer_has_access(session, skill, viewer_id):
+            return True
+    if asset.media_type not in (MediaType.IMAGE, MediaType.VIDEO):
         return False
-    if asset.visibility == Visibility.PRIVATE:
-        return False
-    skill = session.scalar(
-        select(CreationSkill).where(
-            CreationSkill.cover_asset_id == asset.id,
+    cards = session.scalars(
+        select(CreationSkill)
+        .join(SkillAssetEntry, SkillAssetEntry.skill_id == CreationSkill.id)
+        .where(
+            SkillAssetEntry.asset_id == asset.id,
+            SkillAssetEntry.status == AssetEntryStatus.APPROVED,
             CreationSkill.status == CreationSkillStatus.PUBLISHED,
             CreationSkill.visibility == CreationSkillVisibility.PUBLIC,
         )
+        .distinct()
     )
-    if skill is None:
-        return False
-    return viewer_has_access(session, skill, viewer_id)
+    return any(viewer_has_access(session, card, viewer_id) for card in cards)
 
 
 def assert_unlocked_for_use(session: Session, skill: CreationSkill, viewer_id: str | None) -> None:

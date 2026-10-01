@@ -7213,17 +7213,19 @@ export interface components {
         };
         /**
          * CharacterRefSelection
-         * @description Exactly which of one character's reference images a job should use —
-         *     e.g. only the 婚礼 outfit's sheet — instead of the default subset
-         *     (`characters.service.default_reference_asset_ids`). Each id must be one
-         *     of that character's own `reference_assets`
-         *     (`characters.service.apply_character_refs`).
+         * @description Which of one character's images a job should use instead of the card's
+         *     default subset: a look (`variant_id` → that look's default subset, e.g.
+         *     the 婚礼 outfit), exact images (`asset_ids`, each one of the card's own),
+         *     or both (the images must then belong to that look). Resolved by
+         *     `image_assets.reference_resolver`.
          */
         CharacterRefSelection: {
             /** Character Id */
             character_id: string;
+            /** Variant Id */
+            variant_id?: string | null;
             /** Asset Ids */
-            asset_ids: string[];
+            asset_ids?: string[] | null;
         };
         /** CharacterReferenceAsset */
         CharacterReferenceAsset: {
@@ -9038,6 +9040,8 @@ export interface components {
             character_expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
             /** Character Outfit Label */
             character_outfit_label?: string | null;
+            /** Target Variant Id */
+            target_variant_id?: string | null;
             /** Character Ref Selection */
             character_ref_selection?: components["schemas"]["CharacterRefSelection"][] | null;
             /** Scene Ref Selection */
@@ -11811,15 +11815,16 @@ export interface components {
         };
         /**
          * SceneRefSelection
-         * @description Scene-side twin of `CharacterRefSelection`: which of one scene's
-         *     reference images (master plate, a 黄昏 variant, …) a job should use
-         *     instead of the default subset (`scenes.service.default_reference_asset_ids`).
+         * @description Scene-side twin of `CharacterRefSelection`: a variant (黄昏/战损…),
+         *     exact images, or both.
          */
         SceneRefSelection: {
             /** Scene Id */
             scene_id: string;
+            /** Variant Id */
+            variant_id?: string | null;
             /** Asset Ids */
-            asset_ids: string[];
+            asset_ids?: string[] | null;
         };
         /** SceneReferenceAsset */
         SceneReferenceAsset: {

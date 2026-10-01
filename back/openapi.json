@@ -25795,23 +25795,41 @@
             "maxLength": 40,
             "title": "Character Id"
           },
+          "variant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Id"
+          },
           "asset_ids": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "maxItems": 4,
-            "minItems": 1,
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Asset Ids"
           }
         },
         "type": "object",
         "required": [
-          "character_id",
-          "asset_ids"
+          "character_id"
         ],
         "title": "CharacterRefSelection",
-        "description": "Exactly which of one character's reference images a job should use —\ne.g. only the 婚礼 outfit's sheet — instead of the default subset\n(`characters.service.default_reference_asset_ids`). Each id must be one\nof that character's own `reference_assets`\n(`characters.service.apply_character_refs`)."
+        "description": "Which of one character's images a job should use instead of the card's\ndefault subset: a look (`variant_id` → that look's default subset, e.g.\nthe 婚礼 outfit), exact images (`asset_ids`, each one of the card's own),\nor both (the images must then belong to that look). Resolved by\n`image_assets.reference_resolver`."
       },
       "CharacterReferenceAsset": {
         "properties": {
@@ -30540,6 +30558,18 @@
               }
             ],
             "title": "Character Outfit Label"
+          },
+          "target_variant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Variant Id"
           },
           "character_ref_selection": {
             "anyOf": [
@@ -37750,23 +37780,41 @@
             "maxLength": 40,
             "title": "Scene Id"
           },
+          "variant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Id"
+          },
           "asset_ids": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "maxItems": 4,
-            "minItems": 1,
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Asset Ids"
           }
         },
         "type": "object",
         "required": [
-          "scene_id",
-          "asset_ids"
+          "scene_id"
         ],
         "title": "SceneRefSelection",
-        "description": "Scene-side twin of `CharacterRefSelection`: which of one scene's\nreference images (master plate, a 黄昏 variant, …) a job should use\ninstead of the default subset (`scenes.service.default_reference_asset_ids`)."
+        "description": "Scene-side twin of `CharacterRefSelection`: a variant (黄昏/战损…),\nexact images, or both."
       },
       "SceneReferenceAsset": {
         "properties": {

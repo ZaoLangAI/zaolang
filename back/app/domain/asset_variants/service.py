@@ -401,3 +401,122 @@ def skills_referencing_asset(session: Session, asset_id: str) -> list[str]:
             select(SkillAssetEntry.skill_id).where(SkillAssetEntry.asset_id == asset_id).distinct()
         )
     )
+
+
+# ---- job references ----------------------------------------------------------
+
+MAX_DEFAULT_CHARACTER_REFERENCES = 3
+MAX_DEFAULT_SCENE_REFERENCES = 2
+_SHEET_ORDER = {"front": 0, "side": 1, "back": 2}
+
+
+def _approved(items: list[SkillAssetEntry]) -> list[SkillAssetEntry]:
+    return [e for e in items if e.status == AssetEntryStatus.APPROVED]
+
+
+def default_subset(skill: CreationSkill, variant: SkillAssetVariant | None = None) -> list[str]:
+    """What a job gets from this card when the caller named at most a look.
+
+    Character: the anchor (only when it is the default look's — or, for
+    another look, only a face-only `identity_portrait`), then the look's
+    sheet and single views front → side → back, else its other non-
+    expression images; at most 3. Scene: the variant's master then its
+    shots, else the card's anchor (the structure every variant shares); at
+    most 2. With no look named and nothing in the default, anything.
+    """
+    target = variant or find_default(skill)
+    target_entries = _approved(list(target.entries)) if target else []
+    picked: list[str] = []
+    card_anchor = anchor(skill)
+
+    if is_character(skill):
+        if card_anchor is not None and card_anchor.status == AssetEntryStatus.APPROVED:
+            same_look = target is not None and card_anchor.variant_id == target.id
+            face_only = card_anchor.entry_type == AssetEntryType.IDENTITY_PORTRAIT
+            if same_look or face_only:
+                picked.append(card_anchor.asset_id)
+        sheets = sorted(
+            (
+                e
+                for e in target_entries
+                if e.entry_type in (AssetEntryType.CHARACTER_SHEET, AssetEntryType.VIEW)
+            ),
+            key=lambda e: _SHEET_ORDER.get(
+                "front" if e.entry_type == AssetEntryType.CHARACTER_SHEET else (e.view or ""), 3
+            ),
+        )
+        pool = sheets or [
+            e for e in target_entries if e.entry_type != AssetEntryType.EXPRESSION_SHEET
+        ]
+        limit = MAX_DEFAULT_CHARACTER_REFERENCES
+    else:
+        masters = [e for e in target_entries if e.entry_type == AssetEntryType.MASTER]
+        pool = masters + [e for e in target_entries if e.entry_type != AssetEntryType.MASTER]
+        if not pool and card_anchor is not None:
+            pool = [card_anchor]
+        limit = MAX_DEFAULT_SCENE_REFERENCES
+
+    if not pool and not picked and variant is None:
+        pool = entries(skill)
+    for entry in pool:
+        if entry.asset_id not in picked:
+            picked.append(entry.asset_id)
+    return picked[:limit]
+
+
+def select_assets(
+    skill: CreationSkill,
+    *,
+    variant_id: str | None,
+    asset_ids: list[str] | None,
+    owner: str,
+    field: str,
+) -> list[str]:
+    """A caller's `*_ref_selection` item for this card: a look (its default
+    subset), exact images (each one of the card's own), or both (the images
+    must be in that look). Anything else is a 422 — a selection can narrow
+    what a card contributes, never smuggle in another asset."""
+    variant = None
+    if variant_id:
+        variant = find_variant(skill, variant_id)
+        if variant is None:
+            raise ValidationFailed(
+                f"{owner}的造型/变体不存在。", fields={field: "variant_id 不属于该卡片"}
+            )
+    if not asset_ids:
+        return default_subset(skill, variant)
+    pool = variant.entries if variant is not None else entries(skill)
+    owned = {e.asset_id for e in pool}
+    if any(asset_id not in owned for asset_id in asset_ids):
+        raise ValidationFailed(
+            f"{owner}的参考图选择无效。", fields={field: "只能选择该卡片（造型）自己的参考图"}
+        )
+    return list(dict.fromkeys(asset_ids))
+
+
+_ENTRY_TYPE_NAMES = {
+    AssetEntryType.IDENTITY_PORTRAIT: "定妆照",
+    AssetEntryType.CHARACTER_SHEET: "设定图",
+    AssetEntryType.EXPRESSION_SHEET: "表情合集",
+    AssetEntryType.POSE: "姿态",
+    AssetEntryType.OUTFIT_DETAIL: "服装细节",
+    AssetEntryType.PROP: "道具",
+    AssetEntryType.MASTER: "主图",
+    AssetEntryType.SHOT: "机位",
+}
+_VIEW_NAMES = {"side": "侧面", "back": "背面", "detail": "细节", "reverse": "反打"}
+
+
+def entry_label(skill: CreationSkill, entry: SkillAssetEntry) -> str:
+    """`角色「林夏」·婚礼·设定图` / `场景「客厅」·黄昏·主图` — what the
+    prompt's reference legend calls this image."""
+    noun = "角色" if is_character(skill) else "场景"
+    parts = [f"{noun}「{skill.title}」"]
+    if not entry.variant.is_default:
+        parts.append(entry.variant.name)
+    positional = entry.entry_type in (AssetEntryType.VIEW, AssetEntryType.SHOT)
+    if positional and entry.view in _VIEW_NAMES:
+        parts.append(_VIEW_NAMES[entry.view])
+    else:
+        parts.append(_ENTRY_TYPE_NAMES.get(AssetEntryType(entry.entry_type), "参考图"))
+    return "·".join(parts)[:60]
