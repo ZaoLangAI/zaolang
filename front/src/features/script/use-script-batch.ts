@@ -12,6 +12,8 @@ import type { ScriptCharacter, ScriptDocument, ScriptScene } from './api';
 import type { PendingAudio, PendingVideo } from './batch-plan';
 import { characterImagePrompt, sceneImagePrompt } from './script-prompts';
 import { type BreakpointVideoBinding } from './script-breakpoint';
+import { type AssetPresetParams, scenePresetParams } from '@/features/image-assets/vocabulary';
+import { parseScenePresets } from '@/features/script/scene-heading';
 
 export type BatchKind = 'characters' | 'scenes' | 'videos' | 'audio';
 export type BatchItemKind = 'character' | 'scene' | 'video' | 'audio';
@@ -224,6 +226,9 @@ export async function submitJob(input: {
   linkEpisodeId?: string;
   linkBreakpointKey?: string;
   extra?: Record<string, unknown>;
+  /** Preset fields spread into `params` (scene lighting/weather, reference
+   * picks) — see `features/image-assets/vocabulary.ts`. */
+  assetPresets?: AssetPresetParams;
   maxCredits: number;
 }): Promise<GenerationJob> {
   let draftId = input.draftId;
@@ -269,6 +274,7 @@ export async function submitJob(input: {
         subject_name_hint: input.subjectNameHint,
         auto_attach_asset: true,
         forced_model: null,
+        ...input.assetPresets,
         extra: input.extra ?? {},
       },
       max_credits: input.maxCredits,
@@ -442,6 +448,11 @@ export function useScriptBatch({
           draftTitle: item.label,
           assetKind: isCharacter ? 'character' : 'scene',
           subjectNameHint: item.id.slice(0, 60),
+          // A scene's heading says 日/夜 (and often 雨/雪) — carry it as the
+          // lighting/weather preset so the batch plate matches the script.
+          assetPresets: isCharacter
+            ? undefined
+            : scenePresetParams(parseScenePresets(source as ScriptScene)),
           maxCredits: unitCredits,
         });
         patchItem(item.kind, item.id, {

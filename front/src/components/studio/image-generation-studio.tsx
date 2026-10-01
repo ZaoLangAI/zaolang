@@ -44,6 +44,7 @@ import { useGenerationModels } from '@/lib/use-generation-models';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
 import { useJobStream } from '@/lib/use-job-stream';
 import { useResource } from '@/lib/use-resource';
+import { type ScenePresets, scenePresetParams } from '@/features/image-assets/vocabulary';
 
 type Operation = 'text_to_image' | 'image_to_image';
 /** What a `text_to_image`/`image_to_image` output is *for* — mirrors the
@@ -95,6 +96,7 @@ export function ImageGenerationStudio({
   linkEpisodeId,
   initialSkillId,
   initialReferenceAssetIds,
+  initialScenePresets,
 }: {
   source?: StudioSource;
   reference?: WorkDetail;
@@ -133,6 +135,8 @@ export function ImageGenerationStudio({
   /** Asset ids to attach as references on arrival (`?referenceAssetIds=`),
    * used by the canvas to turn an edge into a real reference image. */
   initialReferenceAssetIds?: string[];
+  /** Scene lighting/weather a script heading jump-out pre-selects. */
+  initialScenePresets?: ScenePresets;
 }) {
   const t = useTranslations('remixPage');
   const tCredits = useTranslations('credits');
@@ -178,6 +182,9 @@ export function ImageGenerationStudio({
   const [targetCharacterId, setTargetCharacterId] = useState(initialTargetCharacterId ?? '');
   const [targetSceneId, setTargetSceneId] = useState(initialTargetSceneId ?? '');
   const [autoAttachToRoster, setAutoAttachToRoster] = useState(true);
+  // Scene lighting/weather/state/period for a single scene image — see
+  // `features/image-assets/vocabulary.ts`.
+  const [scenePresets] = useState<ScenePresets>(initialScenePresets ?? {});
 
   // Inline progress/result + version history state. `draftId` is created on
   // the first submit and reused by every later "continue refining" submit,
@@ -580,6 +587,7 @@ export function ImageGenerationStudio({
       targetSceneId: assetKind === 'scene' ? targetSceneId || null : undefined,
       autoAttachAsset: isCharacterAssetKind ? autoAttachToRoster : undefined,
       subjectNameHint: isCharacterAssetKind || assetKind === 'scene' ? subjectNameHint : undefined,
+      assetPresets: assetKind === 'scene' ? scenePresetParams(scenePresets) : undefined,
       linkEpisodeId,
       draftParams: draftReturnParams({
         returnTo,

@@ -9,6 +9,7 @@ import { api, newIdempotencyKey } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { Draft, GenerationJob, Operation, QualityTier, Quote } from '@/lib/api/types';
 import { titleFromPrompt } from '@/lib/draft-title';
+import type { AssetPresetParams } from '@/features/image-assets/vocabulary';
 
 /** The inputs the price depends on.
  *
@@ -96,6 +97,10 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
    */
   autoAttachAsset?: boolean;
   /** Free-form provider hints, e.g. `{ sound: true }`. */
+  /** Character/scene preset fields (expressions, outfit, reference picks,
+   * lighting/weather/state/period, variant group) — see
+   * `features/image-assets/vocabulary.ts`. Spread into `params` verbatim. */
+  assetPresets?: AssetPresetParams;
   extra?: Record<string, unknown>;
   /**
    * The `CreationSkill`s applied to this request, in pick order. The studio
@@ -334,6 +339,7 @@ export function useGenerationSubmit(
                 subject_name_hint: input.subjectNameHint,
                 auto_attach_asset: input.autoAttachAsset ?? true,
                 forced_model: input.forcedModel ?? null,
+                ...input.assetPresets,
                 extra: input.extra ?? {},
               },
               max_credits: input.maxCredits,
