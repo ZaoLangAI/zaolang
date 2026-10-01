@@ -88,7 +88,7 @@ _AUDIO_MODELS = frozenset({FAL_VOICE_CLONE_MODEL}) | _MUSIC_MODELS | _SFX_MODELS
 _PROMPT_EXPANSION_MODE = "balanced"
 _T2V_FALLBACK_RATIO = "16:9"
 _REFERENCE_URL_TTL_SECONDS = 900
-_MAX_REFERENCE_FILES = 12
+MAX_REFERENCE_FILES = 12
 _FRAME_ROLES = frozenset({"first_frame", "last_frame"})
 _ROUTE_SUFFIXES = tuple(f"/{route}" for route in sorted(VALID_ROUTES))
 
@@ -242,9 +242,9 @@ def resolve_route(request: GenerationRequest) -> str:
             raise ValueError("first/last frame references must be images")
         return ROUTE_IMAGE_TO_VIDEO
 
-    if len(generic_refs) > _MAX_REFERENCE_FILES:
+    if len(generic_refs) > MAX_REFERENCE_FILES:
         raise ValueError(
-            f"{FAL_H3_MAX_MODEL} accepts at most {_MAX_REFERENCE_FILES} reference files"
+            f"{FAL_H3_MAX_MODEL} accepts at most {MAX_REFERENCE_FILES} reference files"
         )
     has_visual = any(ref.media_type in {"image", "video"} for ref in generic_refs)
     has_audio = any(ref.media_type == "audio" for ref in generic_refs)

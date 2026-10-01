@@ -43,6 +43,12 @@ Copy coaches, asset-kind prompt rules, scene skill packs, follow-up questions. S
 - `sanitize_enhancements` (Python, survives a published `AgentSkill`): drops 三视图/设定图/色板/分栏 additions on expression/scene passes and other-period labels when `scene_period` is set.
 - Polish: `PromptEnhanceRequest` carries `character_expressions` + `scene_*` → `PromptContext.asset_presets` → coach user message (`asset_presets` labels). With expressions, `_sanitize_enhance_outcome` runs `restore_expression_prompt` instead of `restore_character_sheet_prompt`.
 
+## Reference legend
+
+- At submit `back/app/domain/image_assets/reference_labels.py:label_references` writes `params["reference_labels"]` (`角色「林夏」设定图`, `角色「林夏」·婚礼`, `场景「客厅」主图`, `场景「客厅」·黄昏`) for references belonging to the job's picked/targeted characters and scenes.
+- `nodes._with_reference_legend` prefixes `prompt_builder.reference_legend` (`参考图说明：图1 是…；图2 是…`) onto the provider prompt only; it numbers generic image references (`ProviderReference.asset_id`, no `frame_type`) truncated to `ProviderCapability.max_image_references` (`media_endpoints._max_image_references`: DMXAPI image profile, AiHubMix `image_reference_cap` — gpt-image-2 edits = 1, minimax_v2/fal video caps) and stays silent when the cap is unknown, <2 images, first/last frames are present, or nothing is labelled.
+- The GENERATING event logs `prompt` (with legend) and `base_prompt` (without); `fast_retry._resolved_prompt` reads `base_prompt` / `strip_reference_legend` so a retry never doubles it.
+
 ## Scene plates
 
 - Rule (`_ASSET_KIND_BRIEF["scene"]`, `ENHANCE_SYSTEM_PROMPT_SCENE`): empty plate, no people/silhouettes, single camera, one continuous space, occlusion holds (a closed door stays closed), no split/alternative viewpoints, explicit era/region (or worldbuilding) and a fixed visual medium.

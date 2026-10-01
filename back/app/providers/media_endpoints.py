@@ -24,6 +24,9 @@ from app.providers.aihubmix_media import (
     NativeVideoModelProfile,
     native_video_profile,
 )
+from app.providers.aihubmix_media import (
+    image_reference_cap as aihubmix_image_reference_cap,
+)
 from app.providers.base import GenerationProvider, ProviderCapability
 from app.providers.dmxapi_media import (
     DmxApiMediaProvider,
@@ -32,10 +35,16 @@ from app.providers.dmxapi_media import (
     VideoModelProfile as DmxApiVideoModelProfile,
 )
 from app.providers.dmxapi_media import (
+    image_model_profile as dmxapi_image_profile,
+)
+from app.providers.dmxapi_media import (
     music_style_for_model as dmxapi_music_style_for_model,
 )
 from app.providers.dmxapi_media import (
     video_model_profile as dmxapi_video_profile,
+)
+from app.providers.fal_media import (
+    MAX_REFERENCE_FILES as FAL_MAX_REFERENCE_FILES,
 )
 from app.providers.fal_media import (
     FalMediaProvider,
@@ -48,6 +57,9 @@ from app.providers.fal_media import (
 )
 from app.providers.fal_media import (
     video_model_profile as fal_video_profile,
+)
+from app.providers.minimax_v2_media import (
+    MAX_REFERENCE_IMAGES as MINIMAX_V2_MAX_REFERENCE_IMAGES,
 )
 from app.providers.minimax_v2_media import (
     MinimaxV2MediaProvider,
@@ -202,6 +214,7 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                 accepts_video_reference=_accepts_video_reference(
                     endpoint.protocol, endpoint.model, video_profile
                 ),
+                max_image_references=_max_image_references(endpoint.protocol, endpoint.model, tag),
                 provider_factory=_factory(
                     endpoint_id=endpoint_id,
                     capability_tag=tag,
@@ -263,6 +276,29 @@ def _accepts_video_reference(
         modes = getattr(video_profile, "reference_modes", None) or frozenset()
         return "input_references" in modes
     return False
+
+
+_IMAGE_TAGS = frozenset({"text_to_image", "image_to_image"})
+_VIDEO_TAGS = frozenset({"text_to_video", "image_to_video", "video_to_video"})
+
+
+def _max_image_references(protocol: str | None, model: str, tag: str) -> int | None:
+    """See `ProviderCapability.max_image_references`. Only adapters whose
+    truncation is known are listed; anything else stays `None` (unknown)."""
+    if tag in _IMAGE_TAGS:
+        if protocol == "dmxapi":
+            profile = dmxapi_image_profile(model)
+            return profile.max_reference_count if profile is not None else None
+        if protocol in {"minimax", "openai", "dashscope", None}:
+            return aihubmix_image_reference_cap(model)
+        return None
+    if tag in _VIDEO_TAGS:
+        if protocol == "minimax_v2":
+            return MINIMAX_V2_MAX_REFERENCE_IMAGES
+        if protocol == "fal":
+            return FAL_MAX_REFERENCE_FILES
+        return None
+    return None
 
 
 def _music_styles_for(protocol: str | None, model: str, tag: str) -> frozenset[str] | None:

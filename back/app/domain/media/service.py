@@ -551,6 +551,7 @@ def provider_references_for(
             object_key=by_id[asset_id].object_key,
             media_type=by_id[asset_id].media_type,
             frame_type=frame_type,
+            asset_id=asset_id,
         )
         for asset_id, frame_type in ordered
         if asset_id in by_id

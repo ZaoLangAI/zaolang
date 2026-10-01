@@ -29,6 +29,7 @@ from app.domain.errors import (
     SpendLimitExceeded,
     ValidationFailed,
 )
+from app.domain.image_assets import reference_labels
 from app.domain.jobs import state_machine as sm
 from app.domain.media import service as media_service
 from app.domain.notifications import push as notifications
@@ -234,6 +235,7 @@ def submit(
     characters_service.apply_character_refs(session, user_id=user_id, params=params)
     characters_service.ensure_expression_reference(session, user_id=user_id, params=params)
     scenes_service.apply_scene_refs(session, user_id=user_id, params=params)
+    reference_labels.label_references(session, user_id=user_id, params=params)
     media_service.attach_licensed_source_video(
         session, params=params, source_work_version_id=source_work_version_id
     )
