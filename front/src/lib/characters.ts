@@ -49,6 +49,8 @@ export function characterImageStudioHref(input: {
   name: string;
   appearance?: string | null;
   returnTo?: string;
+  /** File the sheet under this look (`target_variant_id`). */
+  variantId?: string;
 }): string {
   const params = new URLSearchParams({
     mode: 'image_creation',
@@ -58,6 +60,7 @@ export function characterImageStudioHref(input: {
     subjectNameHint: input.name.trim().slice(0, 60),
     returnTo: input.returnTo ?? CHARACTER_LIBRARY_RETURN_TO,
   });
+  if (input.variantId) params.set('targetVariantId', input.variantId);
   return `/create/new?${params.toString()}`;
 }
 

@@ -90,11 +90,14 @@ export function CharacterPresetFields({
   onExpressionsChange,
   outfitLabel,
   onOutfitLabelChange,
+  outfitDisabled = false,
 }: {
   expressions: CharacterExpression[];
   onExpressionsChange: (next: CharacterExpression[]) => void;
   outfitLabel: string;
   onOutfitLabelChange: (next: string) => void;
+  /** A target look is picked — the output already has a home. */
+  outfitDisabled?: boolean;
 }) {
   const t = useTranslations('remixPage');
   const outfitId = useId();
@@ -130,7 +133,7 @@ export function CharacterPresetFields({
         type="text"
         value={outfitLabel}
         maxLength={MAX_OUTFIT_LABEL_LENGTH}
-        disabled={expressions.length > 0}
+        disabled={expressions.length > 0 || outfitDisabled}
         onChange={(event) => onOutfitLabelChange(event.target.value)}
         placeholder={t('presets.outfitPlaceholder')}
         className="h-9 rounded-[var(--radius-sm)] border border-border bg-transparent px-3 text-sm text-text placeholder:text-muted disabled:opacity-50"

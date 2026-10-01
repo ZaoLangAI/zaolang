@@ -460,10 +460,10 @@ export function ScriptClipStudio({
       assetPresets: {
         character_ref_selection: characterRefPicks
           .selectionFor(selectedReferenceCharacterIds)
-          .map(({ ownerId, asset_ids }) => ({ character_id: ownerId, asset_ids })),
+          .map(({ ownerId, ...pick }) => ({ character_id: ownerId, ...pick })),
         scene_ref_selection: sceneRefPicks
           .selectionFor(selectedReferenceSceneIds)
-          .map(({ ownerId, asset_ids }) => ({ scene_id: ownerId, asset_ids })),
+          .map(({ ownerId, ...pick }) => ({ scene_id: ownerId, ...pick })),
       },
       maxCredits: quote?.credits,
       draftTitle: located.scene.heading || script.title || null,
@@ -538,12 +538,10 @@ export function ScriptClipStudio({
                   {checked ? (
                     <ReferenceImagePicker
                       label={t('referencePickLabel', { name: character.name })}
-                      assets={character.reference_assets ?? []}
-                      selected={
-                        characterRefPicks.picks[character.id] ??
-                        defaultCharacterReferenceIds(character)
-                      }
-                      onChange={(ids) => characterRefPicks.set(character.id, ids)}
+                      variants={character.looks ?? []}
+                      defaultAssetIds={defaultCharacterReferenceIds(character)}
+                      value={characterRefPicks.picks[character.id]}
+                      onChange={(pick) => characterRefPicks.set(character.id, pick)}
                     />
                   ) : null}
                 </li>
@@ -571,11 +569,10 @@ export function ScriptClipStudio({
         {selectedScene ? (
           <ReferenceImagePicker
             label={t('referencePickLabel', { name: selectedScene.name })}
-            assets={selectedScene.reference_assets ?? []}
-            selected={
-              sceneRefPicks.picks[selectedScene.id] ?? defaultSceneReferenceIds(selectedScene)
-            }
-            onChange={(ids) => sceneRefPicks.set(selectedScene.id, ids)}
+            variants={selectedScene.variants ?? []}
+            defaultAssetIds={defaultSceneReferenceIds(selectedScene)}
+            value={sceneRefPicks.picks[selectedScene.id]}
+            onChange={(pick) => sceneRefPicks.set(selectedScene.id, pick)}
           />
         ) : null}
         <Link href="/create/scenes" className="text-[11px] text-muted hover:text-text">

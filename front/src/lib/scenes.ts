@@ -20,6 +20,10 @@ export function sceneImageStudioHref(input: {
   name: string;
   description?: string | null;
   returnTo?: string;
+  /** File the image under this variant (`target_variant_id`)… */
+  variantId?: string;
+  /** …and pre-select its lighting/weather presets. */
+  presets?: { lighting?: string | null; weather?: string | null };
 }): string {
   const params = new URLSearchParams({
     mode: 'image_creation',
@@ -29,6 +33,9 @@ export function sceneImageStudioHref(input: {
     subjectNameHint: input.name.trim().slice(0, 60),
     returnTo: input.returnTo ?? SCENE_LIBRARY_RETURN_TO,
   });
+  if (input.variantId) params.set('targetVariantId', input.variantId);
+  if (input.presets?.lighting) params.set('sceneLighting', input.presets.lighting);
+  if (input.presets?.weather) params.set('sceneWeather', input.presets.weather);
   return `/create/new?${params.toString()}`;
 }
 

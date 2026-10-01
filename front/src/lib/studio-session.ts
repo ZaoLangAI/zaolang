@@ -47,6 +47,8 @@ export function studioSessionKey(input: {
   skillId?: string;
   /** Scene lighting/weather presets from a script heading jump-out. */
   scenePresets?: string;
+  /** The look / scene variant a library jump-out files into. */
+  targetVariantId?: string;
 }): string {
   if (input.draftId) {
     return input.jobId ? `draft:${input.draftId}|job:${input.jobId}` : `draft:${input.draftId}`;
@@ -63,6 +65,7 @@ export function studioSessionKey(input: {
     input.continuitySourceAssetId,
     input.skillId,
     input.scenePresets,
+    input.targetVariantId,
   ]
     .filter((part) => Boolean(part))
     .join('|');

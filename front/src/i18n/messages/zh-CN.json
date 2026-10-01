@@ -1763,7 +1763,8 @@
     "deleteViewLabel": "删除{view}参考图",
     "actionClipsLabel": "关联视频",
     "deleteConfirmTitle": "删除这个角色？",
-    "deleteConfirmBody": "删除「{name}」后无法恢复，设定图和音色描述都会一并移除。"
+    "deleteConfirmBody": "删除「{name}」后无法恢复，设定图和音色描述都会一并移除。",
+    "manageLooks": "管理造型"
   },
   "collectionPage": {
     "eyebrow": "MY LIBRARY",
@@ -3217,7 +3218,14 @@
         "contemporary": "当代",
         "near_future": "近未来"
       }
-    }
+    },
+    "targetLook": "归档到造型",
+    "targetLookHint": "生成结果会加入所选造型。",
+    "targetLookAuto": "自动（按造型名称或默认造型）",
+    "targetSceneVariant": "归档到变体",
+    "targetSceneVariantHint": "生成结果会加入所选变体。",
+    "targetSceneVariantAuto": "自动（按预设或主场景）",
+    "referencePickLookDefault": "未勾选图片时，使用该造型的默认参考图。"
   },
   "scenes": {
     "eyebrow": "场景库",
@@ -3250,7 +3258,8 @@
     "clipsLabel": "关联视频",
     "generateSceneVideo": "生成场景视频 →",
     "deleteConfirmTitle": "删除这个场景？",
-    "deleteConfirmBody": "删除「{name}」后无法恢复，参考素材都会一并移除。"
+    "deleteConfirmBody": "删除「{name}」后无法恢复，参考素材都会一并移除。",
+    "manageVariants": "管理变体"
   },
   "scriptStudio": {
     "title": "文案创作",
@@ -3711,5 +3720,46 @@
     "unlockCta": "积分解锁并二创",
     "needsUnlock": "该作品允许二创，需先用积分解锁。",
     "goBilling": "去充值"
+  },
+  "assetVariants": {
+    "titleLooks": "「{name}」的造型",
+    "titleVariants": "「{name}」的场景变体",
+    "hintLooks": "每个造型有自己的设定图、视角与表情；生成视频时可按造型选择参考图。",
+    "hintVariants": "每个变体（光照、天气、状态、时期）有自己的主图与机位；生成时可按变体选择参考图。",
+    "default": "默认",
+    "newLook": "新建造型",
+    "newVariant": "新建变体",
+    "name": "名称",
+    "lookPlaceholder": "如：婚礼、战甲、少年时期",
+    "variantPlaceholder": "如：黄昏雨、战损",
+    "create": "创建",
+    "genericError": "操作失败，请稍后重试。",
+    "uploaded": "参考图已添加",
+    "lookDescription": "服装与配饰描述",
+    "variantDescription": "变体说明",
+    "save": "保存",
+    "makeDefault": "设为默认",
+    "deleteLook": "删除造型",
+    "deleteVariant": "删除变体",
+    "generateHere": "生成到此处",
+    "upload": "上传图片",
+    "emptyVariant": "还没有图片，可上传或生成。",
+    "anchor": "锚点",
+    "entryType": "类型",
+    "moveTo": "移动到",
+    "setAnchor": "设为锚点",
+    "removeEntry": "移除",
+    "type": {
+      "identity_portrait": "定妆照",
+      "character_sheet": "设定图",
+      "view": "视角图",
+      "expression_sheet": "表情合集",
+      "pose": "姿态",
+      "outfit_detail": "服装细节",
+      "prop": "道具",
+      "master": "主图",
+      "shot": "机位",
+      "other": "其他"
+    }
   }
 }

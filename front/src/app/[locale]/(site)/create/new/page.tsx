@@ -146,6 +146,7 @@ export default async function NewCreationPage({
     skillId?: string;
     sceneLighting?: string;
     sceneWeather?: string;
+    targetVariantId?: string;
   }>;
 }) {
   const {
@@ -172,6 +173,7 @@ export default async function NewCreationPage({
     skillId,
     sceneLighting,
     sceneWeather,
+    targetVariantId,
   } = await searchParams;
   const t = await getTranslations('createPage');
 
@@ -271,6 +273,7 @@ export default async function NewCreationPage({
           linkBreakpointKey,
           continuitySourceAssetId: resolvedContinuityAssetId,
           skillId: resolvedSkillId,
+          targetVariantId: parseVariantId(targetVariantId),
           scenePresets: [initialScenePresets.lighting, initialScenePresets.weather]
             .filter(Boolean)
             .join('+'),
@@ -297,7 +300,13 @@ export default async function NewCreationPage({
         initialSkillId={resolvedSkillId}
         initialReferenceAssetIds={resolvedReferenceAssetIds}
         initialScenePresets={initialScenePresets}
+        initialTargetVariantId={parseVariantId(targetVariantId)}
       />
     </div>
   );
+}
+
+/** A look / scene variant id (`skv_…`) from the query string, else nothing. */
+function parseVariantId(raw: string | undefined): string | undefined {
+  return raw && /^skv_[0-9a-z]{10,40}$/.test(raw) ? raw : undefined;
 }

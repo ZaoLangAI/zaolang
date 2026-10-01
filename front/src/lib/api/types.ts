@@ -126,6 +126,9 @@ export type PublicationStatus = S['PublicationStatus'];
 
 export type Character = S['CharacterResponse'];
 export type Scene = S['SceneResponse'];
+export type AssetVariant = S['AssetVariantView'];
+export type AssetEntry = S['AssetEntryView'];
+export type AssetEntryType = S['AssetEntryView']['entry_type'];
 
 export type DramaSeries = S['DramaSeriesResponse'];
 export type DramaEpisode = S['DramaEpisodeResponse'];
