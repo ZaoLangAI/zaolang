@@ -25755,7 +25755,7 @@
               "type": "string"
             },
             "type": "array",
-            "maxItems": 12,
+            "maxItems": 24,
             "title": "Reference Asset Ids"
           },
           "voice_description": {
@@ -26046,7 +26046,7 @@
                   "type": "string"
                 },
                 "type": "array",
-                "maxItems": 12
+                "maxItems": 24
               },
               {
                 "type": "null"
@@ -37647,7 +37647,7 @@
               "type": "string"
             },
             "type": "array",
-            "maxItems": 8,
+            "maxItems": 24,
             "title": "Reference Asset Ids"
           }
         },
@@ -37945,7 +37945,7 @@
                   "type": "string"
                 },
                 "type": "array",
-                "maxItems": 8
+                "maxItems": 24
               },
               {
                 "type": "null"

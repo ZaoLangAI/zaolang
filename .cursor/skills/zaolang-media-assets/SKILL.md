@@ -33,7 +33,7 @@ Not here → `zaolang-editor-drama` (media analysis/ASR, episode previews, `/v1/
 4. `generation_reference` videos are conformed on complete only if container, codec, pix_fmt, fps (23.98–60) or duration would be refused; the `.mp4` replaces the original key, size, checksum. No ffmpeg → original kept.
 5. Private bucket. `signed_url_for` allows owner, `viewer_is_staff` (no consumer route passes it — a consumer session's admin role never counts) or non-`PRIVATE`, else 404 (never 403). `media_urls.asset_url` signs without checking — call it only after an access decision. Playback URLs stay inline; Save-as mints `Content-Disposition: attachment` (`download_filename_for`). No `<a download>`, no blob fetch.
 6. `publish_asset` only flips visibility to `PUBLIC_VIEW_ONLY` in the publish transaction — no object move.
-7. `delete_exclusive_assets` skips shared assets; a new pointer column at `Asset` needs an `_is_shared` branch.
+7. `delete_exclusive_assets` skips shared assets — including any image filed on a character/scene card (`SkillAssetEntry`); a new pointer column at `Asset` needs an `_is_shared` branch.
 8. References: owner, the remixable source output, or a published skill cover (`_asset_is_usable_reference`). Providers get signed URLs only. Voice samples need `voice` consent, `depicts_real_person` refs `portrait` consent, else 422.
 9. pHash in `ContentFingerprint.fingerprint_hex` + `fingerprint_bits`, images only. `find_near_duplicates` (Hamming ≤ 6) has no prod caller; admin duplicates group exact hex.
 10. `record_provenance` → `ProvenanceManifest` on generated outputs, editor exports and assets-pack imports; C2PA signing not implemented.

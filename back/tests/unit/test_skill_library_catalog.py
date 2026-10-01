@@ -6,6 +6,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.asset_variants import service as asset_variants_service
 from app.domain.skill_library import catalog as skill_catalog
 from app.domain.skill_library import service as skill_library_service
 from app.models import Asset, CreationSkill, User
@@ -216,6 +217,11 @@ def test_seeded_character_and_scene_assets_get_a_reference_still(db: Session, au
             assert row.category == CreationSkillCategory.COVER_ASSET
             assert "character" not in (row.params_json or {})
             assert "scene" not in (row.params_json or {})
+            continue
+        # The tables are the source; the JSON above is their mirror.
+        anchor = asset_variants_service.anchor(row)
+        assert anchor is not None and anchor.asset_id == row.cover_asset_id, row.title
+        assert anchor.variant.is_default
 
 
 def test_video_only_categories_never_declare_image_operations(db: Session, author: User) -> None:

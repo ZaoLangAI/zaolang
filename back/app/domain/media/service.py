@@ -39,6 +39,7 @@ from app.models import (
     Profile,
     ProvenanceManifest,
     Series,
+    SkillAssetEntry,
     UploadSession,
     Work,
     WorkVersion,
@@ -900,6 +901,14 @@ def _is_shared(session: Session, asset_id: str, except_work_id: str) -> bool:
 
     series_logo = session.scalar(select(Series.id).where(Series.logo_asset_id == asset_id).limit(1))
     if series_logo is not None:
+        return True
+
+    # A character/scene card's reference image (look/variant entry): deleting
+    # the work it first came from must not take the card's image with it.
+    skill_entry = session.scalar(
+        select(SkillAssetEntry.id).where(SkillAssetEntry.asset_id == asset_id).limit(1)
+    )
+    if skill_entry is not None:
         return True
 
     episode_preview = session.scalar(

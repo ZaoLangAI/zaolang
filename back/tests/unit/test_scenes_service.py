@@ -233,12 +233,9 @@ def test_remove_reference_asset_survives_a_fresh_reload(db: Session, author: Use
     assert reloaded.reference_assets == []
 
 
-def test_append_reference_asset_accumulates_shots_that_share_a_view(
-    db: Session, author: User
-) -> None:
-    """Unlike a character's fixed views, a scene keeps every `establishing`
-    shot (up to the cap) — only re-adding the *same* asset replaces its entry,
-    moving it to the end instead of listing it twice."""
+def test_a_new_establishing_shot_becomes_the_master_plate(db: Session, author: User) -> None:
+    """A variant has one master plate: a newer `establishing` image takes
+    over (and the anchor), the previous master stays on as a shot."""
     scene = scenes_service.create_scene(
         db, user_id=author.id, name="便利店", description=None, reference_asset_ids=[]
     )
@@ -253,7 +250,8 @@ def test_append_reference_asset_accumulates_shots_that_share_a_view(
 
     db.expire_all()
     reloaded = scenes_service.get_scene(db, user_id=author.id, scene_id=scene.id)
-    assert reloaded.reference_asset_ids == [first.id, second.id]
+    assert reloaded.reference_asset_ids == [second.id, first.id]
+    assert [entry["view"] for entry in reloaded.reference_assets] == ["establishing", "general"]
 
     scenes_service.append_reference_asset(
         db, user_id=author.id, scene_id=scene.id, asset_id=first.id, view="detail"
@@ -323,18 +321,18 @@ def _attach_shot(db: Session, author: User, scene_id: str, *, label: str | None 
     return asset
 
 
-def test_trimming_never_evicts_the_master_plate(db: Session, author: User) -> None:
+def test_a_full_variant_refuses_more_images_and_keeps_the_master(db: Session, author: User) -> None:
     scene = _scene(db, author)
     master = _attach_shot(db, author, scene.id)
-    variants = [
-        _attach_shot(db, author, scene.id, label=f"变体{i}")
-        for i in range(scenes_service.MAX_REFERENCE_ASSETS + 1)
-    ]
+    for _ in range(scenes_service.MAX_REFERENCE_ASSETS - 1):
+        _attach_shot(db, author, scene.id)
+    with pytest.raises(ValidationFailed):
+        _attach_shot(db, author, scene.id)
     ids = scenes_service.get_scene(db, user_id=author.id, scene_id=scene.id).reference_asset_ids
     assert len(ids) == scenes_service.MAX_REFERENCE_ASSETS
-    assert master.id in ids
-    assert variants[0].id not in ids
-    assert variants[-1].id in ids
+    assert ids[0] == master.id
+    # Labelled variants have their own room.
+    _attach_shot(db, author, scene.id, label="黄昏")
 
 
 def test_apply_scene_refs_skips_labelled_variants_by_default(db: Session, author: User) -> None:

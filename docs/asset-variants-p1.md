@@ -330,10 +330,18 @@ class AssetEntryType(StrEnum):
 - `zaolang-generation-jobs › reference-asset-pipeline`：写回定位；
 - `zaolang-media-assets`：第 7 条新增指针分支。
 
-## 12. 待决问题
+## 12. 已决问题（2026-10-01，按建议）
 
-1. **造型是否需要独立售卖？** 本稿按"不单独售卖、随卡解锁"设计。如果要卖"造型包"，需要把 `access_credits` 下沉到造型，并调整解锁与授权模型，属于更大的改动。
-2. **年龄阶段**：用造型的 `presets_json.age_stage` 表达，还是单独做成造型类型？建议前者，到 P2 再定词汇表。
-3. **候选 / 定稿流程**：P1 默认全部定稿。是否在 P1 就让写回产物默认为候选，由用户确认后再定稿？这会影响默认选图子集。
-4. **`action_clips` 是否并入条目表**（`entry_type=action_clip`，视频）：可以统一管理，但解析器必须过滤，避免把视频交给图片任务。建议放到 P2。
-5. **迁移 B 的时机**：至少隔一个线上版本，确认迁移 A 之后没有回滚需求再执行。
+1. **造型不单独售卖**：随卡解锁，`access_credits` 仍只在卡片上。
+2. **年龄阶段**：用造型的 `presets_json.age_stage` 表达，词汇表到 P2 再定。
+3. **候选 / 定稿**：P1 中迁移和写回的条目默认都是定稿（`approved`），候选流程在 P2 引入。
+4. **`action_clips`**：留在 JSON 中，P2 再评估是否并入条目表。
+5. **迁移 B 的时机**：至少隔一个线上版本再执行。
+
+## 13. P1-1 实现补充：JSON 镜像
+
+P1-1 期间，表是唯一的数据源。但每次变更造型 / 条目之后，都会把第 5 节的投影**回写**到 `params_json[...]["reference_assets"]`（`asset_variants.service.sync_mirror`）。这样做有三个好处：
+
+- 仍直接读取原始 JSON 的地方（画布缩略图、前端 `firstSkillReferenceAssetId`、技能详情的 `params`）在 P1-3 改造之前继续正确；
+- 迁移 A 的 downgrade 不会丢失数据；
+- 迁移 B 把镜像连同 JSON 字段一起删掉。
