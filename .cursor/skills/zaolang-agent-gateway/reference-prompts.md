@@ -36,10 +36,10 @@ Copy coaches, asset-kind prompt rules, scene skill packs, follow-up questions. S
 
 ## Prompt builder (`back/app/domain/image_assets/prompt_builder.py`)
 
-- `resolve_pass` → `AssetPass` (`character_sheet`/`character_completion`/`character_expressions`/`scene`/`scene_variant_group`/`other`); `compose` writes the pass's fixed text before the planner runs; `execute_asset_planning` passes `asset_pass` to `planner.plan_asset`.
+- `resolve_pass` → `AssetPass` (`character_sheet`/`character_completion`/`character_expressions`/`scene`/`other`; a scene variant set is one `scene` pass per variant); `compose` writes the pass's fixed text before the planner runs; `execute_asset_planning` passes `asset_pass` to `planner.plan_asset`.
 - Expression pass: `EXPRESSION_IDENTITY_PREFIX` + caller identity + `expression_layout` (grid from `vocabulary.expression_grid`, one sentence per cell) + medium lock; never the sheet suffix. Per-expression negatives only for a single close-up (they contradict across cells).
 - Outfit sheet with a reference: `OUTFIT_CHANGE_PREFIX` locks face/hair/body to reference 1.
-- Scene: preset fragments + period cues (pitfalls → negative); with a reference, `SCENE_VARIANT_PREFIX` pins geometry to reference 1. Variant group: `compose_scene_group` (one `图N：` line per variant) and `group_labels` for write-back.
+- Scene: preset fragments + period cues (pitfalls → negative); with a reference, `SCENE_VARIANT_PREFIX` pins geometry to reference 1. 
 - `sanitize_enhancements` (Python, survives a published `AgentSkill`): drops 三视图/设定图/色板/分栏 additions on expression/scene passes and other-period labels when `scene_period` is set.
 - Polish: `PromptEnhanceRequest` carries `character_expressions` + `scene_*` → `PromptContext.asset_presets` → coach user message (`asset_presets` labels). With expressions, `_sanitize_enhance_outcome` runs `restore_expression_prompt` instead of `restore_character_sheet_prompt`.
 

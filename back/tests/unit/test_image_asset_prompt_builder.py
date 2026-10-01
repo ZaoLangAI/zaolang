@@ -27,7 +27,8 @@ def test_resolve_pass_picks_each_pass_kind() -> None:
             asset_kind="scene",
             character_view=None,
         )
-        is pb.AssetPass.SCENE_VARIANT_GROUP
+        # A variant set is one SCENE pass per variant (`nodes._pass_params`).
+        is pb.AssetPass.SCENE
     )
     assert pb.resolve_pass({}, asset_kind="cover", character_view=None) is pb.AssetPass.OTHER
 
@@ -116,17 +117,6 @@ def test_a_scene_without_presets_is_left_alone() -> None:
         "便利店",
         None,
     )
-
-
-def test_scene_variant_group_lists_one_line_per_image() -> None:
-    params = {"scene_variants": [{"lighting": "day"}, {"lighting": "dusk", "weather": "rain"}]}
-    prompt, negative = pb.compose(
-        pb.AssetPass.SCENE_VARIANT_GROUP, prompt="老式客厅", negative=None, params=params
-    )
-    assert "共 2 张独立的场景图" in prompt
-    assert "图1：" in prompt and "图2：" in prompt
-    assert negative is not None and "分格" in negative
-    assert pb.group_labels(params) == ["白天", "黄昏 / 雨"]
 
 
 def test_sanitize_enhancements_drops_sheet_layout_and_foreign_eras() -> None:

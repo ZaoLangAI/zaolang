@@ -238,10 +238,11 @@ IMAGE_MODEL_PROFILES: dict[str, ImageModelProfile] = {
         max_total_pixels=4_194_304,
         min_aspect_ratio=1 / 16,
         max_aspect_ratio=16.0,
-        # Request/response shape follows Volcengine Ark's documented
-        # `sequential_image_generation`; confirm with
-        # `tests/live/test_seedream_group_live.py` against a real key.
-        max_group_outputs=4,
+        # Live check (2026-10-01, `tests/test_seedream_group_live.py`): DMXAPI
+        # accepts `sequential_image_generation` (HTTP 200) but returned one
+        # image for `max_images=2`, so group output stays off. Scene variant
+        # sets loop one pass per variant instead (`nodes._pass_params`).
+        max_group_outputs=1,
     ),
 }
 # Ark: input reference images + requested outputs must stay within 15.

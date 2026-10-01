@@ -544,12 +544,6 @@ def _planner_asset_plan(payload: dict[str, Any]) -> dict[str, Any]:
             "prompt_enhancements": ["各格五官、发型与服装保持一致"],
             "negative_prompt_suggestions": ["多人入镜", "表情雷同"],
         }
-    if asset_pass == "scene_variant_group":
-        return {
-            "subject_name": subject_name,
-            "prompt_enhancements": ["各张机位与陈设布局保持一致"],
-            "negative_prompt_suggestions": list(_ASSET_KIND_NEGATIVES["scene"]),
-        }
 
     enhancements = ["电影感布光", "浅景深"]
     if isinstance(source_params, dict):

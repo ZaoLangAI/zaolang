@@ -924,9 +924,10 @@ def test_submit_seedream_group_stores_each_image_and_reports_delivery(
     assert result.metadata["delivered_outputs"] == 2
 
 
-def test_seedream_profile_advertises_group_output() -> None:
+def test_seedream_profile_keeps_group_output_off() -> None:
     from app.providers.media_endpoints import _max_outputs_per_call
 
-    assert _max_outputs_per_call("dmxapi", SEEDREAM_5_PRO_MODEL, "text_to_image") == 4
+    # Live check returned one image for max_images=2 — group output stays off.
+    assert _max_outputs_per_call("dmxapi", SEEDREAM_5_PRO_MODEL, "text_to_image") == 1
     assert _max_outputs_per_call("dmxapi", SEEDREAM_5_PRO_MODEL, "text_to_video") == 1
     assert _max_outputs_per_call("openai", "gpt-image-2", "text_to_image") == 1

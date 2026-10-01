@@ -40,7 +40,6 @@ class AssetPass(StrEnum):
     CHARACTER_COMPLETION = "character_completion"
     CHARACTER_EXPRESSIONS = "character_expressions"
     SCENE = "scene"
-    SCENE_VARIANT_GROUP = "scene_variant_group"
     OTHER = "other"
 
 
@@ -102,7 +101,6 @@ EXPRESSION_COMMON_NEGATIVE = (
 SCENE_VARIANT_PREFIX = (
     "以参考图1为基准，保持建筑结构、门窗位置、机位、透视与陈设布局完全一致，仅改变：{label}。"
 )
-SCENE_GROUP_NEGATIVE = "拼接画面、分格、分屏、并排的多幅画面、多画面合成、画中画"
 
 # Markers that only belong in a character sheet; an expression or a scene
 # variant pass must never pick them up from the planner.
@@ -157,14 +155,6 @@ def _expressions(params: dict[str, Any]) -> list[str]:
     return [str(key) for key in raw if str(key) in EXPRESSION_PRESETS]
 
 
-def _scene_variants(params: dict[str, Any]) -> list[dict[str, str]]:
-    raw = params.get("scene_variants")
-    if not isinstance(raw, list):
-        return []
-    variants = [scene_presets_from(item) for item in raw if isinstance(item, dict)]
-    return [variant for variant in variants if variant]
-
-
 def resolve_pass(
     params: dict[str, Any], *, asset_kind: str | None, character_view: str | None
 ) -> AssetPass:
@@ -175,8 +165,9 @@ def resolve_pass(
             return AssetPass.CHARACTER_EXPRESSIONS
         return AssetPass.CHARACTER_SHEET
     if asset_kind == ImageAssetKind.SCENE.value:
-        if len(_scene_variants(params)) >= 2:
-            return AssetPass.SCENE_VARIANT_GROUP
+        # A scene variant set runs one SCENE pass per variant, with that
+        # variant's presets already folded into the params
+        # (`nodes._pass_params`).
         return AssetPass.SCENE
     return AssetPass.OTHER
 
@@ -203,10 +194,6 @@ def compose(
     if asset_pass is AssetPass.SCENE:
         return _compose_scene(
             prompt, negative, scene_presets_from(params), has_reference=has_reference
-        )
-    if asset_pass is AssetPass.SCENE_VARIANT_GROUP:
-        return compose_scene_group(
-            prompt, negative, _scene_variants(params), has_reference=has_reference
         )
     return prompt, negative
 
@@ -299,36 +286,6 @@ def _compose_scene(
     return _join(prompt, f"{fragment}。"), merge_negative(negative, preset_negative)
 
 
-def compose_scene_group(
-    prompt: str,
-    negative: str | None,
-    variants: list[dict[str, str]],
-    *,
-    has_reference: bool,
-) -> tuple[str, str]:
-    """One provider call, N separate scene images — one per variant, in order."""
-    lines = []
-    for index, variant in enumerate(variants, 1):
-        fragment, _ = scene_preset_fragments(variant)
-        lines.append(f"图{index}：{fragment}")
-    head = (
-        f"生成一组共 {len(variants)} 张独立的场景图，每张都是完整的单幅画面"
-        "（不要拼接、分格或并排）。所有图片是同一场景、同一机位与构图、相同的建筑结构与陈设布局，"
-        "仅以下条件不同——"
-    )
-    if has_reference:
-        head = "以参考图1为基准，保持建筑结构、门窗位置、机位、透视与陈设布局完全一致。" + head
-    composed = (
-        f"{head}{'；'.join(lines)}。场景描述：{prompt}" if prompt else f"{head}{'；'.join(lines)}。"
-    )
-    return composed, merge_negative(negative, SCENE_GROUP_NEGATIVE)
-
-
-def group_labels(params: dict[str, Any]) -> list[str]:
-    """One write-back label per variant of a scene variant group, in order."""
-    return [scene_preset_label(variant)[:60] for variant in _scene_variants(params)]
-
-
 def _other_period_markers(period: str) -> list[str]:
     markers: list[str] = []
     for key, preset in PERIOD_PRESETS.items():
@@ -352,11 +309,9 @@ def sanitize_enhancements(
         text = str(item or "").strip()
         if not text:
             continue
-        if asset_pass in (
-            AssetPass.CHARACTER_EXPRESSIONS,
-            AssetPass.SCENE,
-            AssetPass.SCENE_VARIANT_GROUP,
-        ) and any(marker in text for marker in _SHEET_MARKERS):
+        if asset_pass in (AssetPass.CHARACTER_EXPRESSIONS, AssetPass.SCENE) and any(
+            marker in text for marker in _SHEET_MARKERS
+        ):
             continue
         if foreign_periods and any(marker in text for marker in foreign_periods):
             continue

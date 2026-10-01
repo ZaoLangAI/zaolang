@@ -52,7 +52,6 @@ import {
 import {
   type CharacterExpression,
   hasScenePreset,
-  MIN_SCENE_VARIANTS,
   type ScenePresets,
   scenePresetParams,
 } from '@/features/image-assets/vocabulary';
@@ -573,15 +572,9 @@ export function ImageGenerationStudio({
   const aspectOptions = orientation === 'landscape' ? LANDSCAPE_ASPECTS : PORTRAIT_ASPECTS;
 
   const isScene = assetKind === 'scene';
-  const groupAvailable = modelOptions.some(
-    (option) =>
-      (option.max_outputs_per_call ?? 1) >= MIN_SCENE_VARIANTS &&
-      (!forcedModel || option.model === forcedModel),
-  );
-  const variantCombos =
-    isScene && groupAvailable ? sceneVariantCombos(scenePresets, groupAxis, groupValues) : null;
+  const variantCombos = isScene ? sceneVariantCombos(scenePresets, groupAxis, groupValues) : null;
   // A group with too few values picked must not quietly submit one image.
-  const groupIncomplete = isScene && groupAvailable && groupAxis !== null && !variantCombos;
+  const groupIncomplete = isScene && groupAxis !== null && !variantCombos;
 
   const { quote, quoteFailed, submitting, error, submit } = useGenerationSubmit(
     {
@@ -752,7 +745,6 @@ export function ImageGenerationStudio({
             <ScenePresetFields
               presets={scenePresets}
               onPresetsChange={setScenePresets}
-              groupAvailable={groupAvailable}
               groupAxis={groupAxis}
               onGroupAxisChange={setGroupAxis}
               groupValues={groupValues}

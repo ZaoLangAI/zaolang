@@ -3163,10 +3163,10 @@
       "axisWeather": "天候",
       "axisState": "状態",
       "axisPeriod": "時代",
-      "groupLabel": "複数バリエーションを一度に生成",
+      "groupLabel": "複数バリエーションを生成",
       "groupOff": "オフ",
-      "groupHint": "変化させる項目を1つ選ぶと、同じカメラのバリエーションを1回でまとめて生成します。",
-      "groupActiveHint": "その項目で {min}〜{max} 個選んでください。実際に届いた枚数で精算します。",
+      "groupHint": "変化させる項目を1つ選ぶと、同じカメラのバリエーションを1枚ずつ続けて生成します。",
+      "groupActiveHint": "その項目で {min}〜{max} 個選んでください。バリエーション数で課金し、1枚ずつ生成します。",
       "groupAxisValues": "{axis}（複数選択）",
       "expression": {
         "neutral": "平静",

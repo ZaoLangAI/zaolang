@@ -480,45 +480,18 @@ def test_labelled_references_reach_the_provider_with_a_legend(db: Session, funde
     assert prompt.endswith(event.payload_json["base_prompt"])
 
 
-def test_a_scene_variant_group_delivers_labelled_images_and_prorates(
-    db: Session, funded: User, monkeypatch: pytest.MonkeyPatch
+def test_a_scene_variant_set_generates_one_labelled_image_per_variant(
+    db: Session, funded: User
 ) -> None:
-    """One group call for three variants that only returns two images:
-    the job succeeds with both images registered, each filed on the scene
-    under its own variant label, and the user pays for two of three."""
-    from dataclasses import replace
-
-    from app.agents import router
+    """Three variants → three passes of one image each on any single-output
+    model, all filed on the scene under their own labels, charged in full."""
     from app.domain.scenes import service as scenes_service
     from app.domain.workflow_templates import service as workflow_templates_service
-    from app.providers.base import GeneratedOutput
-    from app.storage.s3 import put_object
-    from tests import fake_providers
-    from tests.fake_provider_catalog import build_fake_catalog
 
-    def group_catalog():
-        catalog = build_fake_catalog()
-        catalog.pop("fake_open_workflow")
-        catalog["fake_paid_api"] = replace(catalog["fake_paid_api"], max_outputs_per_call=4)
-        return catalog
-
-    monkeypatch.setattr(router, "build_catalog", lambda session: group_catalog())
-    original = fake_providers.FakePaidApiProvider.submit
-
-    def group_submit(self, request):
-        result = original(self, request)
-        assert request.output_count == 3
-        extra_key = f"generated/{request.job_id}/output_{request.attempt_number}_1.png"
-        put_object(extra_key, b"png", content_type="image/png")
-        result.extra_outputs = [GeneratedOutput(object_key=extra_key, width=16, height=9)]
-        return result
-
-    monkeypatch.setattr(fake_providers.FakePaidApiProvider, "submit", group_submit)
     workflow_templates_service.ensure_default_templates(db)
     scene = scenes_service.create_scene(
         db, user_id=funded.id, name="客厅", description=None, reference_asset_ids=[]
     )
-
     job = jobs_service.submit(
         db,
         user_id=funded.id,
@@ -546,10 +519,10 @@ def test_a_scene_variant_group_delivers_labelled_images_and_prorates(
 
     assert outcome.status == JobStatus.SUCCEEDED
     db.refresh(job)
-    assert len(job.output_asset_ids_json or []) == 2
-    assert job.actual_credits == unit * 2
+    assert len(job.output_asset_ids_json or []) == 3
+    assert job.actual_credits == unit * 3
     entries = scenes_service.get_scene(db, user_id=funded.id, scene_id=scene.id).reference_assets
-    assert [entry["label"] for entry in entries] == ["白天", "黄昏"]
+    assert [entry["label"] for entry in entries] == ["白天", "黄昏", "夜·室内"]
 
 
 def _park_awaiting_input(db: Session, job: GenerationJob) -> None:
