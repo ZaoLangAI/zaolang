@@ -77,6 +77,7 @@ nav:
   - 视频提示词格式: video-prompt-formats.md
   - 短剧戏码与情绪: video-drama-scenes.md
   - OpenMontage 对标: openmontage-benchmark.md
+  - 角色造型与场景变体（P1 设计）: asset-variants-p1.md
   - 接口参考: api.md
   - 运维手册: ops-runbook.md
   - 工程与发布: ci-release.md
