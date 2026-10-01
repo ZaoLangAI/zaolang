@@ -24,8 +24,8 @@
 ## `execute_asset_planning` rules (`back/app/workflows/nodes.py`)
 
 1. Every entry resets `ctx.prompt` / `negative_prompt` to the originals (`_ORIGINAL_PROMPT_STATE_KEY`, `_ORIGINAL_NEGATIVE_PROMPT_STATE_KEY`) so views don't inherit each other's text.
-2. Character `side`/`back` pass: prompt hard-overridden by `_CHARACTER_COMPLETION_FIXED_PROMPTS` and `_CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT` merged — driven by the attached front reference, not caller text.
-3. Character front (incl. single-view): keep caller prompt, append `_CHARACTER_SHEET_LAYOUT_SUFFIX`, then `_apply_character_visual_medium` (no medium named → photoreal + anime negative; named medium kept, opposite negative added). Completion passes skip the medium lock.
+2. Then `prompt_builder.compose` for the pass from `prompt_builder.resolve_pass` (side/back completion override, sheet + outfit, expression grid, scene presets / variant group) — rules in `zaolang-agent-gateway` › `reference-prompts.md` › Prompt builder. Completion passes skip the medium lock.
+3. A variant group stores `ctx.state["group_labels"]` (`GROUP_LABELS_STATE_KEY`).
 4. Then calls `planner.plan_asset` (image) or `planner.plan_video_asset` (video) and folds `prompt_enhancements` / `negative_prompt_suggestions` in. Planner briefs and view prompt text: see `zaolang-agent-gateway`.
 5. `_planned_prompt` ignores the generic `planning` node's plan whenever `_asset_axis` is set — that plan is view-blind and runs once before the loop.
 6. `asset_graph` seeds `planning.config.allow_followup_question = False` (clarify can't see asset kind/view); `default_graph` keeps it on. Live templates need a data migration to change (e.g. `back/alembic/versions/20260818_2000_disable_asset_planning_followup.py`).

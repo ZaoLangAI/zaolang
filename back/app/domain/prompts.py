@@ -59,6 +59,10 @@ class PromptContext:
     # `app.agents.copywriter.ENHANCE_SYSTEM_PROMPT_SCENE`), but the field is
     # on the shared context because the wire contract is shared.
     question_answers: dict | None = None
+    # The studio's expression / scene-preset picks
+    # (`character_expressions`, `scene_lighting`/`_weather`/`_state`/`_period`)
+    # — the coach polishes around them instead of re-deciding them.
+    asset_presets: dict | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -187,6 +191,7 @@ def enhance(
         question_answers=ctx.question_answers,
         reference_skills=reference_skills,
         user_id=user_id,
+        asset_presets=ctx.asset_presets,
     )
     segment = outcome.data.get("script_segment")
     return PromptEnhancement(

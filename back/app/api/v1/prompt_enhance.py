@@ -24,7 +24,19 @@ def context_from(payload: PromptEnhanceRequest) -> prompts.PromptContext:
         asset_kind=resolved_asset_kind,
         script_segment=segment,
         question_answers=dict(payload.question_answers) or None,
+        asset_presets=_asset_presets(payload),
     )
+
+
+def _asset_presets(payload: PromptEnhanceRequest) -> dict | None:
+    presets: dict[str, object] = {}
+    if payload.character_expressions:
+        presets["character_expressions"] = list(payload.character_expressions)
+    for field in ("scene_lighting", "scene_weather", "scene_state", "scene_period"):
+        value = getattr(payload, field)
+        if value:
+            presets[field] = value
+    return presets or None
 
 
 def question_views(questions: list[prompts.PromptQuestion]) -> list[PromptQuestionView]:

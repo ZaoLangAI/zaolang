@@ -619,9 +619,7 @@ def test_ensure_expression_reference_borrows_the_targets_sheet(db: Session, auth
     assert params["reference_asset_ids"] == [front.id]
 
 
-def test_a_content_edit_keeps_each_known_entrys_view_and_label(
-    db: Session, author: User
-) -> None:
+def test_a_content_edit_keeps_each_known_entrys_view_and_label(db: Session, author: User) -> None:
     character = _character_with(db, author)
     front = _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value)
     wedding = _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value, label="婚礼")

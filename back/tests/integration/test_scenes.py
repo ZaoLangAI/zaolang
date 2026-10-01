@@ -10,10 +10,10 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.domain.scenes import service as scenes_service
 from app.models import Asset, User
 from app.models.base import new_id
 from app.models.enums import AssetRole, MediaType, ModerationStatus, Visibility
-from app.domain.scenes import service as scenes_service
 from tests.conftest import auth_header
 
 

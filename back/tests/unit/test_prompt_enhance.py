@@ -1085,3 +1085,76 @@ def test_non_scene_enhance_payload_carries_no_space_skill() -> None:
     )
     assert "scene_skill" not in payload
     assert "space_type_options" not in payload
+
+
+# ---- expression / scene presets ---------------------------------------------
+
+
+def test_restore_expression_prompt_drops_sheet_layout_clauses() -> None:
+    restored = copywriter.restore_expression_prompt(
+        "林夏，短发，白衬衫。左侧全身三视图，右侧色板。神情克制", count=4
+    )
+    assert "三视图" not in restored and "色板" not in restored
+    assert "林夏" in restored and "神情克制" in restored
+    assert restored.endswith(copywriter.EXPRESSION_SHEET_SENTENCE)
+
+
+def test_restore_expression_prompt_uses_a_close_up_for_one_expression() -> None:
+    restored = copywriter.restore_expression_prompt("林夏，短发", count=1)
+    assert restored.endswith(copywriter.EXPRESSION_SINGLE_SENTENCE)
+
+
+def test_enhance_user_prompt_carries_preset_labels() -> None:
+    payload = json.loads(
+        copywriter._enhance_user_prompt(
+            prompt="老式客厅",
+            operation="text_to_image",
+            aspect_ratio="16:9",
+            duration_seconds=None,
+            quality_tier="",
+            style_hint="",
+            has_reference=False,
+            direction="",
+            instruction="",
+            max_length=2000,
+            asset_kind="scene",
+            asset_presets={"scene_lighting": "dusk", "scene_period": "1980s"},
+        )
+    )
+    assert payload["asset_presets"] == {"光照": "黄昏", "时期": "八十年代"}
+    assert "asset_presets_rule" in payload
+
+
+def test_character_polish_with_expressions_keeps_the_grid() -> None:
+    outcome = AgentOutcome(
+        data={"prompt": "林夏。单张角色设定图、左右分栏：左侧全身三视图，右侧色板。"},
+        raw_text="",
+        degraded=False,
+        model="fake",
+        agent_run_id=None,
+    )
+    sanitized = copywriter._sanitize_enhance_outcome(
+        outcome,
+        prompt="林夏",
+        max_length=2000,
+        asset_kind="character",
+        asset_presets={"character_expressions": ["smile", "anger"]},
+    )
+    assert "三视图" not in sanitized.data["prompt"]
+    assert "表情合集" in sanitized.data["prompt"]
+
+
+def test_context_from_collects_the_studio_presets() -> None:
+    from app.api.schemas.shortform import PromptEnhanceRequest
+    from app.api.v1.prompt_enhance import context_from
+
+    ctx = context_from(
+        PromptEnhanceRequest(
+            prompt="老式客厅",
+            asset_kind="scene",
+            scene_lighting="neon",
+            scene_state="searched",
+        )
+    )
+    assert ctx.asset_presets == {"scene_lighting": "neon", "scene_state": "searched"}
+    assert context_from(PromptEnhanceRequest(prompt="林夏")).asset_presets is None

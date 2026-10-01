@@ -594,6 +594,7 @@ def enhance_prompt(
     reference_skills: list[dict[str, str]] | None = None,
     user_id: str | None = None,
     agent_id: str | None = None,
+    asset_presets: dict[str, Any] | None = None,
 ) -> AgentOutcome:
     """Diagnoses a scene description dimension by dimension, then rewrites it.
 
@@ -651,6 +652,7 @@ def enhance_prompt(
             script_segment=script_segment,
             question_answers=question_answers,
             reference_skills=reference_skills,
+            asset_presets=asset_presets,
         ),
         fallback=_enhance_fallback(prompt, script_segment),
         user_id=user_id,
@@ -668,6 +670,7 @@ def enhance_prompt(
         session=session,
         operation=operation,
         reference_skills=reference_skills,
+        asset_presets=asset_presets,
     )
 
 
@@ -690,6 +693,7 @@ def stream_enhance_prompt(
     reference_skills: list[dict[str, str]] | None = None,
     user_id: str | None = None,
     agent_id: str | None = None,
+    asset_presets: dict[str, Any] | None = None,
 ) -> tuple[Iterator[StreamChunk], Callable[[Session | None], AgentOutcome]]:
     """HTTP-SSE counterpart to `enhance_prompt`."""
     resolved_agent_id = agent_skills_service.resolve_copy_agent_id(
@@ -715,6 +719,7 @@ def stream_enhance_prompt(
         script_segment=script_segment,
         question_answers=question_answers,
         reference_skills=reference_skills,
+        asset_presets=asset_presets,
     )
     fallback = _enhance_fallback(prompt, script_segment)
     chunks, finalize = run_agent_stream(
@@ -756,6 +761,7 @@ def stream_enhance_prompt(
             session=persist_session,
             operation=operation,
             reference_skills=reference_skills,
+            asset_presets=asset_presets,
         )
 
     return chunks, finish
@@ -819,6 +825,7 @@ def _enhance_user_prompt(
     script_segment: dict | None = None,
     question_answers: dict[str, Any] | None = None,
     reference_skills: list[dict[str, str]] | None = None,
+    asset_presets: dict[str, Any] | None = None,
 ) -> str:
     payload: dict[str, Any] = {
         "prompt": prompt,
@@ -849,6 +856,16 @@ def _enhance_user_prompt(
         ]
     if question_answers:
         payload["question_answers"] = question_answers
+    preset_labels = _asset_preset_labels(asset_presets)
+    if preset_labels:
+        # The studio's expression / scene-preset picks: already written into
+        # the job by `prompt_builder`, so the coach must polish *around*
+        # them — never re-decide the light, damage level, era or expressions.
+        payload["asset_presets"] = preset_labels
+        payload["asset_presets_rule"] = (
+            "asset_presets 是用户已选定的预设，生成时会由系统自动写入；"
+            "改写不得与之矛盾，也不必重复罗列。"
+        )
     if asset_kind == "scene":
         # The space-type pack the scene coach polishes against, plus the
         # option list for its own "which space is this" question — see
@@ -909,6 +926,53 @@ def restore_character_sheet_prompt(text: str) -> str:
     if cleaned:
         return f"{cleaned}。{CHARACTER_SHEET_LAYOUT_SENTENCE}"
     return CHARACTER_SHEET_LAYOUT_SENTENCE
+
+
+# An expression image is a grid of head-and-shoulders close-ups, never a
+# sheet: the character coach (and `CHARACTER_SHEET_PROMPT_HINT` the studio
+# may still have in the textarea) pull toward 三视图/色板, which the builder
+# then has to fight. Sentences carrying those markers are dropped.
+EXPRESSION_SHEET_SENTENCE = (
+    "单张表情合集图：同一人物的头肩特写宫格，每格一种表情，纯色背景，画面无文字。"
+)
+EXPRESSION_SINGLE_SENTENCE = "单人头肩特写，纯色背景，画面无文字。"
+_EXPRESSION_SHEET_MARKER_SENTENCE = re.compile(
+    r"[^。；;.]*?(?:三视图|设定图|色板|左右分栏|全身站姿)[^。；;.]*[。；;.]?"
+)
+
+
+def restore_expression_prompt(text: str, *, count: int) -> str:
+    """Strips character-sheet layout clauses and keeps one expression-layout
+    sentence; the per-cell expressions themselves come from the builder."""
+    cleaned = _EXPRESSION_SHEET_MARKER_SENTENCE.sub("", text.strip())
+    cleaned = re.sub(r"[。；;.]{2,}", "。", cleaned).strip(" \t\n。；;.")
+    sentence = EXPRESSION_SHEET_SENTENCE if count > 1 else EXPRESSION_SINGLE_SENTENCE
+    marker = "表情合集" if count > 1 else "特写"
+    if marker in cleaned:
+        return f"{cleaned}。" if cleaned else sentence
+    return f"{cleaned}。{sentence}" if cleaned else sentence
+
+
+def _asset_preset_labels(asset_presets: dict[str, Any] | None) -> dict[str, str]:
+    """`{"表情": "冷笑/隐忍", "光照": "黄昏", …}` for the coach's user message."""
+    if not asset_presets:
+        return {}
+    from app.domain.image_assets import vocabulary as vocab
+
+    labels: dict[str, str] = {}
+    expressions = asset_presets.get("character_expressions")
+    if isinstance(expressions, list):
+        names = [
+            vocab.EXPRESSION_PRESETS[str(key)].label
+            for key in expressions
+            if str(key) in vocab.EXPRESSION_PRESETS
+        ]
+        if names:
+            labels["表情"] = "/".join(names)
+    axis_names = {"lighting": "光照", "weather": "天气", "state": "状态", "period": "时期"}
+    for axis, key in vocab.scene_presets_from(asset_presets).items():
+        labels[axis_names[axis]] = vocab.SCENE_PRESET_TABLES[axis][key].label
+    return labels
 
 
 # Written back when polish stacks mutually exclusive cameras or offers a
@@ -1066,9 +1130,19 @@ def _sanitize_enhance_outcome(
     session: Session | None = None,
     operation: str = "",
     reference_skills: list[dict[str, str]] | None = None,
+    asset_presets: dict[str, Any] | None = None,
 ) -> AgentOutcome:
     enhanced = str(outcome.data.get("prompt") or "").strip() or prompt
-    if asset_kind == "character":
+    expressions = (asset_presets or {}).get("character_expressions")
+    if asset_kind == "character" and expressions:
+        restored = restore_expression_prompt(enhanced, count=len(expressions))
+        if restored != enhanced:
+            note = "已去掉设定图版式，保持表情合集图。"
+            existing = str(outcome.data.get("feedback") or "").rstrip()
+            if note not in existing:
+                outcome.data["feedback"] = f"{existing} {note}".strip()
+            enhanced = restored
+    elif asset_kind == "character":
         restored = restore_character_sheet_prompt(enhanced)
         if restored != enhanced:
             note = "已补回左三视图 + 右特写与色板，保持单张设定图。"

@@ -7,6 +7,14 @@ from typing import Literal
 from pydantic import Field
 
 from app.api.schemas.common import ApiModel
+from app.domain.image_assets.vocabulary import (
+    MAX_CHARACTER_EXPRESSIONS,
+    CharacterExpression,
+    SceneLighting,
+    ScenePeriod,
+    SceneState,
+    SceneWeather,
+)
 from app.models.enums import ImageAssetKind, Operation, QualityTier, VideoAssetKind
 
 # Mirrors `app.agents.copywriter.DIMENSION_KEYS` / `.ENHANCE_DIRECTIONS`. Spelled
@@ -117,6 +125,15 @@ class PromptEnhanceRequest(ApiModel):
     # single_choice/free_text answer is a string, multi_choice a list. Sent
     # on the round *after* the coach asked; empty on the first pass.
     question_answers: dict[str, str | list[str]] = Field(default_factory=dict, max_length=8)
+    # The image studio's expression / scene-preset picks (same vocabulary as
+    # `GenerationParams`), so the coach polishes around them.
+    character_expressions: list[CharacterExpression] | None = Field(
+        default=None, max_length=MAX_CHARACTER_EXPRESSIONS
+    )
+    scene_lighting: SceneLighting | None = None
+    scene_weather: SceneWeather | None = None
+    scene_state: SceneState | None = None
+    scene_period: ScenePeriod | None = None
 
 
 class PromptDimensionView(ApiModel):
