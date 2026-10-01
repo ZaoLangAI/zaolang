@@ -1569,3 +1569,17 @@ def test_every_agent_binding_names_a_real_role_field_and_slot() -> None:
             assert agent_slots.is_known_slot(binding.role, binding.slot), (
                 f"{node_type} 绑定了 {binding.role} 不存在的槽位 {binding.slot}"
             )
+
+
+def test_a_scene_variant_group_only_routes_to_a_group_capable_model() -> None:
+    from dataclasses import replace
+
+    from app.agents.router import _request_constraint_failure
+    from tests.fake_provider_catalog import build_fake_catalog
+
+    capability = build_fake_catalog()["fake_paid_api"]
+    params = {"scene_variants": [{"lighting": "day"}, {"lighting": "dusk"}]}
+    assert _request_constraint_failure(capability, params) == "group_generation_not_supported"
+    group_capable = replace(capability, max_outputs_per_call=4)
+    assert _request_constraint_failure(group_capable, params) is None
+    assert _request_constraint_failure(capability, {}) is None

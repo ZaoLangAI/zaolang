@@ -310,8 +310,12 @@ def generation_attempt_cost_micro_usd(
     request: GenerationRequest,
     billing_profile: str | None = None,
     default_resolution: str | None = None,
+    generated_images: int = 1,
 ) -> int:
     """Prices one settled provider attempt from the request that produced it.
+
+    `generated_images` is how many images the call actually returned — more
+    than one only for a group ("组图") call, billed per delivered image.
 
     The single place workers agree on what an attempt cost, so the number a
     generation records and the number a poll records cannot diverge.
@@ -339,6 +343,7 @@ def generation_attempt_cost_micro_usd(
         input_images=reference_count,
         reference_images=reference_count,
         has_video_reference=has_video_reference,
+        generated_images=max(1, generated_images),
     )
 
 

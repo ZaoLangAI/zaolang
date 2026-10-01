@@ -247,6 +247,7 @@ def list_generation_models(
             resolutions=_merged_studio_resolutions(capabilities, video=is_video),
             default_resolution=_merged_default_resolution(capabilities, video=is_video),
             voices=_voices(model),
+            max_outputs_per_call=max(c.max_outputs_per_call for c in capabilities),
         )
         for model, capabilities in grouped.items()
     ]

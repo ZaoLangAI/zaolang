@@ -192,6 +192,11 @@ class GenerationRequest:
     # view collides with the first view's already-registered `Asset` row on
     # `uq_assets_object_key`, since both views share the same `job_id`.
     attempt_number: int = 1
+    # How many separate images one call should return (a scene variant
+    # group). Only a capability with `max_outputs_per_call >= output_count`
+    # is ever routed such a request (`router._request_constraint_failure`);
+    # every other adapter can ignore it.
+    output_count: int = 1
 
     def __post_init__(self) -> None:
         # JSON checkpoints turn nested dataclasses back into dictionaries.
@@ -201,6 +206,17 @@ class GenerationRequest:
             item if isinstance(item, ProviderReference) else ProviderReference(**item)
             for item in self.references
         ]
+
+
+@dataclass(slots=True)
+class GeneratedOutput:
+    """One additional image a group-capable call returned, beyond the
+    primary `GenerationResult.object_key`."""
+
+    object_key: str
+    mime_type: str = "image/png"
+    width: int | None = None
+    height: int | None = None
 
 
 @dataclass(slots=True)
@@ -227,6 +243,14 @@ class GenerationResult:
     output_json: dict[str, Any] | None = None
     # Redacted before it reaches ProviderAttempt: no keys, no signed URLs.
     metadata: dict[str, Any] = field(default_factory=dict)
+    # A group call's images after the first (`GenerationRequest.output_count`
+    # > 1), in the order the provider returned them. Empty for every
+    # single-output call, so existing callers never see a difference.
+    extra_outputs: list[GeneratedOutput] = field(default_factory=list)
+
+    @property
+    def delivered_outputs(self) -> int:
+        return (1 if self.object_key else 0) + len(self.extra_outputs)
 
 
 class GenerationProvider(ABC):
@@ -343,6 +367,10 @@ class ProviderCapability:
     # which makes the reference legend stay silent rather than name an
     # image the model may never get (`prompt_builder.reference_legend`).
     max_image_references: int | None = None
+    # Most separate images one call can return (`GenerationRequest.
+    # output_count`): 1 for every model except a group-capable one
+    # (Seedream's sequential image generation).
+    max_outputs_per_call: int = 1
 
 
 def probe_audio_duration_ms(payload: bytes, mime_type: str) -> int | None:

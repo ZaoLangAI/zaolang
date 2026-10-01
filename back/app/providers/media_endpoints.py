@@ -215,6 +215,7 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                     endpoint.protocol, endpoint.model, video_profile
                 ),
                 max_image_references=_max_image_references(endpoint.protocol, endpoint.model, tag),
+                max_outputs_per_call=_max_outputs_per_call(endpoint.protocol, endpoint.model, tag),
                 provider_factory=_factory(
                     endpoint_id=endpoint_id,
                     capability_tag=tag,
@@ -299,6 +300,15 @@ def _max_image_references(protocol: str | None, model: str, tag: str) -> int | N
             return FAL_MAX_REFERENCE_FILES
         return None
     return None
+
+
+def _max_outputs_per_call(protocol: str | None, model: str, tag: str) -> int:
+    """Group ("组图") output support — DMXAPI image profiles only today."""
+    if tag in _IMAGE_TAGS and protocol == "dmxapi":
+        profile = dmxapi_image_profile(model)
+        if profile is not None:
+            return max(1, profile.max_group_outputs)
+    return 1
 
 
 def _music_styles_for(protocol: str | None, model: str, tag: str) -> frozenset[str] | None:

@@ -661,6 +661,9 @@ class GenerationModelOption(ApiModel):
     resolutions: list[Literal["480p", "720p", "1080p", "2K"]] | None = None
     default_resolution: Literal["480p", "720p", "1080p", "2K"] | None = None
     voices: list[str] | None = None
+    # Separate images one call can return — >1 only for a model that can
+    # serve a scene variant group (`GenerationParams.scene_variants`).
+    max_outputs_per_call: int = 1
 
 
 class GenerationModelListResponse(ApiModel):

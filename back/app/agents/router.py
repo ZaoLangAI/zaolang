@@ -377,6 +377,15 @@ def _request_constraint_failure(
             and audio_style not in capability.music_styles
         ):
             return "music_style_not_supported"
+    variants = params.get("scene_variants")
+    if (
+        isinstance(variants, list)
+        and len(variants) > 1
+        and len(variants) > capability.max_outputs_per_call
+    ):
+        # A scene variant group is one call returning one image per variant;
+        # a single-output model would silently deliver one.
+        return "group_generation_not_supported"
     return None
 
 

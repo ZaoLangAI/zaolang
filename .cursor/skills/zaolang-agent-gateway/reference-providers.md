@@ -39,6 +39,7 @@ Single owner for media-provider contracts and quirks. Protocol/pricing schema: s
 
 ## DMXAPI (`back/app/providers/dmxapi_media.py`)
 
+- Seedream group ("组图"): `GenerationRequest.output_count` > 1 adds `sequential_image_generation=auto` + `max_images` (`_build_seedream_body`; refs trimmed so refs + outputs ≤ 15); `extract_seedream_results` reads every `data[]`/`output[].content[]` image; extras land in `GenerationResult.extra_outputs` (`output_{n}_{i}.png`), a failed download is skipped. `ImageModelProfile.max_group_outputs` → `ProviderCapability.max_outputs_per_call` (router hard filter `group_generation_not_supported`; `/generation-jobs/models` echoes it). Live shape check: `back/tests/test_seedream_group_live.py` (`make test-llm`, `DMXAPI_API_KEY`).
 - `/v1/responses` for Seedream 5 image (sync), video families (`MiniMax-H3`, `MiniMax-H3-video_regeneration`, Seedance 2.5, `wan3.0-video`) and `music-3.0` (sync). TTS models use OpenAI-shaped `/v1/audio/speech`.
 - Poll = same endpoint with `model` swapped to `"{family}-get"` (`MiniMax-H3-get`, `seedance-2-5-get`, `wan3.0-get`) and the task id as `input`.
 - Profiles are independent of AiHubMix: DMXAPI H3 has six ratios (no `adaptive`); Seedance adds `1080p`; `wan3.0-video` uses `480P`/`720P`/`1080P`.

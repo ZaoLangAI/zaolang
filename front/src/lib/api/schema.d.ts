@@ -8973,6 +8973,11 @@ export interface components {
             default_resolution?: ("480p" | "720p" | "1080p" | "2K") | null;
             /** Voices */
             voices?: string[] | null;
+            /**
+             * Max Outputs Per Call
+             * @default 1
+             */
+            max_outputs_per_call: number;
         };
         /** GenerationParams */
         GenerationParams: {
