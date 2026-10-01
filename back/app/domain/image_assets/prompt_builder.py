@@ -16,6 +16,7 @@ system-prompt rule).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from enum import StrEnum
 from typing import Any
@@ -245,10 +246,19 @@ def expression_layout(expressions: list[str]) -> str:
     )
 
 
+_SHEET_SENTENCE = re.compile(r"[^。；;.]*?(?:三视图|设定图|色板|左右分栏)[^。；;.]*[。；;.]?")
+
+
+def _strip_sheet_layout(prompt: str) -> str:
+    """Drops the sheet-layout sentence a library/script jump-out seeds into
+    the studio textarea (`characterSheetPrompt`), keeping the identity text."""
+    return _SHEET_SENTENCE.sub("", prompt).strip(" ，,。")
+
+
 def _compose_expressions(
     prompt: str, negative: str | None, expressions: list[str]
 ) -> tuple[str, str]:
-    prompt = EXPRESSION_IDENTITY_PREFIX + prompt
+    prompt = EXPRESSION_IDENTITY_PREFIX + _strip_sheet_layout(prompt)
     prompt = _join(prompt, expression_layout(expressions))
     prompt, negative_out = apply_visual_medium(prompt, negative)
     negative_out = merge_negative(negative_out, EXPRESSION_COMMON_NEGATIVE)

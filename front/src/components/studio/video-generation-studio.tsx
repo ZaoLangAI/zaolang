@@ -61,6 +61,12 @@ import { useGenerationModels } from '@/lib/use-generation-models';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
 import { useJobStream } from '@/lib/use-job-stream';
 import { useResource } from '@/lib/use-resource';
+import {
+  ReferenceImagePicker,
+  useReferencePicks,
+} from '@/components/studio/reference-image-picker';
+import { defaultCharacterReferenceIds } from '@/lib/characters';
+import { defaultSceneReferenceIds } from '@/lib/scenes';
 
 type Operation = 'text_to_video' | 'image_to_video' | 'video_to_video';
 type ReferenceMode = 'input_references' | 'frame_images';
@@ -253,6 +259,10 @@ export function VideoGenerationStudio({
   const [selectedReferenceSceneIds, setSelectedReferenceSceneIds] = useState<string[]>(
     initialReferenceSceneIds ?? [],
   );
+  // Which of each picked character's/scene's images to send (e.g. only the
+  // 婚礼 outfit) — unset means the backend's default subset.
+  const characterRefPicks = useReferencePicks();
+  const sceneRefPicks = useReferencePicks();
 
   // Inline progress/result + version history state — the same shape
   // `ImageGenerationStudio` uses. `draftId` is created on the first submit
@@ -616,6 +626,14 @@ export function VideoGenerationStudio({
       styleGalleryId: appliedStyleGalleryId ?? undefined,
       characterIds: selectedReferenceCharacterIds,
       sceneIds: selectedReferenceSceneIds,
+      assetPresets: {
+        character_ref_selection: characterRefPicks
+          .selectionFor(selectedReferenceCharacterIds)
+          .map(({ ownerId, asset_ids }) => ({ character_id: ownerId, asset_ids })),
+        scene_ref_selection: sceneRefPicks
+          .selectionFor(selectedReferenceSceneIds)
+          .map(({ ownerId, asset_ids }) => ({ scene_id: ownerId, asset_ids })),
+      },
       sourceWorkId: source?.work.id,
       maxCredits: quote?.credits,
       draftTitle: source?.work.title ?? null,
@@ -726,6 +744,17 @@ export function VideoGenerationStudio({
                       </span>
                       {character.name}
                     </label>
+                    {checked ? (
+                      <ReferenceImagePicker
+                        label={t('referencePickLabel', { name: character.name })}
+                        assets={character.reference_assets ?? []}
+                        selected={
+                          characterRefPicks.picks[character.id] ??
+                          defaultCharacterReferenceIds(character)
+                        }
+                        onChange={(ids) => characterRefPicks.set(character.id, ids)}
+                      />
+                    ) : null}
                   </li>
                 );
               })}
@@ -770,6 +799,14 @@ export function VideoGenerationStudio({
                       </span>
                       {scene.name}
                     </label>
+                    {checked ? (
+                      <ReferenceImagePicker
+                        label={t('referencePickLabel', { name: scene.name })}
+                        assets={scene.reference_assets ?? []}
+                        selected={sceneRefPicks.picks[scene.id] ?? defaultSceneReferenceIds(scene)}
+                        onChange={(ids) => sceneRefPicks.set(scene.id, ids)}
+                      />
+                    ) : null}
                   </li>
                 );
               })}

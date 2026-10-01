@@ -26,6 +26,8 @@ export interface GenerationQuoteInput {
   durationSeconds: number;
   assetKind?: 'general' | 'character' | 'scene' | 'cover';
   characterViews?: ('front' | 'side' | 'back')[];
+  /** A scene variant group prices one image per variant. */
+  sceneVariants?: AssetPresetParams['scene_variants'];
 }
 
 export interface GenerationSubmitInput extends GenerationQuoteInput {
@@ -220,7 +222,9 @@ export function useGenerationSubmit(
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const { operation, qualityTier, durationSeconds, assetKind, characterViews } = quoteInput;
+  const { operation, qualityTier, durationSeconds, assetKind, characterViews, sceneVariants } =
+    quoteInput;
+  const sceneVariantsKey = JSON.stringify(sceneVariants ?? null);
   // Stable dependency key for the effect below — `characterViews` is a new
   // array identity on every render even when its contents haven't changed.
   const characterViewsKey = characterViews?.join(',') ?? '';
@@ -239,6 +243,7 @@ export function useGenerationSubmit(
           duration_seconds: durationSeconds,
           asset_kind: assetKind ?? 'general',
           character_views: characterViews ?? null,
+          scene_variants: sceneVariants ?? null,
         })
         .then((body) => {
           if (ticket !== latestQuote.current) return;
@@ -252,7 +257,15 @@ export function useGenerationSubmit(
     }, QUOTE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operation, qualityTier, durationSeconds, assetKind, characterViewsKey, sessionStatus]);
+  }, [
+    operation,
+    qualityTier,
+    durationSeconds,
+    assetKind,
+    characterViewsKey,
+    sceneVariantsKey,
+    sessionStatus,
+  ]);
 
   /**
    * Kept across a failed attempt so a retry reuses the same draft instead of

@@ -178,3 +178,22 @@ export function findCompletionJobFor(
 
   return completions[completions.length - 1] ?? null;
 }
+
+const SHEET_VIEWS = ['front', 'side', 'back'] as const;
+
+/**
+ * What a job sends for this character when nothing was picked — mirrors the
+ * backend's `characters.service.default_reference_asset_ids`: the default
+ * look's unlabelled front/side/back, else the oldest unlabelled entries,
+ * else the oldest entries; at most three. Named outfits and expression
+ * sheets only go in when picked (`character_ref_selection`).
+ */
+export function defaultCharacterReferenceIds(character: Character): string[] {
+  const entries = (character.reference_assets ?? []).filter((asset) => asset.asset_id);
+  const sheet = SHEET_VIEWS.flatMap((view) =>
+    entries.filter((asset) => asset.view === view && !asset.label?.trim()),
+  );
+  const unlabelled = entries.filter((asset) => !asset.label?.trim());
+  const pool = sheet.length ? sheet : unlabelled.length ? unlabelled : entries;
+  return pool.slice(0, 3).map((asset) => asset.asset_id);
+}

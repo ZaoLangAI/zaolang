@@ -7,6 +7,7 @@ import {
   characterImageStudioHref,
   characterSheetAsset,
   characterSheetPrompt,
+  defaultCharacterReferenceIds,
   findCompletionJobFor,
   isCharacterCompletionJob,
 } from './characters';
@@ -165,5 +166,35 @@ describe('referenceByView', () => {
       ],
     } as Character;
     expect(characterSheetAsset(character)?.asset_id).toBe('ast_wedding');
+  });
+});
+
+describe('defaultCharacterReferenceIds', () => {
+  it('sends the unnamed sheet views in front/side/back order', () => {
+    const character = {
+      reference_assets: [
+        { asset_id: 'back', view: 'back', label: null },
+        { asset_id: 'wedding', view: 'front', label: '婚礼' },
+        { asset_id: 'grid', view: 'general', label: '表情·冷笑' },
+        { asset_id: 'front', view: 'front', label: null },
+      ],
+    } as Character;
+    expect(defaultCharacterReferenceIds(character)).toEqual(['front', 'back']);
+  });
+
+  it('falls back to unlabelled uploads, then to anything', () => {
+    expect(
+      defaultCharacterReferenceIds({
+        reference_assets: [
+          { asset_id: 'a', view: 'general', label: '婚礼' },
+          { asset_id: 'b', view: 'general', label: null },
+        ],
+      } as Character),
+    ).toEqual(['b']);
+    expect(
+      defaultCharacterReferenceIds({
+        reference_assets: [{ asset_id: 'a', view: 'general', label: '婚礼' }],
+      } as Character),
+    ).toEqual(['a']);
   });
 });

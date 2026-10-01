@@ -44,7 +44,18 @@ import { useGenerationModels } from '@/lib/use-generation-models';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
 import { useJobStream } from '@/lib/use-job-stream';
 import { useResource } from '@/lib/use-resource';
-import { type ScenePresets, scenePresetParams } from '@/features/image-assets/vocabulary';
+import {
+  CharacterPresetFields,
+  ScenePresetFields,
+  sceneVariantCombos,
+} from '@/components/studio/asset-preset-fields';
+import {
+  type CharacterExpression,
+  hasScenePreset,
+  MIN_SCENE_VARIANTS,
+  type ScenePresets,
+  scenePresetParams,
+} from '@/features/image-assets/vocabulary';
 
 type Operation = 'text_to_image' | 'image_to_image';
 /** What a `text_to_image`/`image_to_image` output is *for* — mirrors the
@@ -184,7 +195,13 @@ export function ImageGenerationStudio({
   const [autoAttachToRoster, setAutoAttachToRoster] = useState(true);
   // Scene lighting/weather/state/period for a single scene image — see
   // `features/image-assets/vocabulary.ts`.
-  const [scenePresets] = useState<ScenePresets>(initialScenePresets ?? {});
+  const [scenePresets, setScenePresets] = useState<ScenePresets>(initialScenePresets ?? {});
+  const [groupAxis, setGroupAxis] = useState<keyof ScenePresets | null>(null);
+  const [groupValues, setGroupValues] = useState<string[]>([]);
+  // A composite expression image (`character_expressions`) or a named outfit
+  // sheet (`character_outfit_label`) — mutually exclusive.
+  const [expressions, setExpressions] = useState<CharacterExpression[]>([]);
+  const [outfitLabel, setOutfitLabel] = useState('');
 
   // Inline progress/result + version history state. `draftId` is created on
   // the first submit and reused by every later "continue refining" submit,
@@ -481,6 +498,28 @@ export function ImageGenerationStudio({
         sceneHeroSeededRef.current = false;
       });
   }, [initialDraft, initialTargetSceneId, scenesResource.data, source, uploads.length]);
+  // A preset (or variant group) on an existing scene is generated *from* its
+  // master plate: attach it as reference 1 so the builder's geometry lock
+  // (`prompt_builder.SCENE_VARIANT_PREFIX`) has something to hold to.
+  const presetHeroSeededFor = useRef<string | null>(null);
+  const wantsSceneMaster =
+    assetKind === 'scene' &&
+    Boolean(targetSceneId) &&
+    (hasScenePreset(scenePresets) || groupAxis !== null);
+  useEffect(() => {
+    if (!wantsSceneMaster || uploads.length > 0 || source) return;
+    if (presetHeroSeededFor.current === targetSceneId) return;
+    const target = (scenesResource.data ?? []).find((scene) => scene.id === targetSceneId);
+    const hero = target ? sceneHeroAsset(target) : undefined;
+    if (!hero?.asset_id) return;
+    presetHeroSeededFor.current = targetSceneId;
+    void api
+      .get<Asset>(`/v1/assets/${hero.asset_id}`)
+      .then((asset) => setUploads((current) => (current.length ? current : [asset])))
+      .catch(() => {
+        presetHeroSeededFor.current = null;
+      });
+  }, [wantsSceneMaster, targetSceneId, scenesResource.data, source, uploads.length]);
   const characters = charactersResource.data ?? [];
   const scenes = scenesResource.data ?? [];
   const isCharacterAssetKind = assetKind === 'character';
@@ -533,8 +572,25 @@ export function ImageGenerationStudio({
     : 'portrait';
   const aspectOptions = orientation === 'landscape' ? LANDSCAPE_ASPECTS : PORTRAIT_ASPECTS;
 
+  const isScene = assetKind === 'scene';
+  const groupAvailable = modelOptions.some(
+    (option) =>
+      (option.max_outputs_per_call ?? 1) >= MIN_SCENE_VARIANTS &&
+      (!forcedModel || option.model === forcedModel),
+  );
+  const variantCombos =
+    isScene && groupAvailable ? sceneVariantCombos(scenePresets, groupAxis, groupValues) : null;
+  // A group with too few values picked must not quietly submit one image.
+  const groupIncomplete = isScene && groupAvailable && groupAxis !== null && !variantCombos;
+
   const { quote, quoteFailed, submitting, error, submit } = useGenerationSubmit(
-    { operation, qualityTier: tier, durationSeconds: 0 },
+    {
+      operation,
+      qualityTier: tier,
+      durationSeconds: 0,
+      assetKind,
+      sceneVariants: variantCombos,
+    },
     {
       label: t('submit'),
       // Stays on the studio page instead of navigating to `/jobs/[jobId]` —
@@ -560,6 +616,7 @@ export function ImageGenerationStudio({
     rightsConfirmed &&
     !submitting &&
     !scenePolishBlocked &&
+    !groupIncomplete &&
     (quote?.sufficient ?? true);
 
   const removeUpload = (assetId: string) => {
@@ -587,7 +644,16 @@ export function ImageGenerationStudio({
       targetSceneId: assetKind === 'scene' ? targetSceneId || null : undefined,
       autoAttachAsset: isCharacterAssetKind ? autoAttachToRoster : undefined,
       subjectNameHint: isCharacterAssetKind || assetKind === 'scene' ? subjectNameHint : undefined,
-      assetPresets: assetKind === 'scene' ? scenePresetParams(scenePresets) : undefined,
+      assetPresets: isCharacterAssetKind
+        ? {
+            character_expressions: expressions.length ? expressions : null,
+            character_outfit_label: expressions.length ? null : outfitLabel.trim() || null,
+          }
+        : isScene
+          ? variantCombos
+            ? { scene_variants: variantCombos }
+            : scenePresetParams(scenePresets)
+          : undefined,
       linkEpisodeId,
       draftParams: draftReturnParams({
         returnTo,
@@ -654,6 +720,18 @@ export function ImageGenerationStudio({
             <Link href="/create/characters" className="text-[11px] text-muted hover:text-text">
               {t('manageCharactersLink')}
             </Link>
+            <CharacterPresetFields
+              expressions={expressions}
+              onExpressionsChange={(next) => {
+                // An expression image is an extra, not the roster's sheet:
+                // default to not writing it back (the user can opt in).
+                if (next.length > 0 && expressions.length === 0) setAutoAttachToRoster(false);
+                if (next.length === 0 && expressions.length > 0) setAutoAttachToRoster(true);
+                setExpressions(next);
+              }}
+              outfitLabel={outfitLabel}
+              onOutfitLabelChange={setOutfitLabel}
+            />
           </div>
         ) : null}
 
@@ -671,6 +749,15 @@ export function ImageGenerationStudio({
             <Link href="/create/scenes" className="text-[11px] text-muted hover:text-text">
               {t('manageScenesLink')}
             </Link>
+            <ScenePresetFields
+              presets={scenePresets}
+              onPresetsChange={setScenePresets}
+              groupAvailable={groupAvailable}
+              groupAxis={groupAxis}
+              onGroupAxisChange={setGroupAxis}
+              groupValues={groupValues}
+              onGroupValuesChange={setGroupValues}
+            />
           </div>
         ) : null}
       </div>
@@ -751,6 +838,11 @@ export function ImageGenerationStudio({
         qualityTier: tier,
         hasReference: uploads.length > 0 || Boolean(source),
         assetKind,
+        assetPresets: isCharacterAssetKind
+          ? { character_expressions: expressions.length ? expressions : null }
+          : isScene
+            ? scenePresetParams(scenePresets)
+            : undefined,
       }}
       onPolishAccept={setPrompt}
       closePolishSignal={polishCloseSignal}

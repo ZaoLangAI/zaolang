@@ -3142,7 +3142,82 @@
     "continuityApplied": "前のショットの最後のフレームを自動的に本ショットの最初のフレームとして接続し、カットのつながりを保っています。",
     "continuityFailed": "自動接続に失敗しました。下で手動で開始フレームを選択できます。",
     "continuityRemove": "接続を解除",
-    "scenePolishBlockedHint": "シーン画像に未回答の必須質問があります。回答してもう一度推敲してから生成してください。"
+    "scenePolishBlockedHint": "シーン画像に未回答の必須質問があります。回答してもう一度推敲してから生成してください。",
+    "referencePickLabel": "「{name}」で使う参考画像",
+    "referenceViewFront": "設定画",
+    "referenceViewSide": "側面",
+    "referenceViewBack": "背面",
+    "referenceViewMaster": "メイン",
+    "referenceViewOther": "参考画像",
+    "presets": {
+      "expressionsLabel": "表情集（複数選択）",
+      "expressionsHint": "表情を選ぶと、このキャラクターの設定画を参考に表情グリッドを1枚生成します（設定画ではありません）。",
+      "expressionsActiveHint": "{count} 種類の表情を含む1枚を生成します。既定ではキャラクターライブラリに追加しません。",
+      "outfitLabel": "衣装名（任意）",
+      "outfitPlaceholder": "例：普段着、ウェディング、鎧",
+      "outfitHint": "このキャラクターの別衣装として保存され、他の衣装を上書きしません。",
+      "sceneSection": "シーンバリエーション",
+      "sceneHint": "光・天候・状態・時代が生成指示に加わります。メイン画像がある場合は構造とカメラを固定します。",
+      "none": "指定なし",
+      "axisLighting": "光 / 時間帯",
+      "axisWeather": "天候",
+      "axisState": "状態",
+      "axisPeriod": "時代",
+      "groupLabel": "複数バリエーションを一度に生成",
+      "groupOff": "オフ",
+      "groupHint": "変化させる項目を1つ選ぶと、同じカメラのバリエーションを1回でまとめて生成します。",
+      "groupActiveHint": "その項目で {min}〜{max} 個選んでください。実際に届いた枚数で精算します。",
+      "groupAxisValues": "{axis}（複数選択）",
+      "expression": {
+        "neutral": "平静",
+        "smile": "微笑み",
+        "laugh": "大笑い",
+        "smirk": "冷笑",
+        "restrained": "こらえる",
+        "breakdown": "号泣",
+        "anger": "怒り",
+        "shock": "驚愕",
+        "fear": "恐怖",
+        "sad": "悲しみ",
+        "shy": "はにかみ",
+        "cold_gaze": "冷たい視線"
+      },
+      "lighting": {
+        "dawn": "早朝",
+        "day": "昼",
+        "dusk": "夕暮れ",
+        "night_interior": "夜・屋内",
+        "night_exterior": "夜・屋外",
+        "candle": "ろうそく",
+        "neon": "ネオン",
+        "overcast": "曇り"
+      },
+      "weather": {
+        "clear": "晴れ",
+        "rain": "雨",
+        "snow": "雪",
+        "fog": "霧",
+        "sandstorm": "砂嵐"
+      },
+      "state": {
+        "intact": "無傷",
+        "messy": "散らかり",
+        "searched": "荒らされた",
+        "damage_light": "戦損・軽",
+        "damage_medium": "戦損・中",
+        "damage_heavy": "戦損・重",
+        "ruins": "廃墟",
+        "festive": "祝祭の飾り"
+      },
+      "period": {
+        "ancient": "古代",
+        "republic": "民国期",
+        "1980s": "1980年代",
+        "1990s": "1990年代",
+        "contemporary": "現代",
+        "near_future": "近未来"
+      }
+    }
   },
   "scenes": {
     "eyebrow": "シーンライブラリ",
