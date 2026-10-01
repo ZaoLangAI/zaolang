@@ -6380,6 +6380,8 @@ export interface components {
             asset_kind: components["schemas"]["ImageAssetKind"];
             /** Character Views */
             character_views?: components["schemas"]["CharacterViewAngle"][] | null;
+            /** Scene Variants */
+            scene_variants?: components["schemas"]["ScenePresetCombo"][] | null;
             /**
              * Count
              * @default 1
@@ -7208,6 +7210,20 @@ export interface components {
              * @default false
              */
             portrait_consent: boolean;
+        };
+        /**
+         * CharacterRefSelection
+         * @description Exactly which of one character's reference images a job should use —
+         *     e.g. only the 婚礼 outfit's sheet — instead of the default subset
+         *     (`characters.service.default_reference_asset_ids`). Each id must be one
+         *     of that character's own `reference_assets`
+         *     (`characters.service.apply_character_refs`).
+         */
+        CharacterRefSelection: {
+            /** Character Id */
+            character_id: string;
+            /** Asset Ids */
+            asset_ids: string[];
         };
         /** CharacterReferenceAsset */
         CharacterReferenceAsset: {
@@ -9013,6 +9029,24 @@ export interface components {
             video_asset_kind: components["schemas"]["VideoAssetKind"];
             /** Forced Model */
             forced_model?: string | null;
+            /** Character Expressions */
+            character_expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
+            /** Character Outfit Label */
+            character_outfit_label?: string | null;
+            /** Character Ref Selection */
+            character_ref_selection?: components["schemas"]["CharacterRefSelection"][] | null;
+            /** Scene Lighting */
+            scene_lighting?: ("dawn" | "day" | "dusk" | "night_interior" | "night_exterior" | "candle" | "neon" | "overcast") | null;
+            /** Scene Weather */
+            scene_weather?: ("clear" | "rain" | "snow" | "fog" | "sandstorm") | null;
+            /** Scene State */
+            scene_state?: ("intact" | "messy" | "searched" | "damage_light" | "damage_medium" | "damage_heavy" | "ruins" | "festive") | null;
+            /** Scene Period */
+            scene_period?: ("ancient" | "republic" | "1980s" | "1990s" | "contemporary" | "near_future") | null;
+            /** Scene Variants */
+            scene_variants?: components["schemas"]["ScenePresetCombo"][] | null;
+            /** Reference Labels */
+            reference_labels?: components["schemas"]["ReferenceLabel"][] | null;
             /** Extra */
             extra?: {
                 [key: string]: unknown;
@@ -11377,6 +11411,8 @@ export interface components {
             asset_kind: components["schemas"]["ImageAssetKind"];
             /** Character Views */
             character_views?: components["schemas"]["CharacterViewAngle"][] | null;
+            /** Scene Variants */
+            scene_variants?: components["schemas"]["ScenePresetCombo"][] | null;
         };
         /** QuoteResponse */
         QuoteResponse: {
@@ -11499,6 +11535,17 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * ReferenceLabel
+         * @description What one reference image is — written by the server at submit
+         *     (`media.service.label_references`), never trusted from a client.
+         */
+        ReferenceLabel: {
+            /** Asset Id */
+            asset_id: string;
+            /** Label */
+            label: string;
         };
         /**
          * Region
@@ -11729,6 +11776,21 @@ export interface components {
             description?: string | null;
             /** Reference Asset Ids */
             reference_asset_ids?: string[];
+        };
+        /**
+         * ScenePresetCombo
+         * @description One image of a scene variant group (`GenerationParams.scene_variants`):
+         *     the preset combination that image should show.
+         */
+        ScenePresetCombo: {
+            /** Lighting */
+            lighting?: ("dawn" | "day" | "dusk" | "night_interior" | "night_exterior" | "candle" | "neon" | "overcast") | null;
+            /** Weather */
+            weather?: ("clear" | "rain" | "snow" | "fog" | "sandstorm") | null;
+            /** State */
+            state?: ("intact" | "messy" | "searched" | "damage_light" | "damage_medium" | "damage_heavy" | "ruins" | "festive") | null;
+            /** Period */
+            period?: ("ancient" | "republic" | "1980s" | "1990s" | "contemporary" | "near_future") | null;
         };
         /** SceneReferenceAsset */
         SceneReferenceAsset: {

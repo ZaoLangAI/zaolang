@@ -127,8 +127,10 @@ def quote(payload: QuoteRequest, user: CurrentUser, session: DbSession) -> Quote
         operation=payload.operation,
         quality_tier=payload.quality_tier,
         duration_seconds=payload.duration_seconds,
-        output_count=jobs_service.character_output_count(
-            asset_kind=payload.asset_kind.value, character_views=payload.character_views
+        output_count=jobs_service.requested_output_count(
+            asset_kind=payload.asset_kind.value,
+            character_views=payload.character_views,
+            scene_variants=payload.scene_variants,
         ),
     )
     account = credits_service.get_or_create_account(session, user.id)
@@ -156,8 +158,10 @@ def quote_batch(
             operation=item.operation,
             quality_tier=item.quality_tier,
             duration_seconds=item.duration_seconds,
-            output_count=jobs_service.character_output_count(
-                asset_kind=item.asset_kind.value, character_views=item.character_views
+            output_count=jobs_service.requested_output_count(
+                asset_kind=item.asset_kind.value,
+                character_views=item.character_views,
+                scene_variants=item.scene_variants,
             ),
         )
         lines.append(
