@@ -157,8 +157,8 @@ function referenceCaption(
  * Per-character/scene picks for a job. No entry for an id means "default
  * subset" (nothing is sent).
  */
-export function useReferencePicks() {
-  const [picks, setPicks] = useState<Record<string, ReferencePick | undefined>>({});
+export function useReferencePicks(initial: Record<string, ReferencePick> = {}) {
+  const [picks, setPicks] = useState<Record<string, ReferencePick | undefined>>(initial);
   const set = (ownerId: string, pick: ReferencePick | undefined) =>
     setPicks((current) => ({ ...current, [ownerId]: pick }));
   /** `*_ref_selection` items for the owners still selected that were picked. */

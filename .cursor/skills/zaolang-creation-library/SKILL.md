@@ -24,7 +24,7 @@ Not here → `zaolang-admin-ops` (review, takedown), `zaolang-credits-billing` (
 | `back/app/api/v1/asset_variants.py` | `/v1/characters/{id}/looks…`, `/v1/scenes/{id}/variants…`, `…/entries/{entry_id}` (+ `:anchor`); owner-only 404, every write `withdraw_after_edit` |
 | `front/src/app/[locale]/(site)/skills/page.tsx` | plaza; URL filters `contentType` × `category` × `access` |
 | `front/src/components/skills/` | plaza grid/card, detail+unlock dialog, create/manage dialogs, `@` menu |
-| `front/src/components/characters/character-library.tsx` | `/create/characters`; twin `scene-library.tsx` in `components/scenes/` |
+| `front/src/components/characters/character-library.tsx` | `/create/characters`; twin `scene-library.tsx` in `components/scenes/`; both open `front/src/components/library/asset-variants-sheet.tsx` (looks / variants + entries) |
 | `front/src/lib/skill-mention.ts` | `isSkillMentionable`, `creationStudioHref`, `@Title` token helpers |
 | `front/src/components/studio/use-applied-skills.tsx` | studio apply, `MAX_APPLIED_SKILLS`, `?skillId=` seed |
 

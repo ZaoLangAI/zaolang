@@ -12207,6 +12207,8 @@ export interface components {
             traits: string;
             /** Character Ref Id */
             character_ref_id?: string | null;
+            /** Look Id */
+            look_id?: string | null;
         };
         /** ScriptCharacterLinkUpdate */
         ScriptCharacterLinkUpdate: {
@@ -12214,6 +12216,8 @@ export interface components {
             name: string;
             /** Character Ref Id */
             character_ref_id?: string | null;
+            /** Look Id */
+            look_id?: string | null;
         };
         /**
          * ScriptContentUpdateRequest
@@ -12338,6 +12342,8 @@ export interface components {
             blocks: components["schemas"]["ScriptBlock"][];
             /** Ref Id */
             ref_id?: string | null;
+            /** Variant Id */
+            variant_id?: string | null;
         };
         /** ScriptSceneLinkUpdate */
         ScriptSceneLinkUpdate: {
@@ -12345,6 +12351,8 @@ export interface components {
             heading: string;
             /** Ref Id */
             ref_id?: string | null;
+            /** Variant Id */
+            variant_id?: string | null;
         };
         /**
          * ScriptSegment

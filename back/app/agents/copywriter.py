@@ -1624,8 +1624,14 @@ def _sanitize_script(raw: Any) -> dict[str, Any] | None:
             # `_carry_over_links` for how a link survives a model turn that
             # doesn't echo it back.
             ref = item.get("character_ref_id")
+            look = item.get("look_id") if ref else None
             characters.append(
-                {"name": name, "traits": traits, "character_ref_id": str(ref) if ref else None}
+                {
+                    "name": name,
+                    "traits": traits,
+                    "character_ref_id": str(ref) if ref else None,
+                    "look_id": str(look) if look else None,
+                }
             )
 
     scenes: list[dict[str, Any]] = []
@@ -1654,8 +1660,14 @@ def _sanitize_script(raw: Any) -> dict[str, Any] | None:
                     blocks.append({"type": block_type, "character": character_name, "text": text})
             if blocks:
                 ref = scene.get("ref_id")
+                variant = scene.get("variant_id") if ref else None
                 scenes.append(
-                    {"heading": heading, "blocks": blocks, "ref_id": str(ref) if ref else None}
+                    {
+                        "heading": heading,
+                        "blocks": blocks,
+                        "ref_id": str(ref) if ref else None,
+                        "variant_id": str(variant) if variant else None,
+                    }
                 )
 
     if not scenes:
@@ -1678,26 +1690,28 @@ def _carry_over_links(previous: dict[str, Any], updated: dict[str, Any]) -> None
     rather than mismatched onto the wrong character/scene.
     """
     character_refs = {
-        str(item.get("name")): item.get("character_ref_id")
+        str(item.get("name")): (item.get("character_ref_id"), item.get("look_id"))
         for item in previous.get("characters") or []
         if isinstance(item, dict) and item.get("character_ref_id")
     }
     for item in updated.get("characters") or []:
         if isinstance(item, dict) and not item.get("character_ref_id"):
-            ref = character_refs.get(str(item.get("name")))
+            ref, look = character_refs.get(str(item.get("name")), (None, None))
             if ref:
                 item["character_ref_id"] = ref
+                item["look_id"] = look
 
     scene_refs = {
-        str(scene.get("heading")): scene.get("ref_id")
+        str(scene.get("heading")): (scene.get("ref_id"), scene.get("variant_id"))
         for scene in previous.get("scenes") or []
         if isinstance(scene, dict) and scene.get("ref_id")
     }
     for scene in updated.get("scenes") or []:
         if isinstance(scene, dict) and not scene.get("ref_id"):
-            ref = scene_refs.get(str(scene.get("heading")))
+            ref, variant = scene_refs.get(str(scene.get("heading")), (None, None))
             if ref:
                 scene["ref_id"] = ref
+                scene["variant_id"] = variant
 
 
 def stream_draft_script(

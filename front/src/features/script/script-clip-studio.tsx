@@ -144,7 +144,14 @@ export function ScriptClipStudio({
     ? displaySegmentBlocks(located.scene, located.blockIndex)
     : { environment: [], blocks: [] };
   const seedRefs = useMemo(() => {
-    if (!located) return { characterIds: [] as string[], sceneId: null as string | null };
+    if (!located) {
+      return {
+        characterIds: [] as string[],
+        sceneId: null as string | null,
+        characterLooks: {} as Record<string, string>,
+        sceneVariantId: null as string | null,
+      };
+    }
     return resolveBreakpointRefs(document, located.scene, located.blockIndex);
   }, [document, located]);
 
@@ -183,8 +190,17 @@ export function ScriptClipStudio({
   );
   // Which of each picked character's/scene's images to send (e.g. only the
   // 婚礼 outfit) — unset means the backend's default subset.
-  const characterRefPicks = useReferencePicks();
-  const sceneRefPicks = useReferencePicks();
+  // Seeded from the script's linked looks / scene variant.
+  const characterRefPicks = useReferencePicks(
+    Object.fromEntries(
+      Object.entries(seedRefs.characterLooks).map(([id, variantId]) => [id, { variantId }]),
+    ),
+  );
+  const sceneRefPicks = useReferencePicks(
+    seedRefs.sceneId && seedRefs.sceneVariantId
+      ? { [seedRefs.sceneId]: { variantId: seedRefs.sceneVariantId } }
+      : {},
+  );
 
   const [draftId, setDraftId] = useState<string | null>(initialDraft?.id ?? null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);

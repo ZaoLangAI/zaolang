@@ -4,7 +4,7 @@ import {
   orderedBreakpointKeys,
   type BreakpointVideoBinding,
 } from './script-breakpoint';
-import { breakpointSegmentPrompt, resolveBreakpointRefs } from './script-prompts';
+import { breakpointSegmentPrompt, lookSelections, resolveBreakpointRefs } from './script-prompts';
 
 /** A video segment the batch runner can submit, in shoot order. */
 export interface PendingVideo {
@@ -12,6 +12,8 @@ export interface PendingVideo {
   heading: string;
   blockIndex: number;
   characterIds: string[];
+  /** Linked looks / scene variant, as `*_ref_selection` items. */
+  selections: ReturnType<typeof lookSelections>;
   sceneId: string | null;
   prompt: string;
 }
@@ -128,6 +130,7 @@ export function pendingVideos(
       blockIndex: located.blockIndex,
       characterIds: refs.characterIds,
       sceneId: refs.sceneId,
+      selections: lookSelections(refs),
       prompt: breakpointSegmentPrompt(located.scene, located.blockIndex),
     });
   }

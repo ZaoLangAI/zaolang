@@ -3400,7 +3400,9 @@
     "turnOriginBlocking": "ブロックアウト",
     "openBlocking": "ブロックアウト",
     "openBlockingHint": "3D でカメラと立ち位置をプリビズし、参照動画として生成に使います。",
-    "blockingStale": "ブロックアウトの再構築が必要です"
+    "blockingStale": "ブロックアウトの再構築が必要です",
+    "linkLook": "衣装",
+    "linkSceneVariant": "バリエーション"
   },
   "search": {
     "recentSearches": "最近の検索",
