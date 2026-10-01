@@ -74,6 +74,12 @@ import {
   promptForBreakpointKey,
   resolveBreakpointRefs,
 } from './script-prompts';
+import {
+  ReferenceImagePicker,
+  useReferencePicks,
+} from '@/components/studio/reference-image-picker';
+import { defaultCharacterReferenceIds } from '@/lib/characters';
+import { defaultSceneReferenceIds } from '@/lib/scenes';
 
 type Operation = 'text_to_video' | 'image_to_video' | 'video_to_video';
 type ReferenceMode = 'input_references' | 'frame_images';
@@ -175,6 +181,10 @@ export function ScriptClipStudio({
   const [selectedReferenceSceneIds, setSelectedReferenceSceneIds] = useState<string[]>(() =>
     seedRefs.sceneId ? [seedRefs.sceneId] : [],
   );
+  // Which of each picked character's/scene's images to send (e.g. only the
+  // 婚礼 outfit) — unset means the backend's default subset.
+  const characterRefPicks = useReferencePicks();
+  const sceneRefPicks = useReferencePicks();
 
   const [draftId, setDraftId] = useState<string | null>(initialDraft?.id ?? null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -447,6 +457,14 @@ export function ScriptClipStudio({
       styleGalleryId: appliedStyleGalleryId ?? undefined,
       characterIds: selectedReferenceCharacterIds,
       sceneIds: selectedReferenceSceneIds,
+      assetPresets: {
+        character_ref_selection: characterRefPicks
+          .selectionFor(selectedReferenceCharacterIds)
+          .map(({ ownerId, asset_ids }) => ({ character_id: ownerId, asset_ids })),
+        scene_ref_selection: sceneRefPicks
+          .selectionFor(selectedReferenceSceneIds)
+          .map(({ ownerId, asset_ids }) => ({ scene_id: ownerId, asset_ids })),
+      },
       maxCredits: quote?.credits,
       draftTitle: located.scene.heading || script.title || null,
       draftId: draftId ?? undefined,
@@ -472,6 +490,8 @@ export function ScriptClipStudio({
 
   const estimate = quote ? formatDuration(quote.estimated_seconds) : '—';
   const price = quote ? tCredits('amount', { count: formatCount(quote.credits, locale) }) : '—';
+
+  const selectedScene = scenes.find((scene) => scene.id === selectedReferenceSceneIds[0]);
 
   const paramsPanel = (
     <>
@@ -515,6 +535,17 @@ export function ScriptClipStudio({
                     </span>
                     {character.name}
                   </label>
+                  {checked ? (
+                    <ReferenceImagePicker
+                      label={t('referencePickLabel', { name: character.name })}
+                      assets={character.reference_assets ?? []}
+                      selected={
+                        characterRefPicks.picks[character.id] ??
+                        defaultCharacterReferenceIds(character)
+                      }
+                      onChange={(ids) => characterRefPicks.set(character.id, ids)}
+                    />
+                  ) : null}
                 </li>
               );
             })}
@@ -537,6 +568,16 @@ export function ScriptClipStudio({
             ...scenes.map((scene) => ({ value: scene.id, label: scene.name })),
           ]}
         />
+        {selectedScene ? (
+          <ReferenceImagePicker
+            label={t('referencePickLabel', { name: selectedScene.name })}
+            assets={selectedScene.reference_assets ?? []}
+            selected={
+              sceneRefPicks.picks[selectedScene.id] ?? defaultSceneReferenceIds(selectedScene)
+            }
+            onChange={(ids) => sceneRefPicks.set(selectedScene.id, ids)}
+          />
+        ) : null}
         <Link href="/create/scenes" className="text-[11px] text-muted hover:text-text">
           {t('manageScenesLink')}
         </Link>

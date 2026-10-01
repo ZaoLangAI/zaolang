@@ -42,6 +42,12 @@ export interface PromptPolishContext {
   videoAssetKind?: PromptEnhancePayload['video_asset_kind'];
   /** Clip studio: polish the prompt and these colour blocks together. */
   scriptSegment?: PromptEnhanceScriptSegment;
+  /** Image studio expression / scene presets — the coach polishes around
+   * them instead of re-deciding light, damage, era or expressions. */
+  assetPresets?: Pick<
+    PromptEnhancePayload,
+    'character_expressions' | 'scene_lighting' | 'scene_weather' | 'scene_state' | 'scene_period'
+  >;
 }
 
 /**
@@ -182,6 +188,7 @@ export function PromptPolish({
             video_asset_kind: context?.videoAssetKind,
             script_segment: extra?.scriptSegment ?? context?.scriptSegment,
             question_answers: extra?.questionAnswers,
+            ...context?.assetPresets,
           };
           let result: PromptEnhanceResult | null = null;
           for await (const frame of streamPost(endpoint, body)) {

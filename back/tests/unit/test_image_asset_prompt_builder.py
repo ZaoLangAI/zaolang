@@ -146,3 +146,17 @@ def test_sanitize_enhancements_drops_sheet_layout_and_foreign_eras() -> None:
     assert pb.sanitize_enhancements(pb.AssetPass.CHARACTER_SHEET, ["三视图"], params={}) == [
         "三视图"
     ]
+
+
+def test_expression_pass_drops_a_seeded_sheet_layout_sentence() -> None:
+    prompt, _ = pb.compose(
+        pb.AssetPass.CHARACTER_EXPRESSIONS,
+        prompt=(
+            "林夏。短发，白衬衫。生成一张角色设定图：左侧全身三视图（正面、侧面、背面），"
+            "右侧面部特写、服装配饰细节与色板；纯白背景，同一人物，单张输出。"
+        ),
+        negative=None,
+        params={"character_expressions": ["smile", "anger"]},
+    )
+    assert "三视图" not in prompt and "色板" not in prompt
+    assert "林夏" in prompt and "白衬衫" in prompt

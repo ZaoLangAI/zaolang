@@ -3142,7 +3142,82 @@
     "continuityApplied": "已自动衔接上一镜头的结尾画面作为本镜头的开头，保证画面衔接。",
     "continuityFailed": "自动衔接失败，可在下方手动选择首帧。",
     "continuityRemove": "取消衔接",
-    "scenePolishBlockedHint": "场景图还有必答的追问没回答，答完并重润一次再提交。"
+    "scenePolishBlockedHint": "场景图还有必答的追问没回答，答完并重润一次再提交。",
+    "referencePickLabel": "「{name}」使用哪些参考图",
+    "referenceViewFront": "设定图",
+    "referenceViewSide": "侧面",
+    "referenceViewBack": "背面",
+    "referenceViewMaster": "主图",
+    "referenceViewOther": "参考图",
+    "presets": {
+      "expressionsLabel": "表情合集（可多选）",
+      "expressionsHint": "选择表情后，将以该角色的设定图为参考，生成一张多表情宫格图，而不是设定图。",
+      "expressionsActiveHint": "将生成一张包含 {count} 种表情的合集图，默认不加入角色库。",
+      "outfitLabel": "造型名称（可选）",
+      "outfitPlaceholder": "如：日常、婚礼、战甲",
+      "outfitHint": "填写后，这张设定图会作为该角色的独立造型保存，不会覆盖其他造型。",
+      "sceneSection": "场景变体",
+      "sceneHint": "光照、天气、状态与时期会写入生成要求；已有主图时以主图为基准，保持结构与机位不变。",
+      "none": "不指定",
+      "axisLighting": "光照 / 时段",
+      "axisWeather": "天气",
+      "axisState": "状态",
+      "axisPeriod": "时期",
+      "groupLabel": "一次生成多个变体（组图）",
+      "groupOff": "关闭",
+      "groupHint": "选择一个变化维度，一次调用生成多张同机位的变体图。",
+      "groupActiveHint": "请在该维度选择 {min}–{max} 个值；按实际交付张数结算。",
+      "groupAxisValues": "{axis}（多选）",
+      "expression": {
+        "neutral": "平静",
+        "smile": "微笑",
+        "laugh": "大笑",
+        "smirk": "冷笑",
+        "restrained": "隐忍",
+        "breakdown": "崩溃大哭",
+        "anger": "愤怒",
+        "shock": "震惊",
+        "fear": "恐惧",
+        "sad": "悲伤",
+        "shy": "羞涩",
+        "cold_gaze": "霸总凝视"
+      },
+      "lighting": {
+        "dawn": "清晨",
+        "day": "白天",
+        "dusk": "黄昏",
+        "night_interior": "夜·室内",
+        "night_exterior": "夜·外景",
+        "candle": "烛光",
+        "neon": "霓虹",
+        "overcast": "阴天"
+      },
+      "weather": {
+        "clear": "晴",
+        "rain": "雨",
+        "snow": "雪",
+        "fog": "雾",
+        "sandstorm": "沙尘"
+      },
+      "state": {
+        "intact": "完好",
+        "messy": "凌乱",
+        "searched": "被搜查",
+        "damage_light": "战损·轻",
+        "damage_medium": "战损·中",
+        "damage_heavy": "战损·重",
+        "ruins": "废墟",
+        "festive": "节庆装饰"
+      },
+      "period": {
+        "ancient": "古代",
+        "republic": "民国",
+        "1980s": "八十年代",
+        "1990s": "九十年代",
+        "contemporary": "当代",
+        "near_future": "近未来"
+      }
+    }
   },
   "scenes": {
     "eyebrow": "场景库",

@@ -3142,7 +3142,82 @@
     "continuityApplied": "Auto-linked to the previous shot's last frame as this shot's opening frame, so the cut stays continuous.",
     "continuityFailed": "Auto-linking failed — you can pick a first frame manually below.",
     "continuityRemove": "Remove link",
-    "scenePolishBlockedHint": "This scene plate still has required follow-ups. Answer them and polish once more before generating."
+    "scenePolishBlockedHint": "This scene plate still has required follow-ups. Answer them and polish once more before generating.",
+    "referencePickLabel": "Which references to use for “{name}”",
+    "referenceViewFront": "Sheet",
+    "referenceViewSide": "Side",
+    "referenceViewBack": "Back",
+    "referenceViewMaster": "Master",
+    "referenceViewOther": "Reference",
+    "presets": {
+      "expressionsLabel": "Expression sheet (multi-select)",
+      "expressionsHint": "Pick expressions to generate one grid of this character's faces from their sheet, instead of a character sheet.",
+      "expressionsActiveHint": "Generates one sheet with {count} expressions. Not added to the character library by default.",
+      "outfitLabel": "Outfit name (optional)",
+      "outfitPlaceholder": "e.g. Casual, Wedding, Armor",
+      "outfitHint": "Saved as a separate outfit for this character — it won't replace other outfits.",
+      "sceneSection": "Scene variant",
+      "sceneHint": "Lighting, weather, state and period are added to the brief; with a master image, structure and camera stay fixed.",
+      "none": "Any",
+      "axisLighting": "Lighting / time",
+      "axisWeather": "Weather",
+      "axisState": "State",
+      "axisPeriod": "Period",
+      "groupLabel": "Generate several variants at once",
+      "groupOff": "Off",
+      "groupHint": "Pick one dimension to vary; one call returns several same-camera variants.",
+      "groupActiveHint": "Pick {min}–{max} values on that dimension. Charged per image delivered.",
+      "groupAxisValues": "{axis} (multi-select)",
+      "expression": {
+        "neutral": "Neutral",
+        "smile": "Smile",
+        "laugh": "Laugh",
+        "smirk": "Smirk",
+        "restrained": "Restrained",
+        "breakdown": "Breakdown",
+        "anger": "Anger",
+        "shock": "Shock",
+        "fear": "Fear",
+        "sad": "Sad",
+        "shy": "Shy",
+        "cold_gaze": "Cold gaze"
+      },
+      "lighting": {
+        "dawn": "Dawn",
+        "day": "Day",
+        "dusk": "Dusk",
+        "night_interior": "Night · interior",
+        "night_exterior": "Night · exterior",
+        "candle": "Candlelight",
+        "neon": "Neon",
+        "overcast": "Overcast"
+      },
+      "weather": {
+        "clear": "Clear",
+        "rain": "Rain",
+        "snow": "Snow",
+        "fog": "Fog",
+        "sandstorm": "Sandstorm"
+      },
+      "state": {
+        "intact": "Intact",
+        "messy": "Messy",
+        "searched": "Ransacked",
+        "damage_light": "Damage · light",
+        "damage_medium": "Damage · medium",
+        "damage_heavy": "Damage · heavy",
+        "ruins": "Ruins",
+        "festive": "Festive"
+      },
+      "period": {
+        "ancient": "Ancient",
+        "republic": "Republic era",
+        "1980s": "1980s",
+        "1990s": "1990s",
+        "contemporary": "Contemporary",
+        "near_future": "Near future"
+      }
+    }
   },
   "scenes": {
     "eyebrow": "Scene library",

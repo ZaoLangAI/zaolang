@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { Scene } from '@/lib/api/types';
 
-import { sceneHeroAsset, sceneImagePrompt, sceneImageStudioHref } from './scenes';
+import {
+  defaultSceneReferenceIds,
+  sceneHeroAsset,
+  sceneImagePrompt,
+  sceneImageStudioHref,
+} from './scenes';
 
 describe('sceneImagePrompt', () => {
   it('joins name and description', () => {
@@ -64,5 +69,19 @@ describe('sceneHeroAsset with variants', () => {
       ],
     } as Scene;
     expect(sceneHeroAsset(scene)?.asset_id).toBe('ast_master');
+  });
+});
+
+describe('defaultSceneReferenceIds', () => {
+  it('sends the master plate and skips labelled variants', () => {
+    const scene = {
+      reference_assets: [
+        { asset_id: 'dusk', view: 'general', label: '黄昏' },
+        { asset_id: 'master', view: 'establishing', label: null },
+        { asset_id: 'detail', view: 'detail', label: null },
+        { asset_id: 'extra', view: 'general', label: null },
+      ],
+    } as Scene;
+    expect(defaultSceneReferenceIds(scene)).toEqual(['master', 'detail']);
   });
 });
