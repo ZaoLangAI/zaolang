@@ -8,6 +8,7 @@ import { serverFetchOrNull } from '@/lib/api/server';
 import type { Draft, StyleGalleryEntry, WorkDetail } from '@/lib/api/types';
 import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
 import { readDraftReturnContext, sanitizeReturnTo, studioSessionKey } from '@/lib/studio-session';
+import { isSceneLighting, isSceneWeather } from '@/features/image-assets/vocabulary';
 
 // `image_creation`/`video_creation` are URL-level modes only — the merged
 // "图片创作"/"视频创作" cards from `create-mode-cards.tsx` — not backend
@@ -143,6 +144,8 @@ export default async function NewCreationPage({
     continuityAssetId?: string;
     jobId?: string;
     skillId?: string;
+    sceneLighting?: string;
+    sceneWeather?: string;
   }>;
 }) {
   const {
@@ -167,6 +170,8 @@ export default async function NewCreationPage({
     continuityAssetId,
     jobId,
     skillId,
+    sceneLighting,
+    sceneWeather,
   } = await searchParams;
   const t = await getTranslations('createPage');
 
@@ -238,6 +243,12 @@ export default async function NewCreationPage({
   // material); the studio itself re-derives that condition too.
   const resolvedContinuityAssetId = parseAssetId(continuityAssetId);
   const resolvedSkillId = parseSkillId(skillId);
+  // The script studio's scene jump-out reads 日/夜 (and 雨/雪) off the
+  // heading (`parseScenePresets`); validated against the generated unions.
+  const initialScenePresets = {
+    lighting: isSceneLighting(sceneLighting) ? sceneLighting : undefined,
+    weather: isSceneWeather(sceneWeather) ? sceneWeather : undefined,
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-6 sm:px-6">
@@ -260,6 +271,9 @@ export default async function NewCreationPage({
           linkBreakpointKey,
           continuitySourceAssetId: resolvedContinuityAssetId,
           skillId: resolvedSkillId,
+          scenePresets: [initialScenePresets.lighting, initialScenePresets.weather]
+            .filter(Boolean)
+            .join('+'),
         })}
         operation={operation}
         initialPrompt={prompt?.trim().slice(0, STUDIO_PROMPT_MAX_LENGTH)}
@@ -282,6 +296,7 @@ export default async function NewCreationPage({
         continuitySourceAssetId={resolvedContinuityAssetId}
         initialSkillId={resolvedSkillId}
         initialReferenceAssetIds={resolvedReferenceAssetIds}
+        initialScenePresets={initialScenePresets}
       />
     </div>
   );

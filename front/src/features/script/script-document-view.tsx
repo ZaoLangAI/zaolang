@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import type { Character, Scene } from '@/lib/api/types';
 import { characterSheetAsset } from '@/lib/characters';
+import type { ScenePresets } from '@/features/image-assets/vocabulary';
+import { parseScenePresets } from '@/features/script/scene-heading';
 import { useResource } from '@/lib/use-resource';
 
 import type { ScriptCharacter, ScriptDocument, ScriptScene } from './api';
@@ -40,12 +42,15 @@ function buildCreateHref({
   prompt,
   subjectNameHint,
   targetId,
+  scenePresets,
 }: {
   episodeId: string;
   assetKind: 'character' | 'scene';
   prompt: string;
   subjectNameHint: string;
   targetId: string | null;
+  /** Lighting/weather read off the scene heading (`parseScenePresets`). */
+  scenePresets?: ScenePresets;
 }): string {
   const params = new URLSearchParams({
     mode: 'image_creation',
@@ -59,6 +64,8 @@ function buildCreateHref({
   if (targetId) {
     params.set(assetKind === 'character' ? 'targetCharacterId' : 'targetSceneId', targetId);
   }
+  if (scenePresets?.lighting) params.set('sceneLighting', scenePresets.lighting);
+  if (scenePresets?.weather) params.set('sceneWeather', scenePresets.weather);
   return `/create/new?${params.toString()}`;
 }
 
@@ -206,6 +213,7 @@ export function ScriptDocumentView({
                 prompt: sceneImagePrompt(scene),
                 subjectNameHint: scene.heading,
                 targetId: scene.ref_id,
+                scenePresets: parseScenePresets(scene),
               })
             : undefined
         }
