@@ -23705,6 +23705,22 @@
             ],
             "title": "Character Views"
           },
+          "scene_variants": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ScenePresetCombo"
+                },
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Variants"
+          },
           "count": {
             "type": "integer",
             "maximum": 500.0,
@@ -25771,6 +25787,31 @@
         },
         "type": "object",
         "title": "CharacterPublishRequest"
+      },
+      "CharacterRefSelection": {
+        "properties": {
+          "character_id": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Character Id"
+          },
+          "asset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Asset Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "character_id",
+          "asset_ids"
+        ],
+        "title": "CharacterRefSelection",
+        "description": "Exactly which of one character's reference images a job should use —\ne.g. only the 婚礼 outfit's sheet — instead of the default subset\n(`characters.service.default_reference_asset_ids`). Each id must be one\nof that character's own `reference_assets`\n(`characters.service.apply_character_refs`)."
       },
       "CharacterReferenceAsset": {
         "properties": {
@@ -30451,6 +30492,174 @@
               }
             ],
             "title": "Forced Model"
+          },
+          "character_expressions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "neutral",
+                    "smile",
+                    "laugh",
+                    "smirk",
+                    "restrained",
+                    "breakdown",
+                    "anger",
+                    "shock",
+                    "fear",
+                    "sad",
+                    "shy",
+                    "cold_gaze"
+                  ]
+                },
+                "type": "array",
+                "maxItems": 9,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Expressions"
+          },
+          "character_outfit_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Outfit Label"
+          },
+          "character_ref_selection": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CharacterRefSelection"
+                },
+                "type": "array",
+                "maxItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Ref Selection"
+          },
+          "scene_lighting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dawn",
+                  "day",
+                  "dusk",
+                  "night_interior",
+                  "night_exterior",
+                  "candle",
+                  "neon",
+                  "overcast"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Lighting"
+          },
+          "scene_weather": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "clear",
+                  "rain",
+                  "snow",
+                  "fog",
+                  "sandstorm"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Weather"
+          },
+          "scene_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "intact",
+                  "messy",
+                  "searched",
+                  "damage_light",
+                  "damage_medium",
+                  "damage_heavy",
+                  "ruins",
+                  "festive"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene State"
+          },
+          "scene_period": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ancient",
+                  "republic",
+                  "1980s",
+                  "1990s",
+                  "contemporary",
+                  "near_future"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Period"
+          },
+          "scene_variants": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ScenePresetCombo"
+                },
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Variants"
+          },
+          "reference_labels": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ReferenceLabel"
+                },
+                "type": "array",
+                "maxItems": 9
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Labels"
           },
           "extra": {
             "additionalProperties": true,
@@ -36378,6 +36587,22 @@
               }
             ],
             "title": "Character Views"
+          },
+          "scene_variants": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ScenePresetCombo"
+                },
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Variants"
           }
         },
         "type": "object",
@@ -36683,6 +36908,27 @@
           "created_at"
         ],
         "title": "RedemptionRecordView"
+      },
+      "ReferenceLabel": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Asset Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 60,
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id",
+          "label"
+        ],
+        "title": "ReferenceLabel",
+        "description": "What one reference image is — written by the server at submit\n(`media.service.label_references`), never trusted from a client."
       },
       "Region": {
         "type": "string",
@@ -37282,6 +37528,92 @@
           "name"
         ],
         "title": "SceneCreateRequest"
+      },
+      "ScenePresetCombo": {
+        "properties": {
+          "lighting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dawn",
+                  "day",
+                  "dusk",
+                  "night_interior",
+                  "night_exterior",
+                  "candle",
+                  "neon",
+                  "overcast"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lighting"
+          },
+          "weather": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "clear",
+                  "rain",
+                  "snow",
+                  "fog",
+                  "sandstorm"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weather"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "intact",
+                  "messy",
+                  "searched",
+                  "damage_light",
+                  "damage_medium",
+                  "damage_heavy",
+                  "ruins",
+                  "festive"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ancient",
+                  "republic",
+                  "1980s",
+                  "1990s",
+                  "contemporary",
+                  "near_future"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          }
+        },
+        "type": "object",
+        "title": "ScenePresetCombo",
+        "description": "One image of a scene variant group (`GenerationParams.scene_variants`):\nthe preset combination that image should show."
       },
       "SceneReferenceAsset": {
         "properties": {

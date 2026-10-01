@@ -27,6 +27,7 @@ from app.domain.errors import (
     InsufficientCredits,
     NotFound,
     SpendLimitExceeded,
+    ValidationFailed,
 )
 from app.domain.jobs import state_machine as sm
 from app.domain.media import service as media_service
@@ -74,7 +75,7 @@ def quote_for(
 # ever merge into these two keys, so a request that is otherwise identical
 # except for server-side reference-merging must not look like a body
 # mismatch below.
-_MUTATED_PARAM_KEYS = frozenset({"reference_asset_ids", "extra"})
+_MUTATED_PARAM_KEYS = frozenset({"reference_asset_ids", "extra", "reference_labels"})
 
 
 def _is_replay_of(
@@ -101,11 +102,30 @@ def character_output_count(*, asset_kind: str | None, character_views: list[Any]
 
     `1` for everything except an `asset_kind=character` job that named more
     than one view — the only case `GenerationParams.character_views` is ever
-    longer than one entry (a "补全侧面/背面" completion request).
+    longer than one entry (a "补全侧面/背面" completion request). Each view is
+    its own pass through the graph — see `requested_output_count` for the
+    priced total, which also counts a scene variant group's images.
     """
     if asset_kind != ImageAssetKind.CHARACTER.value or not character_views:
         return 1
     return len(character_views)
+
+
+def requested_output_count(
+    *,
+    asset_kind: str | None,
+    character_views: list[Any] | None,
+    scene_variants: list[Any] | None = None,
+) -> int:
+    """How many images a job is priced for.
+
+    A multi-view character job (one pass per view) or a scene variant group
+    (one provider call returning one image per `scene_variants` entry); a
+    composite expression image is a single image.
+    """
+    if asset_kind == ImageAssetKind.SCENE.value and scene_variants:
+        return len(scene_variants)
+    return character_output_count(asset_kind=asset_kind, character_views=character_views)
 
 
 def skips_credits(job: GenerationJob) -> bool:
@@ -209,6 +229,8 @@ def submit(
 
     # Before quoting: a spec mismatch, or an unowned character, must not cost
     # the user a reservation.
+    # `reference_labels` is server-written below; a client never sets it.
+    params.pop("reference_labels", None)
     characters_service.apply_character_refs(session, user_id=user_id, params=params)
     scenes_service.apply_scene_refs(session, user_id=user_id, params=params)
     media_service.attach_licensed_source_video(
@@ -225,6 +247,11 @@ def submit(
     # consent (深度合成管理规定 §14). Checked before quoting, like the
     # ownership check above, so a missing consent never reserves credits.
     consent_service.assert_reference_consents(session, operation=operation, params=params)
+    if params.get("character_expressions") and not params.get("reference_asset_ids"):
+        raise ValidationFailed(
+            "表情合集图需要以角色设定图作为参考，请先选择角色或上传设定图。",
+            fields={"params.reference_asset_ids": "表情合集图至少需要 1 张角色参考图"},
+        )
     shortform_service.assert_params_consistent(session, params)
 
     priced = quote_for(
@@ -232,8 +259,10 @@ def submit(
         operation=operation,
         quality_tier=quality_tier,
         duration_seconds=int(params.get("duration_seconds") or 0),
-        output_count=character_output_count(
-            asset_kind=params.get("asset_kind"), character_views=params.get("character_views")
+        output_count=requested_output_count(
+            asset_kind=params.get("asset_kind"),
+            character_views=params.get("character_views"),
+            scene_variants=params.get("scene_variants"),
         ),
     )
     sandbox = origin == JobOrigin.SANDBOX

@@ -9,6 +9,17 @@ from typing import Any, Literal
 from pydantic import Field, ValidationError, model_validator
 
 from app.api.schemas.common import ApiModel
+from app.domain.image_assets.vocabulary import (
+    MAX_CHARACTER_EXPRESSIONS,
+    MAX_OUTFIT_LABEL_LEN,
+    MAX_SCENE_VARIANTS,
+    MIN_SCENE_VARIANTS,
+    CharacterExpression,
+    SceneLighting,
+    ScenePeriod,
+    SceneState,
+    SceneWeather,
+)
 from app.models.enums import (
     CHARACTER_JOB_VIEWS,
     CharacterViewAngle,
@@ -328,6 +339,41 @@ def _parsed_forced_model(raw: Any) -> str | None:
     return raw if isinstance(raw, str) and raw else None
 
 
+class CharacterRefSelection(ApiModel):
+    """Exactly which of one character's reference images a job should use —
+    e.g. only the 婚礼 outfit's sheet — instead of the default subset
+    (`characters.service.default_reference_asset_ids`). Each id must be one
+    of that character's own `reference_assets`
+    (`characters.service.apply_character_refs`)."""
+
+    character_id: str = Field(max_length=40)
+    asset_ids: list[str] = Field(min_length=1, max_length=4)
+
+
+class ScenePresetCombo(ApiModel):
+    """One image of a scene variant group (`GenerationParams.scene_variants`):
+    the preset combination that image should show."""
+
+    lighting: SceneLighting | None = None
+    weather: SceneWeather | None = None
+    state: SceneState | None = None
+    period: ScenePeriod | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one_axis(self) -> ScenePresetCombo:
+        if not (self.lighting or self.weather or self.state or self.period):
+            raise ValueError("每个场景变体至少要设置光照/天气/状态/时期中的一项。")
+        return self
+
+
+class ReferenceLabel(ApiModel):
+    """What one reference image is — written by the server at submit
+    (`media.service.label_references`), never trusted from a client."""
+
+    asset_id: str = Field(max_length=40)
+    label: str = Field(max_length=60)
+
+
 class GenerationParams(ApiModel):
     # No `min_length` here: enforced instead by `validate_generation_params`,
     # which exempts `video_analysis` (this field means "optional extra notes
@@ -426,7 +472,71 @@ class GenerationParams(ApiModel):
     # (see `validate_generation_params`); `None` (the default) is today's
     # unchanged intent-router-driven behavior.
     forced_model: str | None = Field(default=None, max_length=200)
+    # `asset_kind=character` only: produce ONE composite image showing the
+    # same character with each of these expressions (a grid, or a single
+    # close-up for one) instead of the character sheet — see
+    # `app.domain.image_assets.prompt_builder`. Needs the character's own
+    # sheet as reference image 1 (rejected at submit otherwise).
+    character_expressions: list[CharacterExpression] | None = Field(
+        default=None, min_length=1, max_length=MAX_CHARACTER_EXPRESSIONS
+    )
+    # `asset_kind=character` only: names the outfit this sheet shows
+    # (日常/婚礼/战甲…). Written into the reference entry's `label`, which
+    # is part of the replace-key — a 婚礼 sheet never replaces the 日常 one.
+    character_outfit_label: str | None = Field(
+        default=None, min_length=1, max_length=MAX_OUTFIT_LABEL_LEN
+    )
+    # Per-character pick of which reference images to send (see
+    # `CharacterRefSelection`); characters not listed use their default
+    # subset. Every `character_id` must also be in `character_ids`.
+    character_ref_selection: list[CharacterRefSelection] | None = Field(default=None, max_length=4)
+    # `asset_kind=scene` only: one preset per axis for a single scene image.
+    scene_lighting: SceneLighting | None = None
+    scene_weather: SceneWeather | None = None
+    scene_state: SceneState | None = None
+    scene_period: ScenePeriod | None = None
+    # `asset_kind=scene` only: a variant *group* — one image per entry from a
+    # single provider call (models with group output only). Mutually
+    # exclusive with the single-image `scene_*` presets above.
+    scene_variants: list[ScenePresetCombo] | None = Field(
+        default=None, min_length=MIN_SCENE_VARIANTS, max_length=MAX_SCENE_VARIANTS
+    )
+    # Server-written at submit: what each reference image is, for the
+    # prompt's "参考图说明" legend. Any client-sent value is discarded.
+    reference_labels: list[ReferenceLabel] | None = Field(default=None, max_length=9)
     extra: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _asset_presets_scoped_to_their_kind(self) -> GenerationParams:
+        is_character = self.asset_kind == ImageAssetKind.CHARACTER
+        is_scene = self.asset_kind == ImageAssetKind.SCENE
+        if not is_character and (self.character_expressions or self.character_outfit_label):
+            raise ValueError("表情与造型名称仅适用于 asset_kind=character。")
+        if self.character_expressions and self.character_outfit_label:
+            raise ValueError("表情合集图不能同时指定造型名称。")
+        if self.character_expressions and self.character_views not in (
+            None,
+            [CharacterViewAngle.FRONT],
+        ):
+            raise ValueError("表情合集图不能与侧面/背面视角同时生成。")
+        has_scene_preset = bool(
+            self.scene_lighting or self.scene_weather or self.scene_state or self.scene_period
+        )
+        if not is_scene and (has_scene_preset or self.scene_variants):
+            raise ValueError("场景光照/天气/状态/时期仅适用于 asset_kind=scene。")
+        if has_scene_preset and self.scene_variants:
+            raise ValueError("单张场景预设与场景变体组不能同时使用。")
+        if self.character_ref_selection:
+            seen: set[str] = set()
+            for entry in self.character_ref_selection:
+                if entry.character_id not in self.character_ids:
+                    raise ValueError(
+                        "character_ref_selection 中的角色必须同时出现在 character_ids。"
+                    )
+                if entry.character_id in seen:
+                    raise ValueError("character_ref_selection 中同一角色只能出现一次。")
+                seen.add(entry.character_id)
+        return self
 
     @model_validator(mode="after")
     def _character_views_scoped_to_character_kind(self) -> GenerationParams:
@@ -457,6 +567,10 @@ class QuoteRequest(ApiModel):
     # 侧面/背面" completion job cost more than one image (see `pricing.quote`).
     asset_kind: ImageAssetKind = ImageAssetKind.GENERAL
     character_views: list[CharacterViewAngle] | None = Field(default=None, max_length=3)
+    # A scene variant group prices one image per entry.
+    scene_variants: list[ScenePresetCombo] | None = Field(
+        default=None, min_length=MIN_SCENE_VARIANTS, max_length=MAX_SCENE_VARIANTS
+    )
 
 
 class QuoteResponse(ApiModel):
