@@ -340,23 +340,36 @@ def _parsed_forced_model(raw: Any) -> str | None:
 
 
 class CharacterRefSelection(ApiModel):
-    """Exactly which of one character's reference images a job should use —
-    e.g. only the 婚礼 outfit's sheet — instead of the default subset
-    (`characters.service.default_reference_asset_ids`). Each id must be one
-    of that character's own `reference_assets`
-    (`characters.service.apply_character_refs`)."""
+    """Which of one character's images a job should use instead of the card's
+    default subset: a look (`variant_id` → that look's default subset, e.g.
+    the 婚礼 outfit), exact images (`asset_ids`, each one of the card's own),
+    or both (the images must then belong to that look). Resolved by
+    `image_assets.reference_resolver`."""
 
     character_id: str = Field(max_length=40)
-    asset_ids: list[str] = Field(min_length=1, max_length=4)
+    variant_id: str | None = Field(default=None, max_length=40)
+    asset_ids: list[str] | None = Field(default=None, min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def _names_a_look_or_images(self) -> CharacterRefSelection:
+        if not self.variant_id and not self.asset_ids:
+            raise ValueError("请选择造型或具体参考图。")
+        return self
 
 
 class SceneRefSelection(ApiModel):
-    """Scene-side twin of `CharacterRefSelection`: which of one scene's
-    reference images (master plate, a 黄昏 variant, …) a job should use
-    instead of the default subset (`scenes.service.default_reference_asset_ids`)."""
+    """Scene-side twin of `CharacterRefSelection`: a variant (黄昏/战损…),
+    exact images, or both."""
 
     scene_id: str = Field(max_length=40)
-    asset_ids: list[str] = Field(min_length=1, max_length=4)
+    variant_id: str | None = Field(default=None, max_length=40)
+    asset_ids: list[str] | None = Field(default=None, min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def _names_a_variant_or_images(self) -> SceneRefSelection:
+        if not self.variant_id and not self.asset_ids:
+            raise ValueError("请选择变体或具体参考图。")
+        return self
 
 
 class ScenePresetCombo(ApiModel):
@@ -502,6 +515,10 @@ class GenerationParams(ApiModel):
     character_outfit_label: str | None = Field(
         default=None, min_length=1, max_length=MAX_OUTFIT_LABEL_LEN
     )
+    # `asset_kind=character|scene`: the look / scene variant of the target
+    # card this job's output is filed under (`asset_output_link`). Unset →
+    # the outfit label / the scene presets' variant / the default.
+    target_variant_id: str | None = Field(default=None, max_length=40)
     # Per-character pick of which reference images to send (see
     # `CharacterRefSelection`); characters not listed use their default
     # subset. Every `character_id` must also be in `character_ids`.
@@ -533,6 +550,12 @@ class GenerationParams(ApiModel):
             raise ValueError("表情与造型名称仅适用于 asset_kind=character。")
         if self.character_expressions and self.character_outfit_label:
             raise ValueError("表情合集图不能同时指定造型名称。")
+        if self.target_variant_id and not (is_character or is_scene):
+            raise ValueError("target_variant_id 仅适用于 asset_kind=character/scene。")
+        if self.target_variant_id and self.character_outfit_label:
+            raise ValueError("目标造型与造型名称只能指定一个。")
+        if self.target_variant_id and self.scene_variants:
+            raise ValueError("场景变体组会按预设各自归档，不能再指定目标变体。")
         if self.character_expressions and self.character_views not in (
             None,
             [CharacterViewAngle.FRONT],

@@ -773,7 +773,7 @@ def execute_asset_output_advance(
     """
     axis = _asset_axis(ctx)
     asset_kind = axis[1] if axis else None
-    outputs: list[dict[str, str]] = ctx.state.setdefault(ASSET_OUTPUTS_STATE_KEY, [])
+    outputs: list[dict[str, Any]] = ctx.state.setdefault(ASSET_OUTPUTS_STATE_KEY, [])
     asset_id = ctx.state.get("asset_id")
     is_character = (
         axis is not None and axis[0] == "image" and asset_kind == ImageAssetKind.CHARACTER.value
@@ -783,8 +783,15 @@ def execute_asset_output_advance(
     if variants:
         index = _current_scene_variant(ctx)
         if asset_id:
-            label = scene_preset_label(variants[min(index, len(variants) - 1)])
-            outputs.append({"asset_id": str(asset_id), "view": view, "label": label})
+            combo = variants[min(index, len(variants) - 1)]
+            outputs.append(
+                {
+                    "asset_id": str(asset_id),
+                    "view": view,
+                    "label": scene_preset_label(combo),
+                    "presets": combo,
+                }
+            )
         if index + 1 >= len(variants):
             return NodeResult(port="done")
         ctx.state[SCENE_VARIANT_STATE_KEY] = index + 1
@@ -900,6 +907,11 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                             label=_character_output_label(ctx.params),
                             subject_name=subject_name,
                             target_id=target_id,
+                            filing={
+                                "variant_id": ctx.params.get("target_variant_id"),
+                                "expressions": list(expressions) if expressions else None,
+                                "source_job_id": ctx.job.id,
+                            },
                         )
                 except Exception:
                     logger.exception(
@@ -933,6 +945,15 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                             label=_scene_output_label(ctx.params, entry),
                             subject_name=subject_name,
                             target_id=target_id,
+                            filing={
+                                "variant_id": ctx.params.get("target_variant_id"),
+                                # A variant set's pass recorded its own combo;
+                                # a single image uses the job's presets.
+                                "presets": entry.get("presets")
+                                or scene_presets_from(ctx.params)
+                                or None,
+                                "source_job_id": ctx.job.id,
+                            },
                         )
                 except Exception:
                     logger.exception(
@@ -988,6 +1009,7 @@ def _link_character_output(
     subject_name: str,
     target_id: str | None,
     label: str | None = None,
+    filing: dict[str, Any] | None = None,
 ) -> str | None:
     """Attaches one output to `target_id`, auto-creating a character from
     scratch on the first call if there was none — also the fallback when
@@ -1012,6 +1034,7 @@ def _link_character_output(
                 asset_id=asset_id,
                 view=view,
                 label=label,
+                **(filing or {}),
             )
             return target_id
         except NotFound:
@@ -1039,6 +1062,7 @@ def _link_character_output(
             asset_id=asset_id,
             view=view,
             label=label,
+            **(filing or {}),
         )
         return existing.id
     try:
@@ -1066,6 +1090,7 @@ def _link_character_output(
         asset_id=asset_id,
         view=view,
         label=label,
+        **(filing or {}),
     )
     return character.id
 
@@ -1079,6 +1104,7 @@ def _link_scene_output(
     subject_name: str,
     target_id: str | None,
     label: str | None = None,
+    filing: dict[str, Any] | None = None,
 ) -> str | None:
     """Attaches one output to `target_id`, auto-creating a scene from
     scratch on the first call if there was none — mirrors
@@ -1101,6 +1127,7 @@ def _link_scene_output(
                 asset_id=asset_id,
                 view=view,
                 label=label,
+                **(filing or {}),
             )
             return target_id
         except NotFound:
@@ -1125,6 +1152,7 @@ def _link_scene_output(
         asset_id=asset_id,
         view=view,
         label=label,
+        **(filing or {}),
     )
     ctx.state["created_scene_id"] = scene.id
     return scene.id

@@ -604,18 +604,6 @@ def test_apply_character_refs_rejects_a_selection_outside_the_character(
         characters_service.apply_character_refs(db, user_id=author.id, params=params)
 
 
-def test_ensure_expression_reference_borrows_the_targets_sheet(db: Session, author: User) -> None:
-    character = _character_with(db, author)
-    front = _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value)
-
-    params: dict[str, object] = {
-        "character_expressions": ["smile"],
-        "target_character_id": character.id,
-    }
-    characters_service.ensure_expression_reference(db, user_id=author.id, params=params)
-    assert params["reference_asset_ids"] == [front.id]
-
-
 def test_a_content_edit_keeps_each_known_entrys_view_and_label(db: Session, author: User) -> None:
     character = _character_with(db, author)
     front = _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value)
