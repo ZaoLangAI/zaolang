@@ -66,6 +66,7 @@ def enhance_generation_prompt(
         question_answers=ctx.question_answers,
         reference_skills=reference_skills,
         user_id=user.id,
+        asset_presets=ctx.asset_presets,
     )
 
     def generate() -> Iterator[str]:

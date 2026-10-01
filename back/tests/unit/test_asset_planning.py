@@ -1006,9 +1006,7 @@ def test_progress_is_unchanged_for_a_single_view_character_job(db: Session, auth
 # ---- labelled write-back (outfits, expressions, scene variants) ----------
 
 
-def test_asset_output_link_files_an_outfit_sheet_under_its_label(
-    db: Session, author: User
-) -> None:
+def test_asset_output_link_files_an_outfit_sheet_under_its_label(db: Session, author: User) -> None:
     character = characters_service.create_character(
         db,
         user_id=author.id,
@@ -1136,3 +1134,80 @@ def test_asset_output_link_keeps_attaching_after_one_output_fails(
         db, user_id=author.id, character_id=character.id
     ).reference_asset_ids
     assert ids == [good.id]
+
+
+# ---- builder-driven passes ---------------------------------------------------
+
+
+def test_asset_planning_builds_an_expression_grid_and_drops_sheet_suggestions(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = planner.plan_asset
+
+    def sheet_happy_planner(*args, **kwargs):
+        outcome = real(*args, **kwargs)
+        assert kwargs["asset_pass"] == "character_expressions"
+        outcome.data["prompt_enhancements"] = ["左侧全身三视图", "五官一致"]
+        return outcome
+
+    monkeypatch.setattr(planner, "plan_asset", sheet_happy_planner)
+    ctx = _ctx(
+        db,
+        author,
+        prompt="林夏",
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "character_views": [CharacterViewAngle.FRONT.value],
+            "character_expressions": ["smile", "anger"],
+            "reference_asset_ids": ["ast_sheet"],
+        },
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+
+    assert _CHARACTER_SHEET_LAYOUT_SUFFIX not in ctx.prompt
+    assert "三视图" not in ctx.prompt
+    assert "五官一致" in ctx.prompt
+    assert "表情合集图" in ctx.prompt
+
+
+def test_asset_planning_prefixes_a_scene_variant_only_with_a_reference(
+    db: Session, author: User
+) -> None:
+    with_ref = _ctx(
+        db,
+        author,
+        prompt="老式客厅",
+        params={
+            "asset_kind": ImageAssetKind.SCENE.value,
+            "scene_lighting": "dusk",
+            "reference_asset_ids": ["ast_master"],
+        },
+    )
+    execute_asset_planning(with_ref, AssetPlanningConfig())
+    assert with_ref.prompt.startswith("以参考图1为基准")
+    assert "黄昏" in with_ref.prompt
+
+    without_ref = _ctx(
+        db,
+        author,
+        prompt="老式客厅",
+        params={"asset_kind": ImageAssetKind.SCENE.value, "scene_lighting": "dusk"},
+    )
+    execute_asset_planning(without_ref, AssetPlanningConfig())
+    assert not without_ref.prompt.startswith("以参考图1为基准")
+    assert "黄昏" in without_ref.prompt
+
+
+def test_asset_planning_records_group_labels_for_a_variant_group(db: Session, author: User) -> None:
+    ctx = _ctx(
+        db,
+        author,
+        prompt="老式客厅",
+        params={
+            "asset_kind": ImageAssetKind.SCENE.value,
+            "scene_variants": [{"lighting": "day"}, {"state": "damage_heavy"}],
+        },
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    assert ctx.state["group_labels"] == ["白天", "战损·重"]
+    assert "共 2 张独立的场景图" in ctx.prompt

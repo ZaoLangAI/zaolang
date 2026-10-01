@@ -11115,6 +11115,16 @@ export interface components {
             question_answers?: {
                 [key: string]: string | string[];
             };
+            /** Character Expressions */
+            character_expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
+            /** Scene Lighting */
+            scene_lighting?: ("dawn" | "day" | "dusk" | "night_interior" | "night_exterior" | "candle" | "neon" | "overcast") | null;
+            /** Scene Weather */
+            scene_weather?: ("clear" | "rain" | "snow" | "fog" | "sandstorm") | null;
+            /** Scene State */
+            scene_state?: ("intact" | "messy" | "searched" | "damage_light" | "damage_medium" | "damage_heavy" | "ruins" | "festive") | null;
+            /** Scene Period */
+            scene_period?: ("ancient" | "republic" | "1980s" | "1990s" | "contemporary" | "near_future") | null;
         };
         /**
          * PromptSlotView

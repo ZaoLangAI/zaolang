@@ -312,7 +312,7 @@ PERIOD_PRESETS: dict[str, PeriodPreset] = {
 EXPRESSION_GRID: dict[int, tuple[int, int]] = {
     1: (1, 1),
     2: (1, 2),
-    3: (2, 2),
+    3: (1, 3),
     4: (2, 2),
     5: (2, 3),
     6: (2, 3),

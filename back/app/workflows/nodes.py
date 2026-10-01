@@ -25,6 +25,7 @@ from app.domain.characters import service as characters_service
 from app.domain.costs import service as costs_service
 from app.domain.credits.pricing import settlement_credits
 from app.domain.errors import NotFound, ValidationFailed
+from app.domain.image_assets import prompt_builder
 from app.domain.image_assets.vocabulary import (
     EXPRESSION_PRESETS,
     scene_preset_label,
@@ -499,101 +500,32 @@ def execute_intent_router(ctx: WorkflowContext, config: IntentRouterConfig) -> N
 
 ASSET_PLAN_STATE_KEY = "asset_plan"
 ASSET_OUTPUTS_STATE_KEY = "asset_outputs"
+# One write-back label per image of a scene variant group, in variant order
+# (`prompt_builder.group_labels`).
+GROUP_LABELS_STATE_KEY = "group_labels"
 _ORIGINAL_PROMPT_STATE_KEY = "_asset_plan_original_prompt"
 _ORIGINAL_NEGATIVE_PROMPT_STATE_KEY = "_asset_plan_original_negative_prompt"
 
-# The intent fed to `planner.plan_asset` for a side/back completion pass —
-# deliberately *not* whatever free-text prompt the caller sent (a character's
-# own description or name, in every one of the three callers that submit
-# this job shape: `character-library.tsx`, `image-generation-studio.tsx`,
-# and iOS's `StudioViewModel.completeViews`). The front reference image is
-# already forwarded unchanged into every loop pass via `reference_asset_ids`
-# (see `execute_provider_generate`'s `media_service.provider_references_for`
-# call) — the *only* thing this instruction needs to do is tell the model to
-# use that image as material, so it never competes with a caller's own
-# (possibly inconsistent, possibly irrelevant) description text.
-#
-# Keyed per view rather than one shared "侧面/背面" string: a real job's
-# `job_events` payload showed that ambiguous slash sitting verbatim at the
-# start of *both* the side pass's and the back pass's final prompt (still
-# "生成侧面/背面图" even on the pass that only wanted "back") — exactly the
-# kind of phrasing that nudges an image model toward producing both angles
-# in one image instead of the one this specific pass asked for.
-_CHARACTER_COMPLETION_FIXED_PROMPTS: dict[str, str] = {
-    CharacterViewAngle.SIDE.value: "参考本图生成侧面图",
-    CharacterViewAngle.BACK.value: "参考本图生成背面图",
-}
-
-# Guaranteed regardless of what the planner's own `negative_prompt_
-# suggestions` come up with (see `execute_asset_planning`) — a real side/
-# back completion job's actual output came back as a multi-panel character
-# turnaround sheet (sometimes literally labelled "FRONT VIEW"/"SIDE
-# VIEW"/"BACK VIEW"), the model's apparent default association for this
-# kind of "consistent with the other views" phrasing when it has no real
-# reference photo to anchor on (see `Settings.embed_reference_images_as_
-# base64` for the reference-reachability half of that fix). This is
-# defense-in-depth on top of that fix, not a replacement for it.
+# The fixed character/scene prompt fragments live in
+# `app.domain.image_assets.prompt_builder` now; these aliases keep the names
+# older callers and tests import from here.
+_CHARACTER_COMPLETION_FIXED_PROMPTS = prompt_builder.CHARACTER_COMPLETION_FIXED_PROMPTS
 _CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT = (
-    "多视角拼接图、对比图、分格或并排画面、同一画面出现两个以上角度、画面中出现视角文字标注"
-    "（如FRONT VIEW/SIDE VIEW/BACK VIEW）"
+    prompt_builder.CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT
 )
-
-# Appended on a CHARACTER `front` pass (the library / script-studio sheet
-# job). Must not replace the caller's identity prompt — unlike the side/back
-# override above — and must not run on a completion pass, where the
-# anti-collage negative is still in force.
-_CHARACTER_SHEET_LAYOUT_SUFFIX = (
-    "输出必须是一张专业角色设定图（单张画面，不要拆成多张）："
-    "左侧从左到右全身三视图（正面、侧面、背面），纯白背景、全身站姿、不裁切头脚；"
-    "右侧为面部多角度特写、服装面料与配饰细节、标准化色板；"
-    "各分区为同一人物，严格保持五官、发型、服装与气质，禁止改设定、禁止额外角色或故事场景。"
-)
-
-# Visual-medium lock for a CHARACTER `front` pass. Script traits are supposed
-# to lead with one shared medium; older scripts and free-typed library prompts
-# often omit it, and the image model then picks photoreal for one cast member
-# and anime for the next. Completion (side/back) follows the front reference
-# and must not invent a medium of its own.
-_CHARACTER_PHOTOREAL_MEDIUM = "真人写实影视短剧造型"
-_CHARACTER_PHOTOREAL_NEGATIVE = "动漫、二次元、卡通、anime、illustration"
-_CHARACTER_ANIME_NEGATIVE = "真人照片、摄影棚写实"
-_PHOTOREAL_MEDIUM_MARKERS = ("真人", "写实", "影视", "photoreal")
-_ANIME_MEDIUM_MARKERS = ("动漫", "二次元", "anime", "插画")
-
-
-def _merge_negative(base: str | None, addition: str) -> str:
-    return f"{base}，{addition}" if base else addition
-
-
-def _character_prompt_medium(text: str) -> str | None:
-    """`'anime'` / `'photoreal'` / `None` when the prompt names no medium."""
-    lowered = (text or "").lower()
-    if any(marker.lower() in lowered for marker in _ANIME_MEDIUM_MARKERS):
-        return "anime"
-    if any(marker.lower() in lowered for marker in _PHOTOREAL_MEDIUM_MARKERS):
-        return "photoreal"
-    return None
+_CHARACTER_SHEET_LAYOUT_SUFFIX = prompt_builder.CHARACTER_SHEET_LAYOUT_SUFFIX
+_CHARACTER_PHOTOREAL_MEDIUM = prompt_builder.CHARACTER_PHOTOREAL_MEDIUM
+_CHARACTER_PHOTOREAL_NEGATIVE = prompt_builder.CHARACTER_PHOTOREAL_NEGATIVE
+_CHARACTER_ANIME_NEGATIVE = prompt_builder.CHARACTER_ANIME_NEGATIVE
+_merge_negative = prompt_builder.merge_negative
 
 
 def _apply_character_visual_medium(ctx: WorkflowContext) -> None:
-    """Locks a character front pass to one visual medium.
-
-    No named medium → default photoreal live-action and reject anime.
-    Anime already named → keep it and reject photoreal. Photoreal already
-    named → keep it and reject anime. Never rewrite an explicit medium.
-    """
-    medium = _character_prompt_medium(ctx.prompt)
-    if medium is None:
-        ctx.prompt = (
-            f"{ctx.prompt}。{_CHARACTER_PHOTOREAL_MEDIUM}"
-            if ctx.prompt
-            else _CHARACTER_PHOTOREAL_MEDIUM
-        )
-        medium = "photoreal"
-    negative = _CHARACTER_ANIME_NEGATIVE if medium == "anime" else _CHARACTER_PHOTOREAL_NEGATIVE
-    existing = ctx.params.get("negative_prompt")
-    if negative not in (existing or ""):
-        ctx.params["negative_prompt"] = _merge_negative(existing, negative)
+    """Locks a character pass to one visual medium — see
+    `prompt_builder.apply_visual_medium`."""
+    ctx.prompt, ctx.params["negative_prompt"] = prompt_builder.apply_visual_medium(
+        ctx.prompt, ctx.params.get("negative_prompt")
+    )
 
 
 def _current_character_view(ctx: WorkflowContext) -> str:
@@ -690,22 +622,18 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
     on every entry first, so the second/third pass enhances that, not
     whatever the previous view's pass already appended to it.
 
-    For a `CHARACTER` pass whose `character_view` is `side`/`back`, that
-    reset prompt is then immediately overridden with the matching entry of
-    `_CHARACTER_COMPLETION_FIXED_PROMPTS` — a "补全侧面/背面" completion job
-    must be driven by the attached front reference image, not by whatever
-    free-text prompt the caller happened to send, so this is a hard
-    backend-side override rather than a convention callers are trusted to
-    follow. The `front` pass (including a plain single-view job) keeps the
-    caller's identity prompt and appends `_CHARACTER_SHEET_LAYOUT_SUFFIX`
-    so the model is required to emit one multi-panel sheet rather than a
-    single full-body still. A front pass with no named visual medium also
-    gets `_CHARACTER_PHOTOREAL_MEDIUM` (and the opposite-medium negative);
-    an already-named anime/photoreal medium is kept.
-    `ctx.params["negative_prompt"]` gets the same
-    reset-then-override treatment (via `_ORIGINAL_NEGATIVE_PROMPT_STATE_KEY`)
-    so pass 2 of a multi-view job doesn't inherit pass 1's view-specific
-    negative text either.
+    The reset prompt is then composed by `prompt_builder.compose` for this
+    pass (`prompt_builder.resolve_pass`): a side/back completion is
+    hard-overridden by a fixed reference-driven instruction; a sheet keeps
+    the caller's identity text, gains the sheet layout (and a 换装 prefix
+    for a named outfit with a reference) plus the medium lock; a composite
+    expression image gets the grid layout instead of the sheet; a scene
+    gets its lighting/weather/state/period fragments (prefixed by the
+    master-plate lock when a reference exists) or, for a variant group,
+    one line per image. `ctx.params["negative_prompt"]` gets the same
+    reset-then-compose treatment (via `_ORIGINAL_NEGATIVE_PROMPT_STATE_KEY`)
+    so a later pass never inherits the previous one's text. The planner's
+    additions are filtered by `prompt_builder.sanitize_enhancements`.
     """
     axis = _asset_axis(ctx)
     if axis is None:
@@ -724,20 +652,23 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
 
     is_character = media_axis == "image" and asset_kind == ImageAssetKind.CHARACTER.value
     character_view = _current_character_view(ctx) if is_character else None
-    is_completion_pass = is_character and character_view in _CHARACTER_COMPLETION_FIXED_PROMPTS
-    if is_completion_pass and character_view:
-        ctx.prompt = _CHARACTER_COMPLETION_FIXED_PROMPTS[character_view]
-        ctx.params["negative_prompt"] = _merge_negative(
-            ctx.params.get("negative_prompt"), _CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT
+    asset_pass = (
+        prompt_builder.resolve_pass(
+            ctx.params, asset_kind=asset_kind, character_view=character_view
         )
-    elif is_character and _CHARACTER_SHEET_LAYOUT_SUFFIX not in ctx.prompt:
-        ctx.prompt = (
-            f"{ctx.prompt}。{_CHARACTER_SHEET_LAYOUT_SUFFIX}"
-            if ctx.prompt
-            else _CHARACTER_SHEET_LAYOUT_SUFFIX
-        )
-    if is_character and not is_completion_pass:
-        _apply_character_visual_medium(ctx)
+        if media_axis == "image"
+        else prompt_builder.AssetPass.OTHER
+    )
+    ctx.prompt, ctx.params["negative_prompt"] = prompt_builder.compose(
+        asset_pass,
+        prompt=ctx.prompt,
+        negative=ctx.params.get("negative_prompt"),
+        params=ctx.params,
+        character_view=character_view,
+        has_reference=bool(ctx.params.get("reference_asset_ids")),
+    )
+    if asset_pass is prompt_builder.AssetPass.SCENE_VARIANT_GROUP:
+        ctx.state[GROUP_LABELS_STATE_KEY] = prompt_builder.group_labels(ctx.params)
 
     if media_axis == "video":
         _emit(ctx, JobEventType.PLANNING, JobStatus.QUEUED, "正在规划视频资产生成方案", 16)
@@ -761,6 +692,7 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
                 intent=ctx.prompt,
                 asset_kind=asset_kind,
                 character_view=character_view,
+                asset_pass=asset_pass.value,
                 target_character_id=ctx.params.get("target_character_id"),
                 target_scene_id=ctx.params.get("target_scene_id"),
                 source_params=ctx.params,
@@ -773,7 +705,8 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
 
     enhancements = outcome.data.get("prompt_enhancements")
     if isinstance(enhancements, list) and enhancements:
-        addition = "，".join(str(item) for item in enhancements if item)
+        kept = prompt_builder.sanitize_enhancements(asset_pass, enhancements, params=ctx.params)
+        addition = "，".join(kept)
         if addition and addition not in ctx.prompt:
             ctx.prompt = f"{ctx.prompt}，{addition}" if ctx.prompt else addition
     negative_suggestions = outcome.data.get("negative_prompt_suggestions")

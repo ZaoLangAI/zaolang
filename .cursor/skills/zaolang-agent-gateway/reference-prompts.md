@@ -24,15 +24,24 @@ Copy coaches, asset-kind prompt rules, scene skill packs, follow-up questions. S
 | Place | Role |
 |---|---|
 | `back/app/agents/planner.py` `_ASSET_KIND_BRIEF`, `_CHARACTER_VIEW_BRIEF` | `asset_plan` slot guidance per kind/view |
-| `back/app/workflows/nodes.py` `_CHARACTER_SHEET_LAYOUT_SUFFIX` | appended on a front pass (keeps caller's identity prompt) |
-| `back/app/workflows/nodes.py` `_CHARACTER_COMPLETION_FIXED_PROMPTS` | side/back pass prompt **replaced** by a fixed reference-driven prompt + anti-collage negative |
-| `back/app/workflows/nodes.py` `_CHARACTER_PHOTOREAL_MEDIUM` | front pass with no named medium gets a photoreal lock; named anime/photoreal kept |
+| `back/app/domain/image_assets/prompt_builder.py` `CHARACTER_SHEET_LAYOUT_SUFFIX` | appended on a sheet pass (keeps caller's identity prompt; re-exported as `nodes._CHARACTER_SHEET_LAYOUT_SUFFIX`) |
+| `back/app/domain/image_assets/prompt_builder.py` `CHARACTER_COMPLETION_FIXED_PROMPTS` | side/back pass prompt **replaced** by a fixed reference-driven prompt + anti-collage negative |
+| `back/app/domain/image_assets/prompt_builder.py` `apply_visual_medium` | sheet/expression pass with no named medium gets a photoreal lock; named anime/photoreal kept |
 | `back/app/agents/copywriter.py` `ENHANCE_SYSTEM_PROMPT_CHARACTER`, `restore_character_sheet_prompt` | coach + repair: missing `三视图`/`色板` or collapse markers → re-append `CHARACTER_SHEET_LAYOUT_SENTENCE` |
 | `front/src/lib/characters.ts` `characterSheetPrompt` | library/script jump-out prompt sent to the image studio (web submits front only) |
 
 ## Character/scene preset vocabulary
 
 `back/app/domain/image_assets/vocabulary.py` is the single source for expression (`CharacterExpression`) and scene `SceneLighting`/`SceneWeather`/`SceneState`/`ScenePeriod` presets: `Literal` + `get_args` tuple + `{label, prompt, negative}` per value (periods add `cues`/`pitfalls`). Prompt fragments state renderable facts (facial muscles, colour temperature, light direction, era fixtures), never a bare mood word. Adding a value: Literal → preset entry → `make openapi` → front label map + copy.
+
+## Prompt builder (`back/app/domain/image_assets/prompt_builder.py`)
+
+- `resolve_pass` → `AssetPass` (`character_sheet`/`character_completion`/`character_expressions`/`scene`/`scene_variant_group`/`other`); `compose` writes the pass's fixed text before the planner runs; `execute_asset_planning` passes `asset_pass` to `planner.plan_asset`.
+- Expression pass: `EXPRESSION_IDENTITY_PREFIX` + caller identity + `expression_layout` (grid from `vocabulary.expression_grid`, one sentence per cell) + medium lock; never the sheet suffix. Per-expression negatives only for a single close-up (they contradict across cells).
+- Outfit sheet with a reference: `OUTFIT_CHANGE_PREFIX` locks face/hair/body to reference 1.
+- Scene: preset fragments + period cues (pitfalls → negative); with a reference, `SCENE_VARIANT_PREFIX` pins geometry to reference 1. Variant group: `compose_scene_group` (one `图N：` line per variant) and `group_labels` for write-back.
+- `sanitize_enhancements` (Python, survives a published `AgentSkill`): drops 三视图/设定图/色板/分栏 additions on expression/scene passes and other-period labels when `scene_period` is set.
+- Polish: `PromptEnhanceRequest` carries `character_expressions` + `scene_*` → `PromptContext.asset_presets` → coach user message (`asset_presets` labels). With expressions, `_sanitize_enhance_outcome` runs `restore_expression_prompt` instead of `restore_character_sheet_prompt`.
 
 ## Scene plates
 
