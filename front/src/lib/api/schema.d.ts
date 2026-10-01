@@ -1274,6 +1274,180 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/characters/{card_id}/looks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Variant */
+        post: operations["create_character_look"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/characters/{card_id}/looks/{variant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Variant */
+        delete: operations["delete_character_look"];
+        options?: never;
+        head?: never;
+        /** Update Variant */
+        patch: operations["update_character_look"];
+        trace?: never;
+    };
+    "/v1/characters/{card_id}/looks/{variant_id}/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Entry */
+        post: operations["add_character_look_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/characters/{card_id}/entries/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Entry */
+        delete: operations["delete_character_entry"];
+        options?: never;
+        head?: never;
+        /** Update Entry */
+        patch: operations["update_character_entry"];
+        trace?: never;
+    };
+    "/v1/characters/{card_id}/entries/{entry_id}:anchor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Anchor */
+        post: operations["set_character_anchor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/variants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Variant */
+        post: operations["create_scene_variant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/variants/{variant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Variant */
+        delete: operations["delete_scene_variant"];
+        options?: never;
+        head?: never;
+        /** Update Variant */
+        patch: operations["update_scene_variant"];
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/variants/{variant_id}/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Entry */
+        post: operations["add_scene_variant_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/entries/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Entry */
+        delete: operations["delete_scene_entry"];
+        options?: never;
+        head?: never;
+        /** Update Entry */
+        patch: operations["update_scene_entry"];
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/entries/{entry_id}:anchor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Anchor */
+        post: operations["set_scene_anchor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/gateway/status": {
         parameters: {
             query?: never;
@@ -6186,6 +6360,77 @@ export interface components {
             /** Lease Token */
             lease_token: string;
         };
+        /** AssetEntryCreateRequest */
+        AssetEntryCreateRequest: {
+            /** Asset Id */
+            asset_id: string;
+            entry_type: components["schemas"]["AssetEntryType"];
+            /** View */
+            view?: string | null;
+            /** Expressions */
+            expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
+            /** Label */
+            label?: string | null;
+        };
+        /**
+         * AssetEntryStatus
+         * @description Candidate vs. approved (定稿). P1 writes everything as `approved`.
+         * @enum {string}
+         */
+        AssetEntryStatus: "candidate" | "approved";
+        /**
+         * AssetEntryType
+         * @description What one `SkillAssetEntry` image is for inside its look/variant.
+         * @enum {string}
+         */
+        AssetEntryType: "identity_portrait" | "character_sheet" | "view" | "expression_sheet" | "pose" | "outfit_detail" | "prop" | "master" | "shot" | "other";
+        /**
+         * AssetEntryUpdateRequest
+         * @description `view: null` is "leave as is"; send `clear_view` to unset it.
+         */
+        AssetEntryUpdateRequest: {
+            /** Variant Id */
+            variant_id?: string | null;
+            entry_type?: components["schemas"]["AssetEntryType"] | null;
+            /** View */
+            view?: string | null;
+            /**
+             * Clear View
+             * @default false
+             */
+            clear_view: boolean;
+            /** Expressions */
+            expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
+            /** Label */
+            label?: string | null;
+            status?: components["schemas"]["AssetEntryStatus"] | null;
+        };
+        /** AssetEntryView */
+        AssetEntryView: {
+            /** Id */
+            id: string;
+            /** Asset Id */
+            asset_id: string;
+            /** Url */
+            url?: string | null;
+            entry_type: components["schemas"]["AssetEntryType"];
+            /** View */
+            view?: string | null;
+            /** Expressions */
+            expressions?: string[];
+            /** Label */
+            label?: string | null;
+            status: components["schemas"]["AssetEntryStatus"];
+            /**
+             * Is Anchor
+             * @default false
+             */
+            is_anchor: boolean;
+            /** Source Job Id */
+            source_job_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+        };
         /** AssetResponse */
         AssetResponse: {
             /** Id */
@@ -6220,6 +6465,48 @@ export interface components {
              * @default false
              */
             depicts_real_person: boolean;
+        };
+        /** AssetVariantCreateRequest */
+        AssetVariantCreateRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            presets?: components["schemas"]["VariantPresets"] | null;
+        };
+        /** AssetVariantUpdateRequest */
+        AssetVariantUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            presets?: components["schemas"]["VariantPresets"] | null;
+            /** Sort Order */
+            sort_order?: number | null;
+            /**
+             * Make Default
+             * @default false
+             */
+            make_default: boolean;
+        };
+        /** AssetVariantView */
+        AssetVariantView: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Presets */
+            presets?: {
+                [key: string]: unknown;
+            };
+            /** Is Default */
+            is_default: boolean;
+            /** Sort Order */
+            sort_order: number;
+            /** Entries */
+            entries?: components["schemas"]["AssetEntryView"][];
         };
         /**
          * AsyncProviderTaskView
@@ -7287,6 +7574,10 @@ export interface components {
             action_clips?: components["schemas"]["CharacterActionClip"][];
             /** Voice Description */
             voice_description?: string | null;
+            /** Looks */
+            looks?: components["schemas"]["AssetVariantView"][];
+            /** Anchor Entry Id */
+            anchor_entry_id?: string | null;
             /** @default draft */
             status: components["schemas"]["CreationSkillStatus"];
             /** @default private */
@@ -7809,6 +8100,10 @@ export interface components {
             };
             /** Reject Reason */
             reject_reason?: string | null;
+            /** Asset Variants */
+            asset_variants?: components["schemas"]["AssetVariantView"][];
+            /** Anchor Asset Id */
+            anchor_asset_id?: string | null;
         };
         /** CreationSkillPricingRequest */
         CreationSkillPricingRequest: {
@@ -11869,6 +12164,10 @@ export interface components {
             description?: string | null;
             /** Reference Assets */
             reference_assets?: components["schemas"]["SceneReferenceAsset"][];
+            /** Variants */
+            variants?: components["schemas"]["AssetVariantView"][];
+            /** Anchor Entry Id */
+            anchor_entry_id?: string | null;
             /** @default draft */
             status: components["schemas"]["CreationSkillStatus"];
             /** @default private */
@@ -12844,6 +13143,22 @@ export interface components {
              * @default mp4
              */
             format: string;
+        };
+        /**
+         * VariantPresets
+         * @description Scene variant presets (P0 vocabulary) or a look's `age_stage`.
+         */
+        VariantPresets: {
+            /** Lighting */
+            lighting?: ("dawn" | "day" | "dusk" | "night_interior" | "night_exterior" | "candle" | "neon" | "overcast") | null;
+            /** Weather */
+            weather?: ("clear" | "rain" | "snow" | "fog" | "sandstorm") | null;
+            /** State */
+            state?: ("intact" | "messy" | "searched" | "damage_light" | "damage_medium" | "damage_heavy" | "ruins" | "festive") | null;
+            /** Period */
+            period?: ("ancient" | "republic" | "1980s" | "1990s" | "contemporary" | "near_future") | null;
+            /** Age Stage */
+            age_stage?: string | null;
         };
         /** VendorCatalogView */
         VendorCatalogView: {
@@ -16190,6 +16505,504 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SceneResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_character_look: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetVariantCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetVariantView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_character_look: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                variant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_character_look: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                variant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetVariantUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetVariantView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_character_look_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                variant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetEntryCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_character_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_character_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetEntryUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_character_anchor: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_scene_variant: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetVariantCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetVariantView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_scene_variant: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                variant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_scene_variant: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                variant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetVariantUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetVariantView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_scene_variant_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                variant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetEntryCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_scene_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_scene_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetEntryUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_scene_anchor: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEntryView"];
                 };
             };
             /** @description Validation Error */

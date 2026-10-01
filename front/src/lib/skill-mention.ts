@@ -125,11 +125,15 @@ export function creationStudioHref(
 }
 
 /** The still an image-asset recipe should hang on the image studio's
- * reference rail: first nested `reference_assets` entry, else the cover. */
+ * reference rail: the card's anchor (`anchor_asset_id` on the skill
+ * detail), else a legacy nested `reference_assets` entry (older API), else
+ * the cover. */
 export function firstSkillReferenceAssetId(
   params: Record<string, unknown>,
   coverAssetId?: string | null,
+  anchorAssetId?: string | null,
 ): string | undefined {
+  if (anchorAssetId) return anchorAssetId;
   for (const nestKey of ['character', 'scene'] as const) {
     const bundle = params[nestKey];
     if (!bundle || typeof bundle !== 'object' || Array.isArray(bundle)) continue;

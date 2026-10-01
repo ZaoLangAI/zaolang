@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import Field
 
+from app.api.schemas.asset_variants import AssetVariantView
 from app.api.schemas.common import ApiModel
 from app.api.schemas.works import AuthorSummary
 from app.models.enums import (
@@ -53,6 +54,10 @@ class CreationSkillDetail(CreationSkillSummary):
     cover_asset_id: str | None = None
     params: dict[str, Any] = Field(default_factory=dict)
     reject_reason: str | None = None
+    # Character/scene cards, once unlocked: their looks/variants with signed
+    # images (the raw `reference_assets` id list is no longer in `params`).
+    asset_variants: list[AssetVariantView] = Field(default_factory=list)
+    anchor_asset_id: str | None = None
 
 
 class CreationSkillCreateRequest(ApiModel):

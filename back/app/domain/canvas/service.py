@@ -24,6 +24,7 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.domain.asset_variants import service as asset_variants_service
 from app.domain.canvas import graph_service
 from app.domain.editor import service as editor_service
 from app.domain.errors import NotFound, ValidationFailed
@@ -488,16 +489,7 @@ def _hydrate_skills(
 
 
 def _first_reference_asset_id(skill: CreationSkill) -> str | None:
-    params = skill.params_json or {}
-    for bucket in ("character", "scene"):
-        section = params.get(bucket)
-        if not isinstance(section, dict):
-            continue
-        refs = section.get("reference_assets")
-        if isinstance(refs, list):
-            for ref in refs:
-                if isinstance(ref, dict) and isinstance(ref.get("asset_id"), str):
-                    return ref["asset_id"]
-                if isinstance(ref, str):
-                    return ref
-    return None
+    """A character/scene card's thumbnail fallback: its anchor (sheet /
+    master plate), else its first image — read from the looks tables."""
+    ids = asset_variants_service.asset_ids(skill)  # empty for any other category
+    return ids[0] if ids else None

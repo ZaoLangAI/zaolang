@@ -16,6 +16,7 @@ from app.api.schemas.scenes import (
     SceneUpdateRequest,
 )
 from app.domain.scenes import service as scenes
+from app.presenters import asset_variants as asset_variant_presenter
 from app.presenters import media_urls
 
 router = APIRouter(tags=["scenes"])
@@ -168,6 +169,8 @@ def _scene_response(session: Session, scene: scenes.SceneView) -> SceneResponse:
             for entry in scene.reference_assets
             if entry.get("asset_id")
         ],
+        variants=asset_variant_presenter.variant_views(session, scene.skill),
+        anchor_entry_id=asset_variant_presenter.anchor_entry_id(scene.skill),
         status=scene.status,
         visibility=scene.visibility,
         access_credits=scene.access_credits,

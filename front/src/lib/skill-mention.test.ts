@@ -121,6 +121,10 @@ describe('skill mention filters', () => {
     expect(firstSkillReferenceAssetId({ prompt_suffix: 'cover' }, 'ast_cover')).toBe('ast_cover');
   });
 
+  it('prefers the card anchor from the skill detail', () => {
+    expect(firstSkillReferenceAssetId({}, 'ast_cover', 'ast_anchor')).toBe('ast_anchor');
+  });
+
   it('filters the open menu by title query', () => {
     const orbit = skill({ id: 'skl_1', title: '环绕运镜·角色亮相' });
     const crash = skill({ id: 'skl_2', title: '急速变焦·情绪冲击' });

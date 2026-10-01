@@ -24,8 +24,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.domain.errors import ValidationFailed
-from app.models import CreationSkill, SkillAssetEntry, SkillAssetVariant
+from app.domain.errors import NotFound, ValidationFailed
+from app.models import Asset, CreationSkill, SkillAssetEntry, SkillAssetVariant
 from app.models.enums import (
     CHARACTER_ENTRY_TYPES,
     SCENE_ENTRY_TYPES,
@@ -33,6 +33,7 @@ from app.models.enums import (
     AssetEntryType,
     AssetVariantKind,
     CreationSkillCategory,
+    MediaType,
 )
 
 DEFAULT_LOOK_NAME = "默认造型"
@@ -323,6 +324,8 @@ def add_entry(
         )
         variant.entries.append(existing)
     existing.entry_type = entry_type
+    if entry_type == AssetEntryType.MASTER:
+        _demote_other_masters(variant, existing)
     existing.view = view
     existing.label = (label or "").strip()[:60] or None
     existing.expressions_json = list(expressions) if expressions else None
@@ -520,3 +523,99 @@ def entry_label(skill: CreationSkill, entry: SkillAssetEntry) -> str:
     else:
         parts.append(_ENTRY_TYPE_NAMES.get(AssetEntryType(entry.entry_type), "参考图"))
     return "·".join(parts)[:60]
+
+
+# ---- direct edits (P1 API) ------------------------------------------------------
+
+CHARACTER_VIEWS = frozenset({"front", "side", "back", "three_quarter"})
+SCENE_VIEWS = frozenset({"detail", "reverse"})
+
+
+def find_entry(skill: CreationSkill, entry_id: str) -> SkillAssetEntry | None:
+    return next((entry for entry in entries(skill) if entry.id == entry_id), None)
+
+
+def check_view(skill: CreationSkill, view: str | None) -> str | None:
+    clean = (view or "").strip() or None
+    allowed = CHARACTER_VIEWS if is_character(skill) else SCENE_VIEWS
+    if clean is not None and clean not in allowed:
+        raise ValidationFailed("视角无效。", fields={"view": f"可选：{'/'.join(sorted(allowed))}"})
+    return clean
+
+
+def update_entry(
+    session: Session,
+    skill: CreationSkill,
+    entry: SkillAssetEntry,
+    *,
+    variant: SkillAssetVariant | None = None,
+    entry_type: str | None = None,
+    view: str | None = None,
+    clear_view: bool = False,
+    label: str | None = None,
+    expressions: list[str] | None = None,
+    status: str | None = None,
+) -> SkillAssetEntry:
+    """Edits one entry; `variant` moves it to another look of the same card
+    (an asset already in the target look is a 422 — the pair is unique)."""
+    if entry_type is not None:
+        _check_entry_type(skill, entry_type)
+        entry.entry_type = entry_type
+        if entry_type == AssetEntryType.MASTER:
+            _demote_other_masters(variant or entry.variant, entry)
+    if view is not None or clear_view:
+        entry.view = None if clear_view else check_view(skill, view)
+    if label is not None:
+        entry.label = label.strip()[:60] or None
+    if expressions is not None:
+        entry.expressions_json = list(expressions) or None
+    if status is not None:
+        entry.status = AssetEntryStatus(status).value
+    if variant is not None and variant is not entry.variant:
+        if any(e.asset_id == entry.asset_id for e in variant.entries):
+            raise ValidationFailed("目标造型/变体里已有这张图。", fields={"variant_id": "重复"})
+        if len(variant.entries) >= MAX_ENTRIES_PER_VARIANT:
+            raise ValidationFailed(
+                f"每个造型/变体最多 {MAX_ENTRIES_PER_VARIANT} 张参考图。",
+                fields={"variant_id": "数量已达上限"},
+            )
+        entry.variant.entries.remove(entry)
+        session.flush()
+        moved = SkillAssetEntry(
+            skill_id=skill.id,
+            asset_id=entry.asset_id,
+            entry_type=entry.entry_type,
+            view=entry.view,
+            label=entry.label,
+            expressions_json=entry.expressions_json,
+            status=entry.status,
+            is_anchor=entry.is_anchor,
+            source_job_id=entry.source_job_id,
+            created_at=entry.created_at,
+            sort_order=max((e.sort_order for e in variant.entries), default=-1) + 1,
+        )
+        variant.entries.append(moved)
+        entry = moved
+    session.flush()
+    sync_mirror(session, skill)
+    return entry
+
+
+def _demote_other_masters(variant: SkillAssetVariant, keep: SkillAssetEntry) -> None:
+    """One master plate per scene variant: any other becomes a shot."""
+    for other in variant.entries:
+        if other is not keep and other.entry_type == AssetEntryType.MASTER:
+            other.entry_type = AssetEntryType.SHOT.value
+
+
+def require_owned_media(session: Session, *, user_id: str, asset_id: str) -> Asset:
+    """An image/video the caller owns — what a card may file. Missing and
+    someone else's both 404 (existence is not confirmed)."""
+    asset = session.get(Asset, asset_id)
+    if asset is None or asset.owner_user_id != user_id:
+        raise NotFound("参考素材不存在。")
+    if asset.media_type not in (MediaType.IMAGE, MediaType.VIDEO):
+        raise ValidationFailed(
+            "参考素材必须是图片或视频。", fields={"asset_id": "必须是图片或视频"}
+        )
+    return asset

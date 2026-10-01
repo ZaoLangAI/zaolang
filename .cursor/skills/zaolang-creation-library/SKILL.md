@@ -20,7 +20,8 @@ Not here → `zaolang-admin-ops` (review, takedown), `zaolang-credits-billing` (
 | `back/app/domain/asset_variants/service.py` | looks/variants + entries (`SkillAssetVariant`/`SkillAssetEntry` in `back/app/models/skill_library.py`): `project`, `sync_mirror`, `add_entry`, `set_anchor`, `set_members`, `moderation_texts`; design `docs/asset-variants-p1.md` |
 | `back/app/domain/scenes/service.py` | `SceneView`, `apply_scene_refs` |
 | `back/app/api/v1/skills.py` | `/v1/skills*`: `/public`, CRUD, `/pricing`, `/publish`, `/withdraw`, `/unlock`, `/apply` |
-| `back/app/api/v1/characters.py` | `/v1/characters*` + `reference-assets/{asset_id}`; `scenes.py` mirrors it |
+| `back/app/api/v1/characters.py` | `/v1/characters*` + `reference-assets/{asset_id}`; `scenes.py` mirrors it. Responses carry `looks`/`variants` + `anchor_entry_id` (`back/app/presenters/asset_variants.py`) |
+| `back/app/api/v1/asset_variants.py` | `/v1/characters/{id}/looks…`, `/v1/scenes/{id}/variants…`, `…/entries/{entry_id}` (+ `:anchor`); owner-only 404, every write `withdraw_after_edit` |
 | `front/src/app/[locale]/(site)/skills/page.tsx` | plaza; URL filters `contentType` × `category` × `access` |
 | `front/src/components/skills/` | plaza grid/card, detail+unlock dialog, create/manage dialogs, `@` menu |
 | `front/src/components/characters/character-library.tsx` | `/create/characters`; twin `scene-library.tsx` in `components/scenes/` |
@@ -29,7 +30,7 @@ Not here → `zaolang-admin-ops` (review, takedown), `zaolang-credits-billing` (
 
 ## Invariants
 
-1. Characters/scenes are `CreationSkill` rows (`character`/`scene_asset`), payload at `params_json["character"|"scene"]`. Edit them only via `/v1/characters|scenes`: `/v1/skills` create/edit 422s on characters, but a scene `PATCH`ed there gets `params`/`category` overwritten wholesale.
+1. Characters/scenes are `CreationSkill` rows (`character`/`scene_asset`), payload at `params_json["character"|"scene"]`. Edit them only via `/v1/characters|scenes` (+ looks/variants routes): `/v1/skills` create/edit 422s on both categories. The skill detail (`/v1/skills/{id}`) strips the `reference_assets` mirror from `params` and, once unlocked, returns signed `asset_variants` + `anchor_asset_id` instead.
 2. Create → `DRAFT`/`PRIVATE`. `publish()` runs the `skill_moderation` gate, sets `PENDING_REVIEW`/`PUBLIC`, reopens the single queue row (subject `skill`); re-publish is a no-op. Public reads check `status == PUBLISHED` only — `service.py:get_usable`.
 3. A content edit on a non-`DRAFT` row drops it to `DRAFT`/`PRIVATE` and closes the open queue item (`withdrawn_by_owner`), same as `withdraw()` — all three services go through `service.py:withdraw_after_edit`; `/pricing` never does.
 4. Characters publish only via `POST /v1/characters/{id}/publish` with `portrait_consent: true` (stamps `portrait_consent_at`); `/v1/skills/{id}/publish` rejects them. Scenes need no consent.

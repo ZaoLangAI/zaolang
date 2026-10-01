@@ -13,6 +13,7 @@ import datetime as dt
 
 from pydantic import Field
 
+from app.api.schemas.asset_variants import AssetVariantView
 from app.api.schemas.common import ApiModel, Timestamped
 from app.domain.scenes.service import MAX_REFERENCE_ASSETS
 from app.models.enums import CreationSkillStatus, CreationSkillVisibility
@@ -49,6 +50,10 @@ class SceneResponse(Timestamped):
     name: str
     description: str | None = None
     reference_assets: list[SceneReferenceAsset] = Field(default_factory=list)
+    # The card's looks/variants with their images (P1); `reference_assets`
+    # above is their flat P0-shaped projection, kept for older clients.
+    variants: list[AssetVariantView] = Field(default_factory=list)
+    anchor_entry_id: str | None = None
     status: CreationSkillStatus = CreationSkillStatus.DRAFT
     visibility: CreationSkillVisibility = CreationSkillVisibility.PRIVATE
     access_credits: int = 0
