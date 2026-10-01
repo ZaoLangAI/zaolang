@@ -29,28 +29,25 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.asset_variants import service as asset_variants_service
 from app.domain.errors import NotFound, ValidationFailed
 from app.domain.skill_library import service as skill_library_service
 from app.models import Asset, CreationSkill
 from app.models.base import utcnow
 from app.models.enums import (
+    AssetEntryType,
     CharacterViewAngle,
     CreationSkillCategory,
     MediaType,
 )
 from app.presenters import media_urls
 
-# Room for a few outfits' sheets plus extras: jobs no longer ingest every
-# entry (see `default_reference_asset_ids` / `character_ref_selection`), so
-# the roster can hold more than the 9-slot job budget.
-MAX_REFERENCE_ASSETS = 12
+# A flat `reference_asset_ids` list (create/PATCH) fills one look — the
+# per-look entry cap (`asset_variants.service`). Looks themselves hold the
+# rest; nothing is silently evicted any more.
+MAX_REFERENCE_ASSETS = asset_variants_service.MAX_ENTRIES_PER_VARIANT
 # Default per-character subset a job gets when the caller picked nothing.
 MAX_DEFAULT_JOB_REFERENCES = 3
-_SHEET_VIEWS = (
-    CharacterViewAngle.FRONT.value,
-    CharacterViewAngle.SIDE.value,
-    CharacterViewAngle.BACK.value,
-)
 # Mirrors GenerationParams.reference_asset_ids / character_ids in jobs.py —
 # kept here too so a validation error names the right limit before a job ever
 # reaches the API schema.
@@ -108,7 +105,9 @@ class CharacterView:
 
     @property
     def reference_assets(self) -> list[dict[str, Any]]:
-        return list(_reference_assets(self.skill))
+        """The P0-shaped projection of the card's looks
+        (`asset_variants.service.project`)."""
+        return asset_variants_service.project(self.skill)
 
     @property
     def reference_asset_ids(self) -> list[str]:
@@ -176,19 +175,6 @@ def _payload(skill: CreationSkill) -> dict[str, Any]:
     return dict(raw) if isinstance(raw, dict) else {}
 
 
-def _reference_assets(skill: CreationSkill) -> list[dict[str, Any]]:
-    """Copies of each reference-asset entry, for the same reason `_payload`
-    copies its dict: `update_reference_asset` mutates the entries this
-    returns (`entry["view"] = ...`) in place. A plain `[e for e in raw ...]`
-    filter makes a new *list* but keeps the same entry *dict* objects, which
-    would still be shared with (and therefore corrupt) whatever `params_json`
-    was loaded with."""
-    raw = _payload(skill).get("reference_assets")
-    return (
-        [dict(entry) for entry in raw if isinstance(entry, dict)] if isinstance(raw, list) else []
-    )
-
-
 def _action_clips(skill: CreationSkill) -> list[dict[str, Any]]:
     """Copies of each `action_clips` entry — same copy-not-reference
     contract as `_reference_assets` (see `_payload`'s docstring)."""
@@ -245,82 +231,69 @@ def _validate_reference_assets(
     return deduped
 
 
-def _label_key(label: object) -> str | None:
-    """A reference entry's label as a replace/eviction key (`None` = the
-    character's default, unnamed look)."""
-    return label.strip() or None if isinstance(label, str) else None
-
-
-def _is_pinned(entry: dict[str, Any]) -> bool:
-    """The default look's front/side/back sheet: never evicted to make room."""
-    return entry.get("view") in _SHEET_VIEWS and _label_key(entry.get("label")) is None
-
-
-def _trim_to_cap(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Drops entries oldest-first until the roster fits `MAX_REFERENCE_ASSETS`:
-    free-form `general` extras (expression sheets, uploads) go before named
-    outfits' views, and the default look's sheet views go never — the old
-    `entries[-4:]` trim could evict the very sheet everything else is
-    generated from."""
-    kept = list(entries)
-    tiers = (
-        lambda e: e.get("view") not in _SHEET_VIEWS,
-        lambda e: not _is_pinned(e),
-        lambda e: True,
-    )
-    for evictable in tiers:
-        while len(kept) > MAX_REFERENCE_ASSETS:
-            victim = next((e for e in kept if evictable(e)), None)
-            if victim is None:
-                break
-            kept.remove(victim)
-    return kept
+_SHEET_ORDER = {
+    CharacterViewAngle.FRONT.value: 0,
+    CharacterViewAngle.SIDE.value: 1,
+    CharacterViewAngle.BACK.value: 2,
+}
+_EXPRESSION_LABEL_PREFIX = "表情"
 
 
 def default_reference_asset_ids(character: CharacterView) -> list[str]:
-    """The references a job gets for this character when the caller didn't
-    pick any (`GenerationParams.character_ref_selection`).
+    """What a job gets for this character when the caller didn't pick any
+    (`GenerationParams.character_ref_selection`).
 
-    The default look's sheet (unlabelled front/side/back, in that order);
-    a character with no sheet falls back to its oldest unlabelled entries,
-    then to its oldest entries at all. Named outfits and expression sheets
-    only go in when picked, so a 婚礼 sheet never sneaks into a 日常 scene.
+    The anchor (定妆照/设定图) first, then the default look's approved sheet
+    and single views in front → side → back order; a card with neither falls
+    back to the default look's other images, then to anything. At most
+    `MAX_DEFAULT_JOB_REFERENCES`. Other looks and expression sheets only go
+    in when picked, so a 婚礼 sheet never sneaks into a 日常 scene.
     """
-    entries = [e for e in character.reference_assets if e.get("asset_id")]
-    sheet = sorted(
-        (e for e in entries if _is_pinned(e)), key=lambda e: _SHEET_VIEWS.index(e["view"])
+    skill = character.skill
+    picked: list[str] = []
+    anchor = asset_variants_service.anchor(skill)
+    if anchor is not None and anchor.status == "approved":
+        picked.append(anchor.asset_id)
+    default = asset_variants_service.find_default(skill)
+    default_entries = list(default.entries) if default else []
+    sheets = sorted(
+        (
+            e
+            for e in default_entries
+            if e.status == "approved"
+            and e.entry_type in (AssetEntryType.CHARACTER_SHEET, AssetEntryType.VIEW)
+        ),
+        key=lambda e: _SHEET_ORDER.get(
+            "front" if e.entry_type == AssetEntryType.CHARACTER_SHEET else (e.view or ""), 3
+        ),
     )
-    pool = sheet or [e for e in entries if _label_key(e.get("label")) is None] or entries
-    return [str(e["asset_id"]) for e in pool[:MAX_DEFAULT_JOB_REFERENCES]]
+    pool = sheets or [e for e in default_entries if e.entry_type != AssetEntryType.EXPRESSION_SHEET]
+    for entry in pool or asset_variants_service.entries(skill):
+        if entry.asset_id not in picked:
+            picked.append(entry.asset_id)
+    return picked[:MAX_DEFAULT_JOB_REFERENCES]
 
 
 def reference_entry(character: CharacterView, asset_id: str) -> dict[str, Any] | None:
     return next((e for e in character.reference_assets if e.get("asset_id") == asset_id), None)
 
 
-def _entries_keeping_tags(
-    existing: list[dict[str, Any]], asset_ids: list[str]
-) -> list[dict[str, Any]]:
-    """A content edit's flat `reference_asset_ids` list, in its order, but
-    keeping each already-known asset's `view`/`label`/`created_at` — an edit
-    form that only knows ids must not erase which entry is the 婚礼 outfit
-    or the 黄昏 variant. Unknown ids become fresh untagged entries."""
-    known = {str(entry.get("asset_id")): entry for entry in existing}
-    fresh = {str(entry["asset_id"]): entry for entry in _entries_from_flat_ids(asset_ids)}
-    return [known.get(asset_id) or fresh[asset_id] for asset_id in asset_ids]
+def _legacy_entry_type(view: str, label: str | None) -> tuple[str, str | None]:
+    """P0 `(view, label)` → `(entry_type, view)`."""
+    if label and label.startswith(_EXPRESSION_LABEL_PREFIX):
+        return AssetEntryType.EXPRESSION_SHEET.value, None
+    if view == CharacterViewAngle.FRONT.value:
+        return AssetEntryType.CHARACTER_SHEET.value, CharacterViewAngle.FRONT.value
+    if view in (CharacterViewAngle.SIDE.value, CharacterViewAngle.BACK.value):
+        return AssetEntryType.VIEW.value, view
+    return AssetEntryType.OTHER.value, None
 
 
-def _entries_from_flat_ids(asset_ids: list[str]) -> list[dict[str, Any]]:
-    now = utcnow().isoformat()
-    return [
-        {
-            "asset_id": asset_id,
-            "view": CharacterViewAngle.GENERAL.value,
-            "label": None,
-            "created_at": now,
-        }
-        for asset_id in asset_ids
-    ]
+def _legacy_variant_name(label: str | None) -> str | None:
+    """P0 used a non-expression `label` as the outfit name."""
+    if label and not label.startswith(_EXPRESSION_LABEL_PREFIX):
+        return label
+    return None
 
 
 # ---- Character CRUD (adapter over the skill library) --------------------
@@ -385,11 +358,13 @@ def create_character(
             CHARACTER_PARAMS_KEY: {
                 "description": clean_description,
                 "voice_description": (voice_description or "").strip() or None,
-                "reference_assets": _entries_from_flat_ids(refs),
+                "reference_assets": [],
             }
         },
         cover_asset_id=None,
     )
+    asset_variants_service.ensure_default(session, skill)
+    asset_variants_service.set_members(session, skill, refs)
     return CharacterView(skill)
 
 
@@ -433,10 +408,10 @@ def update_character(
         skill.description = _short_description(clean)
     if voice_description is not None:
         payload["voice_description"] = voice_description.strip() or None
+    _set_payload(skill, payload)
     if reference_asset_ids is not None:
         refs = _validate_reference_assets(session, user_id=user_id, asset_ids=reference_asset_ids)
-        payload["reference_assets"] = _entries_keeping_tags(_reference_assets(skill), refs)
-    _set_payload(skill, payload)
+        asset_variants_service.set_members(session, skill, refs)
     # Editing a shared skill's content withdraws it from the marketplace
     # until the owner re-publishes — same rule as any other `CreationSkill`
     # (`skill_library.service.update`); a character swapped mid-share must
@@ -462,40 +437,52 @@ def append_reference_asset(
     asset_id: str,
     view: str = CharacterViewAngle.GENERAL.value,
     label: str | None = None,
+    source_job_id: str | None = None,
 ) -> CharacterView:
-    """Adds (or replaces) one view's reference image.
+    """Files one image under a look — the P0 `(view, label)` call shape,
+    translated: a non-expression `label` names the look (created on first
+    use), `表情·…` marks an expression sheet in the default look, and the
+    view picks the entry type. A sheet or single view replaces the same
+    slot in that look (one front sheet per outfit); extras accumulate up to
+    the look's cap (422 beyond it). The first sheet becomes the card's
+    anchor when it has none.
 
-    Called both by the character library UI's per-image upload and by
-    `app.workflows.nodes.execute_asset_output_link` when a generation job's
-    output is auto-attached. A second image for the same non-general view
-    replaces the earlier one instead of piling up near-duplicate shots of
-    the same pose — keyed by `(view, label)`, so each named outfit keeps its
-    own sheet (a new 婚礼 front never replaces the 日常 one); `general`
-    (freeform, no fixed pose) accumulates. Over the cap, `_trim_to_cap`
-    evicts extras before outfits and never the default look's sheet.
+    Called by the character library UI and by
+    `app.workflows.nodes.execute_asset_output_link`.
     """
     skill = _owned_character_skill(session, user_id=user_id, character_id=character_id)
     _validate_reference_assets(session, user_id=user_id, asset_ids=[asset_id])
-    payload = _payload(skill)
-    clean_label = _label_key(label)
-    entries = [e for e in _reference_assets(skill) if e.get("asset_id") != asset_id]
-    if view != CharacterViewAngle.GENERAL.value:
-        entries = [
-            e
-            for e in entries
-            if not (e.get("view") == view and _label_key(e.get("label")) == clean_label)
-        ]
-    entries.append(
-        {
-            "asset_id": asset_id,
-            "view": view,
-            "label": clean_label,
-            "created_at": utcnow().isoformat(),
-        }
+    clean_label = (label or "").strip() or None
+    entry_type, entry_view = _legacy_entry_type(view, clean_label)
+    variant = asset_variants_service.find_or_create_variant(
+        session, skill, name=_legacy_variant_name(clean_label)
     )
-    payload["reference_assets"] = _trim_to_cap(entries)
-    _set_payload(skill, payload)
-    session.flush()
+    if entry_type in (AssetEntryType.CHARACTER_SHEET, AssetEntryType.VIEW):
+        for stale in [
+            e
+            for e in variant.entries
+            if e.entry_type == entry_type and e.view == entry_view and e.asset_id != asset_id
+        ]:
+            variant.entries.remove(stale)
+        session.flush()
+    entry = asset_variants_service.add_entry(
+        session,
+        skill,
+        variant,
+        asset_id=asset_id,
+        entry_type=entry_type,
+        view=entry_view,
+        label=clean_label if entry_type == AssetEntryType.EXPRESSION_SHEET else None,
+        source_job_id=source_job_id,
+    )
+    # The anchor is the default look's sheet: another outfit's sheet must
+    # never become the identity every job leads with.
+    if (
+        asset_variants_service.anchor(skill) is None
+        and entry_type == AssetEntryType.CHARACTER_SHEET
+        and variant.is_default
+    ):
+        asset_variants_service.set_anchor(session, skill, entry)
     return CharacterView(skill)
 
 
@@ -547,22 +534,32 @@ def update_reference_asset(
     view: str | None = None,
     label: str | None = None,
 ) -> CharacterView:
+    """The P0 per-image edit: a new `view` retypes the entry, a new `label`
+    moves it to the look of that name (blank → the default look)."""
     skill = _owned_character_skill(session, user_id=user_id, character_id=character_id)
-    payload = _payload(skill)
-    entries = _reference_assets(skill)
-    found = False
-    for entry in entries:
-        if entry.get("asset_id") == asset_id:
-            found = True
-            if view is not None:
-                entry["view"] = view
-            if label is not None:
-                entry["label"] = label.strip() or None
-    if not found:
+    current = next(
+        (e for e in asset_variants_service.entries(skill) if e.asset_id == asset_id), None
+    )
+    if current is None:
         raise NotFound("参考素材不存在。")
-    payload["reference_assets"] = entries
-    _set_payload(skill, payload)
-    session.flush()
+    projected = reference_entry(CharacterView(skill), asset_id) or {}
+    new_view = view if view is not None else str(projected.get("view") or "general")
+    new_label = label.strip() or None if label is not None else projected.get("label")
+    was_anchor = current.is_anchor
+    asset_variants_service.remove_asset(session, skill, asset_id)
+    append_reference_asset(
+        session,
+        user_id=user_id,
+        character_id=character_id,
+        asset_id=asset_id,
+        view=new_view,
+        label=new_label,
+    )
+    if was_anchor:
+        moved = next(
+            (e for e in asset_variants_service.entries(skill) if e.asset_id == asset_id), None
+        )
+        asset_variants_service.set_anchor(session, skill, moved)
     return CharacterView(skill)
 
 
@@ -570,12 +567,7 @@ def remove_reference_asset(
     session: Session, *, user_id: str, character_id: str, asset_id: str
 ) -> CharacterView:
     skill = _owned_character_skill(session, user_id=user_id, character_id=character_id)
-    payload = _payload(skill)
-    payload["reference_assets"] = [
-        e for e in _reference_assets(skill) if e.get("asset_id") != asset_id
-    ]
-    _set_payload(skill, payload)
-    session.flush()
+    asset_variants_service.remove_asset(session, skill, asset_id)
     return CharacterView(skill)
 
 

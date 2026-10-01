@@ -817,6 +817,56 @@ class CreationSkillCategory(StrEnum):
     OTHER = "other"
 
 
+class AssetVariantKind(StrEnum):
+    """What a `SkillAssetVariant` groups: a character's outfit/look, or a
+    scene's lighting/weather/state/period variant."""
+
+    LOOK = "look"
+    SCENE_VARIANT = "scene_variant"
+
+
+class AssetEntryType(StrEnum):
+    """What one `SkillAssetEntry` image is for inside its look/variant."""
+
+    # Character entries.
+    IDENTITY_PORTRAIT = "identity_portrait"
+    CHARACTER_SHEET = "character_sheet"
+    VIEW = "view"
+    EXPRESSION_SHEET = "expression_sheet"
+    POSE = "pose"
+    OUTFIT_DETAIL = "outfit_detail"
+    PROP = "prop"
+    # Scene entries.
+    MASTER = "master"
+    SHOT = "shot"
+    # Either.
+    OTHER = "other"
+
+
+CHARACTER_ENTRY_TYPES: frozenset[str] = frozenset(
+    {
+        AssetEntryType.IDENTITY_PORTRAIT,
+        AssetEntryType.CHARACTER_SHEET,
+        AssetEntryType.VIEW,
+        AssetEntryType.EXPRESSION_SHEET,
+        AssetEntryType.POSE,
+        AssetEntryType.OUTFIT_DETAIL,
+        AssetEntryType.PROP,
+        AssetEntryType.OTHER,
+    }
+)
+SCENE_ENTRY_TYPES: frozenset[str] = frozenset(
+    {AssetEntryType.MASTER, AssetEntryType.SHOT, AssetEntryType.OTHER}
+)
+
+
+class AssetEntryStatus(StrEnum):
+    """Candidate vs. approved (定稿). P1 writes everything as `approved`."""
+
+    CANDIDATE = "candidate"
+    APPROVED = "approved"
+
+
 class ImageAssetKind(StrEnum):
     """What a `text_to_image`/`image_to_image` job's output is *for*.
 

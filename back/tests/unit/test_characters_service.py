@@ -530,24 +530,21 @@ def test_a_named_outfit_sheet_does_not_replace_the_default_one(db: Session, auth
     assert wedding_again.id in ids
 
 
-def test_trimming_never_evicts_the_default_sheet(db: Session, author: User) -> None:
+def test_a_full_look_refuses_more_images_instead_of_evicting(db: Session, author: User) -> None:
     character = _character_with(db, author)
     front = _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value)
     outfit = _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value, label="战甲")
-    extras = [
+    for i in range(characters_service.MAX_REFERENCE_ASSETS - 1):
         _attach(db, author, character.id, view=CharacterViewAngle.GENERAL.value, label=f"表情{i}")
-        for i in range(characters_service.MAX_REFERENCE_ASSETS)
-    ]
+
+    with pytest.raises(ValidationFailed):
+        _attach(db, author, character.id, view=CharacterViewAngle.GENERAL.value, label="表情溢出")
 
     ids = characters_service.get_character(
         db, user_id=author.id, character_id=character.id
     ).reference_asset_ids
-    assert len(ids) == characters_service.MAX_REFERENCE_ASSETS
-    assert front.id in ids
-    assert outfit.id in ids
-    # The oldest free-form extras went first.
-    assert extras[0].id not in ids and extras[1].id not in ids
-    assert extras[-1].id in ids
+    assert front.id in ids and outfit.id in ids
+    assert len(ids) == characters_service.MAX_REFERENCE_ASSETS + 1
 
 
 def test_default_subset_is_the_unnamed_sheet_in_view_order(db: Session, author: User) -> None:
@@ -635,8 +632,10 @@ def test_a_content_edit_keeps_each_known_entrys_view_and_label(db: Session, auth
     entries = characters_service.get_character(
         db, user_id=author.id, character_id=character.id
     ).reference_assets
+    # Looks order the projection now: the default look's anchor first, the
+    # new upload in the default look, then the 婚礼 look.
     assert [(e["asset_id"], e["view"], e["label"]) for e in entries] == [
-        (wedding.id, "front", "婚礼"),
         (front.id, "front", None),
         (upload.id, "general", None),
+        (wedding.id, "front", "婚礼"),
     ]

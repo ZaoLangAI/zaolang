@@ -22,6 +22,7 @@ from sqlalchemy import ColumnElement, select
 from sqlalchemy.orm import Session
 
 from app.domain.access import service as access_service
+from app.domain.asset_variants import service as asset_variants_service
 from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.domain.moderation_policy import assert_allowed, text_values
 from app.domain.moderation_queue import service as moderation_queue
@@ -30,6 +31,7 @@ from app.models import Asset, CreationSkill, ModerationQueueItem, Profile
 from app.models.base import utcnow
 from app.models.enums import (
     IMAGE_ASSET_SKILL_CATEGORIES,
+    AssetEntryType,
     AssetRole,
     CharacterViewAngle,
     CreationSkillCategory,
@@ -140,7 +142,7 @@ def ensure_catalog_skills(session: Session, *, owner_user_id: str) -> list[Creat
             session.flush()
             created.append(skill)
         _ensure_seeded_cover(session, skill=skill, item=item, owner_user_id=owner_user_id)
-        _ensure_seeded_reference(skill, item=item)
+        _ensure_seeded_reference(session, skill, item=item)
     return created
 
 
@@ -189,41 +191,30 @@ def _ensure_seeded_cover(
     session.flush()
 
 
-def _ensure_seeded_reference(skill: CreationSkill, *, item: skill_catalog.CatalogSkill) -> None:
-    """Puts the seeded cover onto a character/scene skill's
-    `reference_assets` once, so the plaza card and a later `@` apply share
-    the same still. A no-op when the nested list is already non-empty —
-    an operator who replaced the demo still survives `make seed`. Cover
-    assets have no nested bundle."""
+def _ensure_seeded_reference(
+    session: Session, skill: CreationSkill, *, item: skill_catalog.CatalogSkill
+) -> None:
+    """Puts the seeded cover onto a character/scene skill as its default
+    look's sheet / master plate (and the card's anchor) once, so the plaza
+    card and a later `@` apply share the same still. A no-op when the card
+    already has any image — an operator who replaced the demo still survives
+    `make seed`. Cover assets have no looks."""
     cover_id = skill.cover_asset_id
     if cover_id is None:
         return
     if item.category == CreationSkillCategory.CHARACTER:
-        nest_key = "character"
-        view = CharacterViewAngle.FRONT.value
+        entry_type, view = AssetEntryType.CHARACTER_SHEET.value, CharacterViewAngle.FRONT.value
     elif item.category == CreationSkillCategory.SCENE_ASSET:
-        nest_key = "scene"
-        view = "establishing"
+        entry_type, view = AssetEntryType.MASTER.value, None
     else:
         return
-
-    current = dict(skill.params_json or {})
-    nested = dict(current.get(nest_key) or {}) if isinstance(current.get(nest_key), dict) else {}
-    refs = nested.get("reference_assets")
-    if isinstance(refs, list) and refs:
+    if asset_variants_service.entries(skill):
         return
-    nested = {
-        **nested,
-        "reference_assets": [
-            {
-                "asset_id": cover_id,
-                "view": view,
-                "label": None,
-                "created_at": utcnow().isoformat(),
-            }
-        ],
-    }
-    skill.params_json = {**current, nest_key: nested}
+    default = asset_variants_service.ensure_default(session, skill)
+    entry = asset_variants_service.add_entry(
+        session, skill, default, asset_id=cover_id, entry_type=entry_type, view=view
+    )
+    asset_variants_service.set_anchor(session, skill, entry)
 
 
 def update(
@@ -305,7 +296,13 @@ def publish(session: Session, *, skill: CreationSkill, actor_user_id: str) -> Cr
     assert_allowed(
         session,
         config_key="skill_moderation",
-        texts=[skill.title, skill.description, *text_values(skill.params_json)],
+        texts=[
+            skill.title,
+            skill.description,
+            *text_values(skill.params_json),
+            # Look/variant names and image labels live in their own tables.
+            *asset_variants_service.moderation_texts(skill),
+        ],
         user_id=actor_user_id,
         subject_type="skill",
     )
