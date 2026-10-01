@@ -18,6 +18,7 @@ from app.api.schemas.characters import (
     CharacterUpdateRequest,
 )
 from app.domain.characters import service as characters
+from app.presenters import asset_variants as asset_variant_presenter
 from app.presenters import media_urls
 
 router = APIRouter(tags=["characters"])
@@ -194,6 +195,8 @@ def _character_response(session: Session, character: characters.CharacterView) -
             if entry.get("asset_id")
         ],
         voice_description=character.voice_description,
+        looks=asset_variant_presenter.variant_views(session, character.skill),
+        anchor_entry_id=asset_variant_presenter.anchor_entry_id(character.skill),
         status=character.status,
         visibility=character.visibility,
         access_credits=character.access_credits,

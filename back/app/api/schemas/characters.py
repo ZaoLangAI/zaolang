@@ -12,6 +12,7 @@ import datetime as dt
 
 from pydantic import Field
 
+from app.api.schemas.asset_variants import AssetVariantView
 from app.api.schemas.common import ApiModel, Timestamped
 from app.domain.characters.service import MAX_REFERENCE_ASSETS
 from app.models.enums import CharacterViewAngle, CreationSkillStatus, CreationSkillVisibility
@@ -73,6 +74,10 @@ class CharacterResponse(Timestamped):
     # a future *image* generation's `reference_asset_ids`.
     action_clips: list[CharacterActionClip] = Field(default_factory=list)
     voice_description: str | None = None
+    # The card's looks/variants with their images (P1); `reference_assets`
+    # above is their flat P0-shaped projection, kept for older clients.
+    looks: list[AssetVariantView] = Field(default_factory=list)
+    anchor_entry_id: str | None = None
     status: CreationSkillStatus = CreationSkillStatus.DRAFT
     visibility: CreationSkillVisibility = CreationSkillVisibility.PRIVATE
     access_credits: int = 0
