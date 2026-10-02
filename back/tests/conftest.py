@@ -8,6 +8,7 @@ transaction that is rolled back after each test.
 from __future__ import annotations
 
 import os
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -196,6 +197,27 @@ def patch_app_db_session_scope(monkeypatch: pytest.MonkeyPatch, session: Session
         yield session
 
     monkeypatch.setattr("app.db.session_scope", fake_session_scope)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _private_config_cache() -> Iterator[None]:
+    """Gives this pytest process a config cache no other process can write.
+
+    A test's config rows live in its rolled-back transaction, so every other
+    connection still sees the defaults. The production key `cfg:v1:<key>` is
+    shared by anything on the same Redis db — another worktree's pytest run,
+    a dev server — and whichever of them reads a key next caches *its* view
+    for 30s. A test that had just enabled `web_editor_enabled` would then get
+    the default (off) back from the cache and a 404 from the gate, in a
+    different test each run. Busting the key between tests cannot close that
+    window; only a key nobody else knows can.
+    """
+    from app.platform_config import service as config_service
+
+    prefix = f"{config_service.CACHE_PREFIX}test-{uuid.uuid4().hex}:"
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(config_service, "CACHE_PREFIX", prefix)
+        yield
 
 
 @pytest.fixture(autouse=True)

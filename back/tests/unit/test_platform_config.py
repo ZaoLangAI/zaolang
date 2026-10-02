@@ -89,6 +89,56 @@ def test_rollback_to_an_unknown_version_is_refused(db: Session, admin: User) -> 
         config_service.rollback(db, "royalty", 99, actor_user_id=admin.id)
 
 
+def _flags_with(**overrides: bool) -> dict[str, object]:
+    value = copy.deepcopy(DEFAULT_CONFIGS["feature_flags"])
+    value.update(overrides)
+    return value
+
+
+def test_a_write_sees_itself_even_when_another_reader_cached_the_old_value(
+    db: Session, admin: User
+) -> None:
+    """Between `set_value` and the commit, a request on another connection
+    still sees the old version and caches it. The writing transaction must
+    keep reading its own version rather than that cached one."""
+    config_service.set_value(
+        db, "feature_flags", _flags_with(web_editor_enabled=True), actor_user_id=admin.id
+    )
+    config_service._try_cache_set("feature_flags", _flags_with(web_editor_enabled=False))
+
+    assert config_service.is_enabled(db, "web_editor_enabled") is True
+
+
+def test_an_uncommitted_write_is_never_published_to_the_shared_cache(
+    db: Session, admin: User
+) -> None:
+    """Every process reads the same cache, so caching a version that may
+    still roll back would serve it to everyone for the whole TTL."""
+    config_service.set_value(
+        db, "feature_flags", _flags_with(web_editor_enabled=True), actor_user_id=admin.id
+    )
+    config_service.get_raw(db, "feature_flags")
+
+    assert config_service._try_cache_get("feature_flags") is None
+
+
+def test_the_commit_busts_a_value_cached_while_the_write_was_in_flight(
+    db: Session, admin: User
+) -> None:
+    """Busting only inside `set_value` left the old version cached for the
+    full TTL whenever a reader landed before the commit did."""
+    config_service.set_value(
+        db, "feature_flags", _flags_with(web_editor_enabled=True), actor_user_id=admin.id
+    )
+    config_service._try_cache_set("feature_flags", _flags_with(web_editor_enabled=False))
+
+    db.commit()
+
+    assert config_service._try_cache_get("feature_flags") is None
+    assert config_service.is_enabled(db, "web_editor_enabled") is True
+    assert config_service._try_cache_get("feature_flags") is not None
+
+
 def test_tier_pricing_must_increase_with_quality(db: Session, admin: User) -> None:
     value = copy.deepcopy(DEFAULT_CONFIGS["pricing"])
     value["tier_pricing"]["text_to_image"] = {"preview": 40, "standard": 12, "cinematic": 4}
