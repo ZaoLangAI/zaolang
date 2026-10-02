@@ -78,6 +78,7 @@ nav:
   - 短剧戏码与情绪: video-drama-scenes.md
   - OpenMontage 对标: openmontage-benchmark.md
   - 角色造型与场景变体（P1 设计）: asset-variants-p1.md
+  - 角色造型与场景变体（P2 生产线）: asset-variants-p2.md
   - 接口参考: api.md
   - 运维手册: ops-runbook.md
   - 工程与发布: ci-release.md
