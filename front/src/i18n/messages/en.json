@@ -3231,7 +3231,9 @@
     "targetSceneVariantHint": "The result joins the chosen variant.",
     "targetSceneVariantAuto": "Automatic (presets or main scene)",
     "referencePickLookDefault": "With no image ticked, the look's default references are used.",
-    "assetKindPortraitHint": "Generates a front head-and-shoulders identity portrait; once approved it is the character's anchor and every look keeps this face."
+    "assetKindPortraitHint": "Generates a front head-and-shoulders identity portrait; once approved it is the character's anchor and every look keeps this face.",
+    "referenceEmotionLabel": "Reference emotion (optional)",
+    "referenceEmotionNone": "Not set"
   },
   "scenes": {
     "eyebrow": "Scene library",

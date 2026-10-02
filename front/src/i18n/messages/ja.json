@@ -3231,7 +3231,9 @@
     "targetSceneVariantHint": "生成結果は選んだバリエーションに追加されます。",
     "targetSceneVariantAuto": "自動（プリセットまたはメインシーン）",
     "referencePickLookDefault": "画像を選ばない場合は、その衣装の既定の参考画像を使います。",
-    "assetKindPortraitHint": "正面・胸から上のメイク写真を生成します。確定後はキャラクターの基準となり、すべての衣装がこの顔に合わせられます。"
+    "assetKindPortraitHint": "正面・胸から上のメイク写真を生成します。確定後はキャラクターの基準となり、すべての衣装がこの顔に合わせられます。",
+    "referenceEmotionLabel": "参考の感情（任意）",
+    "referenceEmotionNone": "指定なし"
   },
   "scenes": {
     "eyebrow": "シーンライブラリ",

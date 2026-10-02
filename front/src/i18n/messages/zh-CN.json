@@ -3231,7 +3231,9 @@
     "targetSceneVariantHint": "生成结果会加入所选变体。",
     "targetSceneVariantAuto": "自动（按预设或主场景）",
     "referencePickLookDefault": "未勾选图片时，使用该造型的默认参考图。",
-    "assetKindPortraitHint": "生成一张正面头肩定妆照，定稿后作为该角色的身份锚点，所有造型都以这张脸为准。"
+    "assetKindPortraitHint": "生成一张正面头肩定妆照，定稿后作为该角色的身份锚点，所有造型都以这张脸为准。",
+    "referenceEmotionLabel": "参考情绪（可选）",
+    "referenceEmotionNone": "不指定"
   },
   "scenes": {
     "eyebrow": "场景库",

@@ -32271,6 +32271,51 @@
             ],
             "title": "Scene Ref Selection"
           },
+          "reference_shot_size": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "extreme_wide",
+                  "wide",
+                  "full",
+                  "medium",
+                  "medium_close",
+                  "close",
+                  "extreme_close"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Shot Size"
+          },
+          "reference_emotion": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "neutral",
+                  "smile",
+                  "laugh",
+                  "smirk",
+                  "restrained",
+                  "breakdown",
+                  "anger",
+                  "shock",
+                  "fear",
+                  "sad",
+                  "shy",
+                  "cold_gaze"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Emotion"
+          },
           "scene_lighting": {
             "anyOf": [
               {
