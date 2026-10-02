@@ -3816,6 +3816,17 @@
     "matrixPlanning": "{count} combinations — pricing…",
     "lookDescriptionPlaceholder": "e.g. white satin wedding dress, floor-length veil, pearl earrings",
     "uploadOutfit": "Upload outfit reference",
-    "uploadOutfitHint": "Used for the clothes only — never for the face."
+    "uploadOutfitHint": "Used for the clothes only — never for the face.",
+    "ageStageLabel": "Age stage",
+    "ageStageHint": "The same person at another age: the face's features and bone structure follow the identity portrait and only age naturally.",
+    "ageStageNone": "Not set",
+    "ageStage": {
+      "child": "Child (6–12)",
+      "teen": "Teen (13–17)",
+      "youth": "Young adult (18–29)",
+      "adult": "Adult (30–44)",
+      "middle_aged": "Middle-aged (45–59)",
+      "elderly": "Elderly (60+)"
+    }
   }
 }

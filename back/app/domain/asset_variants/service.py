@@ -223,6 +223,25 @@ def _check_variant_name(skill: CreationSkill, name: str, *, exclude_id: str | No
     return clean
 
 
+_LOOK_PRESET_KEYS = frozenset({"age_stage"})
+_SCENE_PRESET_KEYS = frozenset({"lighting", "weather", "state", "period"})
+
+
+def _check_presets(skill: CreationSkill, presets: dict[str, Any] | None) -> dict[str, Any]:
+    """A look carries only `age_stage`; a scene variant only the four scene
+    axes (P2-6) — the other kind's keys are a 422, not silently stored."""
+    clean = dict(presets or {})
+    allowed = _LOOK_PRESET_KEYS if is_character(skill) else _SCENE_PRESET_KEYS
+    foreign = sorted(key for key in clean if key not in allowed)
+    if foreign:
+        noun = "造型" if is_character(skill) else "场景变体"
+        raise ValidationFailed(
+            f"{noun}不支持这些预设：{'、'.join(foreign)}。",
+            fields={"presets": "与卡片类别不匹配"},
+        )
+    return clean
+
+
 def create_variant(
     session: Session,
     skill: CreationSkill,
@@ -232,6 +251,7 @@ def create_variant(
     presets: dict[str, Any] | None = None,
 ) -> SkillAssetVariant:
     ensure_default(session, skill)
+    presets = _check_presets(skill, presets)
     if is_character(skill) and len(skill.asset_variants) >= MAX_VARIANTS_PER_SKILL:
         raise ValidationFailed(
             f"每个{'角色' if is_character(skill) else '场景'}最多 {MAX_VARIANTS_PER_SKILL} 个"
@@ -292,7 +312,7 @@ def update_variant(
     if description is not None:
         variant.description = description.strip() or None
     if presets is not None:
-        variant.presets_json = dict(presets)
+        variant.presets_json = _check_presets(skill, presets)
     if sort_order is not None:
         variant.sort_order = sort_order
     if make_default and not variant.is_default:

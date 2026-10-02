@@ -56,12 +56,12 @@ def test_looks_and_entries_round_trip(client: TestClient, db: Session, author: U
 
     look = client.post(
         f"{base}/looks",
-        json={"name": "婚礼", "description": "白色婚纱", "presets": {"age_stage": "青年"}},
+        json={"name": "婚礼", "description": "白色婚纱", "presets": {"age_stage": "youth"}},
         headers=headers,
     )
     assert look.status_code == 201
     look_id = look.json()["id"]
-    assert look.json()["presets"] == {"age_stage": "青年"}
+    assert look.json()["presets"] == {"age_stage": "youth"}
 
     sheet = _asset(db, author)
     entry = client.post(

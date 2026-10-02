@@ -76,7 +76,11 @@ def test_an_empty_look_with_a_portrait_starts_from_the_face_and_its_outfit_refer
     assert params["reference_asset_ids"] == [portrait.asset_id, dress.asset_id]
     labels = _labels(params)
     assert labels[dress.asset_id].endswith(reference_resolver.OUTFIT_ONLY_ROLE)
-    assert params["target_look"] == {"name": "婚礼", "description": "白色缎面婚纱，头纱"}
+    assert params["target_look"] == {
+        "name": "婚礼",
+        "description": "白色缎面婚纱，头纱",
+        "age_stage": None,
+    }
 
 
 def test_with_no_portrait_the_default_sheet_is_used_for_the_face_only(
@@ -107,7 +111,7 @@ def test_the_default_look_only_passes_its_description(db: Session, author: User)
     skill, default, *_ = _card(db, author)
     av.update_variant(db, skill, default, description="灰色风衣")
     params = _resolve(db, author, skill, target_variant_id=default.id)
-    assert params["target_look"] == {"name": None, "description": "灰色风衣"}
+    assert params["target_look"] == {"name": None, "description": "灰色风衣", "age_stage": None}
     # Not a 换装: no face-only fallback, the sheet job keeps no borrowed refs.
     assert not params.get("reference_asset_ids")
 

@@ -13,6 +13,7 @@ from app.api.schemas.common import ApiModel
 from app.domain.asset_variants.service import MAX_VARIANT_NAME_LEN
 from app.domain.image_assets.vocabulary import (
     MAX_CHARACTER_EXPRESSIONS,
+    AgeStage,
     CharacterExpression,
     SceneLighting,
     ScenePeriod,
@@ -23,13 +24,15 @@ from app.models.enums import AssetEntryStatus, AssetEntryType, QualityTier
 
 
 class VariantPresets(ApiModel):
-    """Scene variant presets (P0 vocabulary) or a look's `age_stage`."""
+    """Scene variant presets (P0 vocabulary) or a look's `age_stage` (P2-6).
+    The service rejects the other kind's keys (a look has no lighting, a
+    scene variant no age)."""
 
     lighting: SceneLighting | None = None
     weather: SceneWeather | None = None
     state: SceneState | None = None
     period: ScenePeriod | None = None
-    age_stage: str | None = Field(default=None, max_length=20)
+    age_stage: AgeStage | None = None
 
 
 class AssetEntryView(ApiModel):

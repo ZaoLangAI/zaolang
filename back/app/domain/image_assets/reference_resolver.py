@@ -115,10 +115,12 @@ def _borrow_identity_reference(
     skill = character.skill
     variant_id = params.get("target_variant_id")
     look = asset_variants_service.find_variant(skill, str(variant_id)) if variant_id else None
-    if look is not None and (not look.is_default or look.description):
+    age_stage = (look.presets_json or {}).get("age_stage") if look is not None else None
+    if look is not None and (not look.is_default or look.description or age_stage):
         params["target_look"] = {
             "name": None if look.is_default else look.name,
             "description": look.description,
+            "age_stage": age_stage,
         }
     if params.get("reference_asset_ids") or params.get("character_expressions"):
         return {}

@@ -26,6 +26,7 @@ from app.domain.image_assets.vocabulary import (
     PERIOD_PRESETS,
     SCENE_PRESET_AXES,
     SCENE_PRESET_TABLES,
+    age_stage_fragments,
     expression_grid,
     scene_preset_label,
     scene_presets_from,
@@ -110,6 +111,13 @@ OUTFIT_LABEL_SENTENCE = "本图为角色的「{label}」造型。"
 # The target look's own outfit description (P2-3, `params["target_look"]`).
 OUTFIT_DESCRIPTION_SENTENCE = "「{label}」造型的服装与配饰：{description}。"
 LOOK_DESCRIPTION_SENTENCE = "服装与配饰：{description}。"
+
+
+def _age_fragments(params: dict[str, Any]) -> tuple[str, str]:
+    """The target look's age stage (P2-6) as `(prompt, negative)`."""
+    raw = params.get("target_look")
+    look: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    return age_stage_fragments(look.get("age_stage"))
 
 
 def _target_look(params: dict[str, Any]) -> tuple[str, str]:
@@ -238,7 +246,12 @@ def compose(
             identity_reference=identity_reference,
         )
     if asset_pass is AssetPass.CHARACTER_EXPRESSIONS:
-        return _compose_expressions(prompt, negative, _expressions(params))
+        prompt_out, negative_out = _compose_expressions(prompt, negative, _expressions(params))
+        age, age_negative = _age_fragments(params)
+        if age:
+            prompt_out = _join(prompt_out, age)
+            negative_out = merge_negative(negative_out, age_negative)
+        return prompt_out, negative_out
     if asset_pass is AssetPass.SCENE:
         return _compose_scene(
             prompt, negative, scene_presets_from(params), has_reference=has_reference
@@ -283,9 +296,13 @@ def _compose_character_sheet(
             prompt = _join(prompt, sentence)
     if identity_reference and not (outfit and has_reference):
         prompt = IDENTITY_LOCK_PREFIX + prompt
+    age, age_negative = _age_fragments(params)
+    if age and age not in prompt:
+        prompt = _join(prompt, age)
     if CHARACTER_SHEET_LAYOUT_SUFFIX not in prompt:
         prompt = _join(prompt, CHARACTER_SHEET_LAYOUT_SUFFIX)
-    return apply_visual_medium(prompt, negative)
+    prompt, negative_out = apply_visual_medium(prompt, negative)
+    return prompt, merge_negative(negative_out, age_negative)
 
 
 def expression_layout(expressions: list[str]) -> str:

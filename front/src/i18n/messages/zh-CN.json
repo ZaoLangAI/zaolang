@@ -3816,6 +3816,17 @@
     "matrixPlanning": "共 {count} 个组合，正在计算报价…",
     "lookDescriptionPlaceholder": "如：白色缎面婚纱，及地头纱，珍珠耳环",
     "uploadOutfit": "上传服装参考",
-    "uploadOutfitHint": "只作为服装参考：生成时只取衣服，不取脸。"
+    "uploadOutfitHint": "只作为服装参考：生成时只取衣服，不取脸。",
+    "ageStageLabel": "年龄阶段",
+    "ageStageHint": "同一个人的另一个年龄：生成时保持定妆照的五官与骨相，只按年龄自然变化。",
+    "ageStageNone": "不指定",
+    "ageStage": {
+      "child": "童年（6–12 岁）",
+      "teen": "少年（13–17 岁）",
+      "youth": "青年（18–29 岁）",
+      "adult": "壮年（30–44 岁）",
+      "middle_aged": "中年（45–59 岁）",
+      "elderly": "老年（60 岁以上）"
+    }
   }
 }

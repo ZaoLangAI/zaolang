@@ -3816,6 +3816,17 @@
     "matrixPlanning": "{count} 通りの組み合わせ — 見積もり中…",
     "lookDescriptionPlaceholder": "例：白いサテンのウェディングドレス、床まで届くベール、パールのイヤリング",
     "uploadOutfit": "衣装の参考をアップロード",
-    "uploadOutfitHint": "衣装のみの参考として使い、顔には使いません。"
+    "uploadOutfitHint": "衣装のみの参考として使い、顔には使いません。",
+    "ageStageLabel": "年齢段階",
+    "ageStageHint": "同じ人物の別の年齢：メイク写真の顔立ちと骨格を保ち、年齢に応じて自然に変化させます。",
+    "ageStageNone": "指定なし",
+    "ageStage": {
+      "child": "幼少期（6–12 歳）",
+      "teen": "少年期（13–17 歳）",
+      "youth": "青年期（18–29 歳）",
+      "adult": "壮年期（30–44 歳）",
+      "middle_aged": "中年期（45–59 歳）",
+      "elderly": "老年期（60 歳以上）"
+    }
   }
 }

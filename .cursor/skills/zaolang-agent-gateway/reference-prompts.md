@@ -32,7 +32,7 @@ Copy coaches, asset-kind prompt rules, scene skill packs, follow-up questions. S
 
 ## Character/scene preset vocabulary
 
-`back/app/domain/image_assets/vocabulary.py` is the single source for expression (`CharacterExpression`) and scene `SceneLighting`/`SceneWeather`/`SceneState`/`ScenePeriod` presets: `Literal` + `get_args` tuple + `{label, prompt, negative}` per value (periods add `cues`/`pitfalls`). Prompt fragments state renderable facts (facial muscles, colour temperature, light direction, era fixtures), never a bare mood word. Adding a value: Literal → preset entry → `make openapi` → front label map + copy.
+`back/app/domain/image_assets/vocabulary.py` is the single source for expression (`CharacterExpression`), look `AgeStage` (`AGE_STAGE_PRESETS`; `age_stage_fragments` adds the stage plus `AGE_IDENTITY_SENTENCE` to sheet and expression passes from `target_look.age_stage`) and scene `SceneLighting`/`SceneWeather`/`SceneState`/`ScenePeriod` presets: `Literal` + `get_args` tuple + `{label, prompt, negative}` per value (periods add `cues`/`pitfalls`). Prompt fragments state renderable facts (facial muscles, colour temperature, light direction, era fixtures), never a bare mood word. Adding a value: Literal → preset entry → `make openapi` → front label map + copy.
 
 ## Prompt builder (`back/app/domain/image_assets/prompt_builder.py`)
 

@@ -41731,6 +41731,25 @@
               }
             ],
             "title": "Description"
+          },
+          "age_stage": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "child",
+                  "teen",
+                  "youth",
+                  "adult",
+                  "middle_aged",
+                  "elderly"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Stage"
           }
         },
         "type": "object",
@@ -42341,7 +42360,14 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 20
+                "enum": [
+                  "child",
+                  "teen",
+                  "youth",
+                  "adult",
+                  "middle_aged",
+                  "elderly"
+                ]
               },
               {
                 "type": "null"
@@ -42352,7 +42378,7 @@
         },
         "type": "object",
         "title": "VariantPresets",
-        "description": "Scene variant presets (P0 vocabulary) or a look's `age_stage`."
+        "description": "Scene variant presets (P0 vocabulary) or a look's `age_stage` (P2-6).\nThe service rejects the other kind's keys (a look has no lighting, a\nscene variant no age)."
       },
       "VendorCatalogView": {
         "properties": {
