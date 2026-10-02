@@ -34,3 +34,24 @@ export function jobOutputs(
         : [],
   };
 }
+
+/**
+ * How short a succeeded multi-pass image job came up, or `null` when it
+ * delivered everything it was priced for.
+ *
+ * A character job with several views, or a scene variant set, makes one
+ * image per pass; if a later pass fails after earlier ones delivered, the
+ * backend keeps those images and settles per image instead of failing the
+ * whole job (`requested_outputs` is what it was priced for).
+ */
+export function partialDelivery(job: {
+  status: string;
+  requested_outputs?: number | null;
+  output_asset_id?: string | null;
+  output_asset_ids?: string[] | null;
+}): { delivered: number; requested: number } | null {
+  const requested = job.requested_outputs ?? 1;
+  if (job.status !== 'succeeded' || requested <= 1) return null;
+  const delivered = jobOutputs(job).assetIds.length;
+  return delivered > 0 && delivered < requested ? { delivered, requested } : null;
+}

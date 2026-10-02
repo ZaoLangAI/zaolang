@@ -22,6 +22,7 @@ function job(overrides: Partial<GenerationJob>): GenerationJob {
     progress: 100,
     quoted_credits: 12,
     reserved_credits: 12,
+    requested_outputs: 1,
     estimated_seconds: 10,
     cancel_requested: false,
     created_at: '2026-08-30T00:00:00Z',

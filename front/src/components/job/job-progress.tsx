@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { LiveThinking } from '@/components/ai/thinking-disclosure';
 import { useSession } from '@/components/auth/session-provider';
 import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
+import { partialDelivery } from '@/components/job/job-outputs';
 import { PromoteJobDialog } from '@/components/job/promote-job-dialog';
 import {
   CHARACTER_VIEW_LABEL_KEY,
@@ -90,6 +91,10 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
     Math.max(assetPlanningEntries - 1, 0),
     (characterViews?.length ?? 1) - 1,
   );
+  // A later pass that failed after earlier ones delivered still ends
+  // `succeeded`, with only the delivered images (settled per image).
+  const partial = partialDelivery(current);
+  const deliveredViews = partial?.delivered ?? characterViews?.length ?? 0;
 
   const reduced = useReducedMotion();
   // Frozen at mount so React never rewrites `style.width` on a later render —
@@ -432,7 +437,10 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
                   })}
                 </li>
                 {characterViews.map((view, index) => {
-                  const viewDone = index < currentViewIndex || current.status === 'succeeded';
+                  const viewDone =
+                    current.status === 'succeeded'
+                      ? index < deliveredViews
+                      : index < currentViewIndex;
                   const viewActive = index === currentViewIndex && !finished && !viewDone;
                   return (
                     <li
@@ -454,6 +462,12 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
               </ol>
             ) : null}
           </div>
+
+          {partial ? (
+            <p role="status" className="text-sm text-muted">
+              {t('partialDelivery', partial)}
+            </p>
+          ) : null}
 
           {current.status === 'failed' ? (
             <ErrorNotice
@@ -591,6 +605,15 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
                 <Row
                   label={t('creditsRefunded', {
                     count: formatCount(current.reserved_credits, locale),
+                  })}
+                />
+              ) : current.status === 'succeeded' &&
+                current.actual_credits !== null &&
+                current.actual_credits !== undefined &&
+                current.actual_credits < current.reserved_credits ? (
+                <Row
+                  label={t('creditsRefunded', {
+                    count: formatCount(current.reserved_credits - current.actual_credits, locale),
                   })}
                 />
               ) : null}

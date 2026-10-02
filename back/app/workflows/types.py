@@ -57,6 +57,11 @@ class WorkflowContext:
     # reserves credits, or writes a `ProviderAttempt`.
     live_provider: bool = False
     state: dict[str, Any] = field(default_factory=dict)
+    # Raw `config` of the first node of each type in the graph being walked,
+    # set by `WorkflowRunner`. Lets a node finish work another node type
+    # normally does — `execute_fail` attaching a partly delivered asset
+    # job's outputs the way the graph's own `asset_output_link` would.
+    node_configs: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def agent_job_id(self) -> str | None:

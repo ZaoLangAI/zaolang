@@ -886,6 +886,11 @@ class GenerationJobResponse(ApiModel):
     # stream, and to label `output_asset_ids`/`output_urls`' entries, which
     # are recorded in the same front → side → back order as this list.
     character_views: list[CharacterViewAngle] | None = None
+    # How many images this job was priced for (`jobs.service.
+    # requested_output_count`): several for a multi-view character job or a
+    # scene variant set, else 1. A succeeded job with fewer
+    # `output_asset_ids` was a partial delivery, settled per image.
+    requested_outputs: int = 1
     # Echoes `GenerationParams.duration_seconds` back — lets a client re-quote
     # a promoted tier for this same job (video pricing depends on it) without
     # having kept the original submit form's state around.

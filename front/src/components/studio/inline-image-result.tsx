@@ -13,7 +13,7 @@ import {
   type Stage,
 } from '@/components/job/job-stages';
 import { jobStageState } from '@/components/job/job-stage-state';
-import { jobOutputs } from '@/components/job/job-outputs';
+import { jobOutputs, partialDelivery } from '@/components/job/job-outputs';
 import { DevicePreview } from '@/components/media/device-preview';
 import { OutputGallery } from '@/components/media/output-gallery';
 import { SaveCoverAsSkillDialog } from '@/components/studio/save-cover-as-skill-dialog';
@@ -187,6 +187,7 @@ export function InlineImageResult({
   // `job`'s own output(s) — front view only, or every view for a native
   // multi-view character job that never needed a separate completion job.
   const { urls: jobUrls, assetIds: jobAssetIds } = jobOutputs(job);
+  const partial = partialDelivery(job);
   const jobViews = job.character_views ?? null;
   const jobLabels: (string | null)[] =
     jobViews && jobViews.length === jobUrls.length
@@ -372,6 +373,11 @@ export function InlineImageResult({
         </div>
       ) : null}
 
+      {partial ? (
+        <p role="status" className="text-sm text-muted">
+          {t('partialDelivery', partial)}
+        </p>
+      ) : null}
       {job.status === 'failed' ? (
         <ErrorNotice
           title={job.failure_message ?? t('failedTitle')}

@@ -32,6 +32,7 @@ from app.models import (
 from app.models.base import new_id, utcnow
 from app.models.enums import (
     AssetRole,
+    JobEventType,
     JobOrigin,
     JobStatus,
     LedgerEntryType,
@@ -523,6 +524,126 @@ def test_a_scene_variant_set_generates_one_labelled_image_per_variant(
     assert job.actual_credits == unit * 3
     entries = scenes_service.get_scene(db, user_id=funded.id, scene_id=scene.id).reference_assets
     assert [entry["label"] for entry in entries] == ["白天", "黄昏", "夜·室内"]
+
+
+def test_a_variant_set_whose_last_pass_fails_keeps_and_charges_what_it_delivered(
+    db: Session, funded: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The third variant exhausts its route budget after two images landed:
+    the job succeeds with those two, files both on the scene, and is charged
+    two thirds — not refunded in full with the images left off the card."""
+    from app.domain.scenes import service as scenes_service
+    from app.domain.workflow_templates import service as workflow_templates_service
+    from tests import fake_providers
+
+    calls = {"n": 0}
+
+    def failing_after_two(original):
+        def submit(self, request):
+            calls["n"] += 1
+            if calls["n"] > 2:
+                return fake_providers.GenerationResult(
+                    succeeded=False,
+                    failure_code="PROVIDER_TEMPORARY_FAILURE",
+                    metadata={"provider": self.name, "simulated": True},
+                )
+            return original(self, request)
+
+        return submit
+
+    for cls in (fake_providers.FakeOpenWorkflowProvider, fake_providers.FakePaidApiProvider):
+        monkeypatch.setattr(cls, "submit", failing_after_two(cls.submit))
+
+    workflow_templates_service.ensure_default_templates(db)
+    scene = scenes_service.create_scene(
+        db, user_id=funded.id, name="客厅", description=None, reference_asset_ids=[]
+    )
+    job = jobs_service.submit(
+        db,
+        user_id=funded.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={
+            "prompt": "老式客厅",
+            "aspect_ratio": "16:9",
+            "asset_kind": "scene",
+            "target_scene_id": scene.id,
+            "scene_variants": [
+                {"lighting": "day"},
+                {"lighting": "dusk"},
+                {"lighting": "night_interior"},
+            ],
+        },
+        idempotency_key=new_id("idk"),
+    ).job
+    account = credits_service.get_or_create_account(db, funded.id)
+    before = account.available_balance + job.reserved_credits
+
+    outcome = pipeline.run_generation_pipeline(db, job.id)
+
+    assert outcome.status == JobStatus.SUCCEEDED
+    db.refresh(job)
+    assert len(job.output_asset_ids_json or []) == 2
+    assert job.actual_credits == job.reserved_credits * 2 // 3
+    db.refresh(account)
+    assert account.reserved_balance == 0
+    assert account.available_balance == before - job.actual_credits
+    entries = scenes_service.get_scene(db, user_id=funded.id, scene_id=scene.id).reference_assets
+    assert [entry["label"] for entry in entries] == ["白天", "黄昏"]
+    succeeded = db.scalars(
+        select(JobEvent).where(
+            JobEvent.job_id == job.id, JobEvent.event_type == JobEventType.SUCCEEDED
+        )
+    ).one()
+    assert succeeded.payload_json["delivered_outputs"] == 2
+    assert succeeded.payload_json["requested_outputs"] == 3
+
+
+def test_a_later_pass_still_gets_its_own_quality_retry(
+    db: Session, funded: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The quality retry cap is per pass: the side view's first image is
+    rejected and regenerated once, even though it is the job's third
+    provider attempt overall."""
+    from app.agents import quality
+    from app.agents.base import AgentOutcome
+    from app.domain.workflow_templates import service as workflow_templates_service
+
+    verdicts = iter(["pass", "fail", "pass"])
+
+    def judge(*args, **kwargs):
+        verdict = next(verdicts)
+        return AgentOutcome(
+            data={"verdict": verdict, "scores": {}, "should_retry": verdict == "fail"},
+            raw_text="",
+            degraded=False,
+            model="fake",
+            agent_run_id=new_id("arun"),
+        )
+
+    monkeypatch.setattr(quality, "run_agent", judge)
+    workflow_templates_service.ensure_default_templates(db)
+    job = jobs_service.submit(
+        db,
+        user_id=funded.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={
+            "prompt": "一位神秘的女侦探",
+            "aspect_ratio": "16:9",
+            "asset_kind": "character",
+            "character_views": ["front", "side"],
+            "auto_attach_asset": False,
+        },
+        idempotency_key=new_id("idk"),
+    ).job
+
+    outcome = pipeline.run_generation_pipeline(db, job.id)
+
+    assert outcome.status == JobStatus.SUCCEEDED
+    db.refresh(job)
+    assert len(job.output_asset_ids_json or []) == 2
+    assert job.actual_credits == job.reserved_credits
 
 
 def _park_awaiting_input(db: Session, job: GenerationJob) -> None:

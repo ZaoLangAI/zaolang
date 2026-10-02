@@ -107,6 +107,9 @@ class WorkflowRunner:
     def _walk(
         self, ctx: WorkflowContext, start_node_id: str, visits: dict[str, int]
     ) -> PipelineOutcome:
+        ctx.node_configs = {}
+        for graph_node in self._graph.nodes:
+            ctx.node_configs.setdefault(graph_node.type, dict(graph_node.config or {}))
         current = start_node_id
         try:
             while True:

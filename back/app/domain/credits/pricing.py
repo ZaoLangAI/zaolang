@@ -195,6 +195,8 @@ def settlement_credits(
     operation: str,
     requested_duration_seconds: int,
     delivered_duration_ms: int | None,
+    requested_outputs: int = 1,
+    delivered_outputs: int = 1,
 ) -> int:
     """What the user actually pays once the output is in hand.
 
@@ -202,10 +204,19 @@ def settlement_credits(
     "12 credits" pays 12, and what the provider charged us is margin, recorded
     on `ProviderAttempt` rather than passed through.
 
-    The one case that refunds is a short delivery — a video that came back
-    shorter than ordered is charged pro rata, because the user did not receive
-    what they paid for.
+    The cases that refund are short deliveries, charged pro rata because the
+    user did not receive what they paid for:
+
+    - a multi-pass image job (several character views, a scene variant set)
+      whose later pass failed after earlier ones delivered — priced per
+      image (`jobs.service.requested_output_count`), so it pays for the
+      images it got, in integers;
+    - a video that came back shorter than ordered.
     """
+    if 0 < delivered_outputs < requested_outputs:
+        # Never free: the platform still paid a provider for what arrived.
+        return max(1, reserved_credits * delivered_outputs // requested_outputs)
+
     if (
         operation not in VIDEO_OPERATIONS
         or delivered_duration_ms is None

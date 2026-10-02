@@ -9199,6 +9199,11 @@ export interface components {
             forced_model?: string | null;
             /** Character Views */
             character_views?: components["schemas"]["CharacterViewAngle"][] | null;
+            /**
+             * Requested Outputs
+             * @default 1
+             */
+            requested_outputs: number;
             /** Duration Seconds */
             duration_seconds?: number | null;
             /** Linked Character Id */
