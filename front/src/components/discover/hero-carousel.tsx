@@ -95,6 +95,10 @@ export function HeroCarousel({
     setIndex(0);
     setDetails(initialDetails);
   }
+  // Which works have been fetched for the current slide set. Reset inside the
+  // fetch effect, not in the render-time block above: refs can't be written
+  // during render (`react-hooks/refs`).
+  const requestedRef = useRef({ slidesKey, ids: new Set(Object.keys(initialDetails)) });
 
   const mountedIds = useMemo(() => neighborIds(slides, index), [slides, index]);
   const mountedKey = mountedIds.join('|');

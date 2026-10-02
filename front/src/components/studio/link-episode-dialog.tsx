@@ -78,7 +78,7 @@ export function LinkEpisodeDialog({
     if (!open || !seriesId) return;
     let cancelled = false;
     void editorApi
-      .listEpisodes(seriesId)
+      .listEpisodes(episodesSeriesId)
       .then((rows) => {
         if (cancelled) return;
         setEpisodes(rows);
