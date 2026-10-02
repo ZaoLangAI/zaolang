@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import threading
-from contextlib import contextmanager
 from typing import Any
 
 import pytest
@@ -27,7 +26,7 @@ from app.models.base import new_id
 from app.models.enums import AssetRole, MediaType, ModerationStatus, Visibility
 from app.platform_config import service as config_service
 from app.platform_config.schemas import FeatureFlags
-from tests.conftest import auth_header
+from tests.conftest import auth_header, patch_app_db_session_scope
 
 
 def _enable_editor(session: Session, admin: User, *, ai: bool = True) -> None:
@@ -136,12 +135,8 @@ def _plan_from_sse(response) -> dict[str, Any]:
 
 
 def _patch_stream_session(monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
-    @contextmanager
-    def fake_session_scope():
-        yield db
-
     # Imported inside the route: `from app.db import session_scope`.
-    monkeypatch.setattr("app.db.session_scope", fake_session_scope)
+    patch_app_db_session_scope(monkeypatch, db)
 
 
 # --- flag-order regression -------------------------------------------------
