@@ -2,8 +2,9 @@
 
 Reads go through a short-lived Redis cache so hot paths (quoting, routing) do
 not hit Postgres per request. Writes append a new version, flip the active flag
-inside one transaction, and bust the cache, so a change takes effect everywhere
-without a restart and can be rolled back to any earlier version.
+inside one transaction, and bust the cache once that transaction commits, so a
+change takes effect everywhere without a restart and can be rolled back to any
+earlier version.
 """
 
 from __future__ import annotations
@@ -11,10 +12,12 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+from collections.abc import MutableMapping
 from typing import Any, TypeVar
+from weakref import WeakKeyDictionary
 
 import redis
-from sqlalchemy import select, update
+from sqlalchemy import event, select, update
 from sqlalchemy.orm import Session
 
 from app.api.rate_limit import get_redis
@@ -31,8 +34,45 @@ CACHE_PREFIX = "cfg:v1:"
 T = TypeVar("T", bound=ConfigSection)
 
 
+# Keys a session has written but not yet committed.
+#
+# The cache is shared by every process, but an uncommitted version is visible
+# to its own transaction only. So while a key is pending, that session reads
+# Postgres directly and never fills the cache: caching what it sees would
+# publish a value that may still roll back, and serving it what is cached
+# would hide its own write. The cache is busted again once the commit lands,
+# because a reader on another connection can refill it with the old version
+# anywhere between `set_value` and that commit.
+#
+# A weak map keyed on the session, like `canvas.agent_service._PENDING`, so a
+# session dropped without committing or rolling back leaves nothing behind.
+_PENDING: MutableMapping[Session, set[str]] = WeakKeyDictionary()
+
+
 def _cache_key(key: str) -> str:
     return f"{CACHE_PREFIX}{key}"
+
+
+def _is_pending(session: Session, key: str) -> bool:
+    return key in _PENDING.get(session, ())
+
+
+def _mark_pending(session: Session, key: str) -> None:
+    pending = _PENDING.get(session)
+    if pending is not None:
+        pending.add(key)
+        return
+    _PENDING[session] = {key}
+
+    def _flush(inner: Session) -> None:
+        for pending_key in _PENDING.pop(inner, set()):
+            invalidate(pending_key)
+
+    def _drop(inner: Session) -> None:
+        _PENDING.pop(inner, None)
+
+    event.listen(session, "after_commit", _flush, once=True)
+    event.listen(session, "after_rollback", _drop, once=True)
 
 
 def validate(key: str, value: dict[str, Any]) -> ConfigSection:
@@ -52,15 +92,18 @@ def validate(key: str, value: dict[str, Any]) -> ConfigSection:
 
 def get_raw(session: Session, key: str) -> dict[str, Any]:
     """Active value for a key, falling back to the built-in default."""
-    cache = _try_cache_get(key)
-    if cache is not None:
-        return cache
+    use_cache = not _is_pending(session, key)
+    if use_cache:
+        cache = _try_cache_get(key)
+        if cache is not None:
+            return cache
 
     row = session.scalar(
         select(PlatformConfig).where(PlatformConfig.key == key, PlatformConfig.is_active.is_(True))
     )
     value = dict(row.value_json) if row is not None else dict(DEFAULT_CONFIGS.get(key, {}))
-    _try_cache_set(key, value)
+    if use_cache:
+        _try_cache_set(key, value)
     return value
 
 
@@ -114,6 +157,7 @@ def set_value(
     )
     session.add(row)
     session.flush()
+    _mark_pending(session, key)
     invalidate(key)
     return row
 
