@@ -538,6 +538,9 @@ export function ImageGenerationStudio({
   const targetLookId = targetLooks.some((look) => look.id === targetVariantId)
     ? targetVariantId
     : '';
+  // A non-default look is a 换装: the backend locks the face to the identity
+  // portrait and draws this look's outfit description (P2-3).
+  const targetOutfitLook = targetLooks.find((look) => look.id === targetLookId && !look.is_default);
   const targetSceneVariantId = targetSceneVariants.some((v) => v.id === targetVariantId)
     ? targetVariantId
     : '';
@@ -756,6 +759,11 @@ export function ImageGenerationStudio({
                   ...targetLooks.map((look) => ({ value: look.id, label: look.name })),
                 ]}
               />
+            ) : null}
+            {targetOutfitLook && !portrait && expressions.length === 0 ? (
+              <p className="text-[11px] text-muted" role="status">
+                {t('outfitChangeHint', { name: targetOutfitLook.name })}
+              </p>
             ) : null}
             <CharacterPresetFields
               portrait={portrait}

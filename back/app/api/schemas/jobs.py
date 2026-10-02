@@ -397,6 +397,14 @@ class ReferenceLabel(ApiModel):
     label: str = Field(max_length=60)
 
 
+class TargetLook(ApiModel):
+    """The look a character job files into, as the prompt needs it
+    (`reference_resolver` writes it, never a client)."""
+
+    name: str | None = Field(default=None, max_length=40)
+    description: str | None = Field(default=None, max_length=2000)
+
+
 def _check_selection(picked: list[str], allowed: list[str], *, field: str, noun: str) -> None:
     if len(set(picked)) != len(picked):
         raise ValueError(f"{field} 中同一{noun}只能出现一次。")
@@ -553,6 +561,11 @@ class GenerationParams(ApiModel):
     # Server-written at submit: what each reference image is, for the
     # prompt's "参考图说明" legend. Any client-sent value is discarded.
     reference_labels: list[ReferenceLabel] | None = Field(default=None, max_length=9)
+    # Server-written at submit (P2-3): the `target_variant_id` look's name
+    # (unless it is the default look) and outfit description, which the
+    # prompt builder writes into a sheet / 换装 prompt. Any client-sent
+    # value is discarded.
+    target_look: TargetLook | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")

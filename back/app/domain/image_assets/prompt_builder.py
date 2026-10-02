@@ -107,6 +107,21 @@ OUTFIT_CHANGE_PREFIX = (
     "仅将服装替换为「{label}」造型："
 )
 OUTFIT_LABEL_SENTENCE = "本图为角色的「{label}」造型。"
+# The target look's own outfit description (P2-3, `params["target_look"]`).
+OUTFIT_DESCRIPTION_SENTENCE = "「{label}」造型的服装与配饰：{description}。"
+LOOK_DESCRIPTION_SENTENCE = "服装与配饰：{description}。"
+
+
+def _target_look(params: dict[str, Any]) -> tuple[str, str]:
+    """`(outfit name, outfit description)` for a sheet pass: the job's
+    `character_outfit_label`, else the target look's name; the description
+    only ever comes from the look (`reference_resolver` writes it)."""
+    raw = params.get("target_look")
+    look: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    name = str(params.get("character_outfit_label") or look.get("name") or "").strip()
+    description = str(look.get("description") or "").strip().rstrip("。．.")
+    return name, description
+
 
 EXPRESSION_IDENTITY_PREFIX = (
     "以参考图1中的人物为准，严格保持其五官、发型发色、肤色、服装与配饰完全一致。"
@@ -252,12 +267,20 @@ def _compose_character_sheet(
     has_reference: bool,
     identity_reference: bool = False,
 ) -> tuple[str, str]:
-    outfit = str(params.get("character_outfit_label") or "").strip()
+    outfit, description = _target_look(params)
     if outfit and has_reference:
         # 换装 already locks the face to reference 1 — one sentence, not two.
         prompt = OUTFIT_CHANGE_PREFIX.format(label=outfit) + prompt
     elif outfit:
         prompt = _join(prompt, OUTFIT_LABEL_SENTENCE.format(label=outfit))
+    if description:
+        sentence = (
+            OUTFIT_DESCRIPTION_SENTENCE.format(label=outfit, description=description)
+            if outfit
+            else LOOK_DESCRIPTION_SENTENCE.format(description=description)
+        )
+        if description not in prompt:
+            prompt = _join(prompt, sentence)
     if identity_reference and not (outfit and has_reference):
         prompt = IDENTITY_LOCK_PREFIX + prompt
     if CHARACTER_SHEET_LAYOUT_SUFFIX not in prompt:
