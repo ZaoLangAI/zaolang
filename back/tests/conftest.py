@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from contextlib import contextmanager
 
 # Set before any app import so cached settings pick the test database.
 os.environ.setdefault("APP_ENV", "test")
@@ -175,6 +176,26 @@ def committed_db(engine: Engine) -> Iterator[Session]:
         session.rollback()
         session.close()
         truncate_all(engine)
+
+
+def patch_app_db_session_scope(monkeypatch: pytest.MonkeyPatch, session: Session) -> None:
+    """Points `app.db.session_scope` at `session` for routes that import it
+    lazily (`from app.db import session_scope` inside the handler).
+
+    Monkeypatch only restores `app.db`. A module first imported *while* the
+    patch is live and binding the name at module level keeps the fake for the
+    rest of the process — `app.workers.tasks` does, and it is lazily imported
+    by `jobs.dispatch.enqueue`. Every later task then reuses this test's
+    closed connection (`ResourceClosedError: This Connection is closed`).
+    Importing such modules first means they bind the real function.
+    """
+    import app.workers.tasks  # noqa: F401
+
+    @contextmanager
+    def fake_session_scope() -> Iterator[Session]:
+        yield session
+
+    monkeypatch.setattr("app.db.session_scope", fake_session_scope)
 
 
 @pytest.fixture(autouse=True)

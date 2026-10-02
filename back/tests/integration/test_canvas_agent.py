@@ -11,7 +11,6 @@ explicit confirm, and that a double-tapped confirm reserves credits once.
 from __future__ import annotations
 
 import json
-from contextlib import contextmanager
 
 import pytest
 from fastapi.testclient import TestClient
@@ -28,7 +27,7 @@ from app.models.enums import (
 )
 from app.platform_config import service as config_service
 from app.platform_config.schemas import FeatureFlags
-from tests.conftest import auth_header
+from tests.conftest import auth_header, patch_app_db_session_scope
 
 pytestmark = pytest.mark.usefixtures("fake_media_catalog")
 
@@ -111,12 +110,7 @@ def _stream_session(monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
     Same substitution `test_editor_plans_and_races.py` makes for the editor
     planner, which has the identical shape.
     """
-
-    @contextmanager
-    def fake_session_scope():
-        yield db
-
-    monkeypatch.setattr("app.db.session_scope", fake_session_scope)
+    patch_app_db_session_scope(monkeypatch, db)
 
 
 @pytest.fixture
