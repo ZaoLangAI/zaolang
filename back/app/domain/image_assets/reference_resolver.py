@@ -42,7 +42,7 @@ from app.domain.characters import service as characters_service
 from app.domain.errors import NotFound
 from app.domain.scenes import service as scenes_service
 from app.models import CreationSkill
-from app.models.enums import AssetEntryType
+from app.models.enums import AssetEntryType, CharacterViewAngle
 
 
 def resolve(
@@ -123,12 +123,25 @@ def _borrow_identity_reference(
     if params.get("reference_asset_ids") or params.get("character_expressions"):
         return {}
 
+    portrait = asset_variants_service.identity_portrait(skill)
+    views = params.get("character_views") or []
+    if views and CharacterViewAngle.FRONT.value not in views:
+        # Side/back only (补齐缺失 with the front sheet already there): the
+        # completion prompt draws "from this image", so the look's approved
+        # front sheet is reference 1; the portrait keeps the face.
+        front = _approved_of(
+            look or asset_variants_service.find_default(skill), AssetEntryType.CHARACTER_SHEET
+        )
+        completion = [e.asset_id for e in front[:1]] + ([portrait.asset_id] if portrait else [])
+        if completion:
+            params["reference_asset_ids"] = list(dict.fromkeys(completion))
+        return {}
+
     outfit_change = (look is not None and not look.is_default) or bool(
         params.get("character_outfit_label")
     )
     roles: dict[str, str] = {}
     picked: list[str] = []
-    portrait = asset_variants_service.identity_portrait(skill)
     if portrait is not None:
         picked.append(portrait.asset_id)
     own = _approved_of(look, AssetEntryType.CHARACTER_SHEET) if outfit_change else []

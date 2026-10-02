@@ -3816,6 +3816,33 @@
     "matrixPlanning": "{count} combinations — pricing…",
     "lookDescriptionPlaceholder": "e.g. white satin wedding dress, floor-length veil, pearl earrings",
     "uploadOutfit": "Upload outfit reference",
-    "uploadOutfitHint": "Used for the clothes only — never for the face."
+    "uploadOutfitHint": "Used for the clothes only — never for the face.",
+    "fillOpen": "Fill missing",
+    "fillTitle": "Complete “{name}”",
+    "fillHint": "A complete look has an identity portrait, a front sheet, side and back views, and one grid of everyday expressions. What is missing is generated in steps; each step starts on its own when the previous one finishes.",
+    "fillSlot": {
+      "portrait": "Identity portrait",
+      "front": "Front sheet",
+      "side": "Side view",
+      "back": "Back view",
+      "expressions": "Expressions (one grid)"
+    },
+    "fillStatus": {
+      "present": "Present",
+      "candidate": "Candidates — approve or delete first",
+      "missing": "Missing"
+    },
+    "fillExpressions": "Expressions in the grid",
+    "fillQuote": "{steps} steps, {credits} credits in total",
+    "fillInsufficient": "Needs {credits} credits; {available} available.",
+    "fillNothing": "This look is complete.",
+    "fillSubmit": "Start ({credits} credits)",
+    "fillRunning": "Generating: {slots}",
+    "fillWaveWaiting": "the next step starts when this one finishes",
+    "fillWaveFailed": "this step did not finish",
+    "fillRetry": "Retry",
+    "fillDone": "Done — the new images are on this look.",
+    "fillStuck": "The result for “{slots}” did not reach the card, so auto-continue stopped. Check and retry.",
+    "fillOpenJob": "Open job details"
   }
 }

@@ -180,3 +180,5 @@ export interface Page<T> {
 export type SceneMatrixAxes = S['SceneMatrixAxes'];
 export type SceneMatrixCell = S['SceneMatrixCellView'];
 export type SceneMatrixResponse = S['SceneMatrixResponse'];
+export type LookFillResponse = S['LookFillResponse'];
+export type LookFillSlot = S['LookFillLineView']['slots'][number];

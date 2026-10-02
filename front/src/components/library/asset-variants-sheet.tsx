@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
+import { LookFillDialog } from '@/components/characters/look-fill-dialog';
 import { candidateCount, groupEntries } from '@/components/library/entry-groups';
 import { SceneMatrixDialog } from '@/components/scenes/scene-matrix-dialog';
 import { Button, IconButton } from '@/components/ui/button';
@@ -95,6 +96,7 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
   const [draftDescription, setDraftDescription] = useState('');
   const [creating, setCreating] = useState(false);
   const [matrixOpen, setMatrixOpen] = useState(false);
+  const [fillOpen, setFillOpen] = useState(false);
   // Scene cards have no variant cap (P2-5): past a handful, filter the tabs
   // by name — matrix variants are named by their presets (黄昏 · 雨 · 战损).
   const [filter, setFilter] = useState('');
@@ -290,9 +292,19 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
               })
             }
             onGenerate={() => router.push(generateHref(active))}
+            onFill={kind === 'character' ? () => setFillOpen(true) : undefined}
           />
         ) : null}
       </div>
+      {kind === 'character' && active && fillOpen ? (
+        <LookFillDialog
+          characterId={card.id}
+          look={active}
+          open={fillOpen}
+          onClose={() => setFillOpen(false)}
+          onProgress={() => void run(() => Promise.resolve())}
+        />
+      ) : null}
       {kind === 'scene' ? (
         <SceneMatrixDialog
           sceneId={card.id}
@@ -319,6 +331,7 @@ function VariantPanel({
   onApprove,
   onClearCandidates,
   onGenerate,
+  onFill,
 }: {
   kind: CardKind;
   variant: AssetVariant;
@@ -334,6 +347,8 @@ function VariantPanel({
   onApprove: (entry: AssetEntry) => void;
   onClearCandidates: (entries: AssetEntry[]) => void;
   onGenerate: () => void;
+  /** Characters: open 补齐缺失 for this look. */
+  onFill?: () => void;
 }) {
   const t = useTranslations('assetVariants');
   const tPresets = useTranslations('remixPage');
@@ -406,6 +421,16 @@ function VariantPanel({
         >
           {t('generateHere')}
         </Button>
+        {onFill ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<IconSparkle className="size-3.5" />}
+            onClick={onFill}
+          >
+            {t('fillOpen')}
+          </Button>
+        ) : null}
         <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-[var(--radius-sm)] border border-border px-2.5 py-1.5 text-xs text-muted hover:text-text">
           <IconUpload className="size-3.5" />
           {t('upload')}

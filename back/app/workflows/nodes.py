@@ -506,6 +506,11 @@ ASSET_OUTPUTS_STATE_KEY = "asset_outputs"
 SCENE_VARIANT_STATE_KEY = "_current_scene_variant"
 _ORIGINAL_PROMPT_STATE_KEY = "_asset_plan_original_prompt"
 _ORIGINAL_NEGATIVE_PROMPT_STATE_KEY = "_asset_plan_original_negative_prompt"
+_ORIGINAL_REFERENCES_STATE_KEY = "_asset_plan_original_references"
+_ORIGINAL_REFERENCE_LABELS_STATE_KEY = "_asset_plan_original_reference_labels"
+# The legend's name for a side/back pass's reference 1 when it is this job's
+# own front sheet (`_chain_front_reference`).
+CHAINED_FRONT_LABEL = "本任务刚生成的正面设定图"
 
 # The fixed character/scene prompt fragments live in
 # `app.domain.image_assets.prompt_builder` now; these aliases keep the names
@@ -647,6 +652,46 @@ def _asset_axis(ctx: WorkflowContext) -> tuple[str, str] | None:
     return None
 
 
+def _chain_front_reference(ctx: WorkflowContext, character_view: str | None) -> None:
+    """A side/back completion pass draws from *this job's* front sheet.
+
+    The completion prompt is "参考本图生成侧面图": in a multi-view job
+    (`character_views=[front, side, back]`, e.g. 补齐缺失) the front sheet
+    only exists once pass 1 produced it, so later passes put it first in
+    `reference_asset_ids` (and the legend) ahead of the job's own
+    references. Every pass starts again from the submitted references, so a
+    front pass never inherits a previous view's chaining.
+    """
+    if _ORIGINAL_REFERENCES_STATE_KEY not in ctx.state:
+        ctx.state[_ORIGINAL_REFERENCES_STATE_KEY] = list(
+            ctx.params.get("reference_asset_ids") or []
+        )
+        ctx.state[_ORIGINAL_REFERENCE_LABELS_STATE_KEY] = list(
+            ctx.params.get("reference_labels") or []
+        )
+    refs = [str(r) for r in ctx.state[_ORIGINAL_REFERENCES_STATE_KEY]]
+    labels = [dict(item) for item in ctx.state[_ORIGINAL_REFERENCE_LABELS_STATE_KEY]]
+    if character_view in prompt_builder.CHARACTER_COMPLETION_FIXED_PROMPTS:
+        front = next(
+            (
+                str(output["asset_id"])
+                for output in ctx.state.get(ASSET_OUTPUTS_STATE_KEY) or []
+                if output.get("view") == CharacterViewAngle.FRONT.value and output.get("asset_id")
+            ),
+            None,
+        )
+        if front:
+            refs = [front] + [r for r in refs if r != front]
+            labels = [{"asset_id": front, "label": CHAINED_FRONT_LABEL}] + [
+                item for item in labels if item.get("asset_id") != front
+            ]
+    ctx.params["reference_asset_ids"] = refs[: characters_service.MAX_JOB_REFERENCE_ASSETS]
+    if labels:
+        ctx.params["reference_labels"] = labels
+    else:
+        ctx.params.pop("reference_labels", None)
+
+
 def _first_reference_is_identity_portrait(ctx: WorkflowContext) -> bool:
     """Reference 1 is an approved identity portrait (定妆照) on some card —
     the sheet then locks the face to it (`prompt_builder.IDENTITY_LOCK_PREFIX`)."""
@@ -699,6 +744,8 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
 
     is_character = media_axis == "image" and asset_kind == ImageAssetKind.CHARACTER.value
     character_view = _current_character_view(ctx) if is_character else None
+    if is_character:
+        _chain_front_reference(ctx, character_view)
     pass_params = _pass_params(ctx)
     asset_pass = (
         prompt_builder.resolve_pass(
