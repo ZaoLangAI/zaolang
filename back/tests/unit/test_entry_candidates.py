@@ -125,8 +125,6 @@ def test_candidates_stay_out_of_every_shared_read(db: Session, author: User) -> 
     candidate = _generated(db, author, skill, view="front")
 
     assert [item["asset_id"] for item in av.project(skill)] == [first.asset_id]
-    mirror = skill.params_json["character"]["reference_assets"]
-    assert [item["asset_id"] for item in mirror] == [first.asset_id]
     assert av.asset_ids(skill) == [first.asset_id]
     assert candidate.asset_id not in av.default_subset(skill)
 

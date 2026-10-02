@@ -565,11 +565,7 @@ export function ImageGenerationStudio({
     } else if (typeof promptSuffix === 'string' && promptSuffix.trim()) {
       setPrompt((current) => (current.trim() ? `${current}, ${promptSuffix}` : promptSuffix));
     }
-    const referenceId = firstSkillReferenceAssetId(
-      params,
-      detail?.cover_asset_id,
-      detail?.anchor_asset_id,
-    );
+    const referenceId = firstSkillReferenceAssetId(detail?.cover_asset_id, detail?.anchor_asset_id);
     if (!referenceId) return;
     void api
       .get<Asset>(`/v1/assets/${referenceId}`)

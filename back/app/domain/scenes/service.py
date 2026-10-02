@@ -179,7 +179,6 @@ def create_scene(
         params_json={
             SCENE_PARAMS_KEY: {
                 "description": clean_description,
-                "reference_assets": [],
             }
         },
         cover_asset_id=None,
@@ -223,8 +222,6 @@ def update_scene(
         clean = description.strip() or None
         payload["description"] = clean
         skill.description = _short_description(clean)
-    # Before the reference edit: `set_members` re-syncs the JSON mirror on
-    # top of this payload, and writing the payload afterwards would clobber it.
     _set_payload(skill, payload)
     if reference_asset_ids is not None:
         refs = _validate_reference_assets(session, user_id=user_id, asset_ids=reference_asset_ids)

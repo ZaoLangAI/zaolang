@@ -796,12 +796,11 @@ class CreationSkillCategory(StrEnum):
     # routing note for why these three alone get special handling in
     # `execute_skill_context`.
     #
-    # A reusable cast member (`app.domain.characters.service`), stored under
-    # `params_json["character"]["reference_assets"]` — see `ImageAssetKind`
-    # below for the view tags those entries carry.
+    # A reusable cast member (`app.domain.characters.service`); its images
+    # live in `skill_asset_variants` / `skill_asset_entries` (looks).
     CHARACTER = "character"
-    # A reusable setting (`app.domain.scenes.service`), stored under
-    # `params_json["scene"]["reference_assets"]`. Named `*_ASSET` (not plain
+    # A reusable setting (`app.domain.scenes.service`); its images live in
+    # the variants tables like a character's. Named `*_ASSET` (not plain
     # `SCENE`) to stay distinct from the prompt-template category above —
     # the two used to be a table (`Scene`) and a `CreationSkillCategory`
     # respectively with no relation to each other; folding the table in

@@ -308,10 +308,10 @@ def apply_skill(
 
 def _reject_character_category(category: str) -> None:
     """Characters and scenes are created and edited only via `/v1/characters`
-    / `/v1/scenes`: those paths enforce the one-name-per-owner rule and keep
-    the looks/variants tables and their `params_json` mirror in step, while
-    this route would skip the first (surfacing the unique index as an
-    `IntegrityError`) and overwrite the second wholesale."""
+    / `/v1/scenes`: those paths enforce the one-name-per-owner rule and go
+    through the looks/variants tables, while this route would skip the
+    first (surfacing the unique index as an `IntegrityError`) and overwrite
+    the card's `params_json` payload wholesale."""
     if category == CreationSkillCategory.CHARACTER:
         raise ValidationFailed(
             "角色请通过角色库接口创建和编辑。",
@@ -368,8 +368,10 @@ def _detail(session: DbSession, skill: CreationSkill, viewer_id: str | None) -> 
 
 
 def _public_params(skill: CreationSkill) -> dict[str, Any]:
-    """`params_json` without a character/scene card's `reference_assets`
-    mirror — the images go out as signed `asset_variants` instead."""
+    """`params_json` without a character/scene card's `reference_assets` —
+    the images go out as signed `asset_variants` instead. Migration B
+    dropped the stored mirror; this still strips any copy a row written by
+    an older release might carry (remove one release after P2-8)."""
     params = dict(skill.params_json or {})
     for key in ("character", "scene"):
         nested = params.get(key)

@@ -133,7 +133,9 @@ def test_an_entry_cannot_point_at_another_cards_look(db: Session, author: User) 
     db.rollback()
 
 
-def test_the_projection_mirrors_into_params_json(db: Session, author: User) -> None:
+def test_the_projection_is_computed_and_nothing_is_stored_in_params_json(
+    db: Session, author: User
+) -> None:
     character = characters_service.get_character(
         db, user_id=author.id, character_id=_character(db, author).id
     )
@@ -153,12 +155,13 @@ def test_the_projection_mirrors_into_params_json(db: Session, author: User) -> N
     db.expire_all()
     skill = db.get(CreationSkill, character.id)
     assert skill is not None
-    mirror = skill.params_json["character"]["reference_assets"]
-    assert [(m["asset_id"], m["view"], m["label"]) for m in mirror] == [
+    # P2-8: the tables are the only copy — no JSON mirror is written.
+    assert "reference_assets" not in skill.params_json["character"]
+    projected = characters_service.CharacterView(skill).reference_assets
+    assert [(m["asset_id"], m["view"], m["label"]) for m in projected] == [
         (sheet.id, "front", None),
         (wedding.id, "front", "婚礼"),
     ]
-    projected = characters_service.CharacterView(skill).reference_assets
     assert projected[0]["is_anchor"] is True
     assert projected[1]["entry_type"] == AssetEntryType.CHARACTER_SHEET
 
