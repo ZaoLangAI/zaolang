@@ -32426,6 +32426,16 @@
             ],
             "title": "Reference Labels"
           },
+          "target_look": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetLook"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "extra": {
             "additionalProperties": true,
             "type": "object",
@@ -41695,6 +41705,37 @@
         ],
         "title": "TagResponse",
         "description": "A tag with all three labels.\n\nThe client picks the label for its own locale rather than the server\nguessing from a header, so one cached response serves every language."
+      },
+      "TargetLook": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "title": "TargetLook",
+        "description": "The look a character job files into, as the prompt needs it\n(`reference_resolver` writes it, never a client)."
       },
       "ThemePreference": {
         "type": "string",

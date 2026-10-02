@@ -91,6 +91,8 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
+  // A new look's outfit description — what a 换装 sheet is drawn to (P2-3).
+  const [draftDescription, setDraftDescription] = useState('');
   const [creating, setCreating] = useState(false);
   const [matrixOpen, setMatrixOpen] = useState(false);
   // Scene cards have no variant cap (P2-5): past a handful, filter the tabs
@@ -127,9 +129,11 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
     run(async () => {
       const created = await api.post<AssetVariant>(`${base}/${segment}`, {
         name: draftName.trim(),
+        description: draftDescription.trim() || null,
       });
       setActiveId(created.id);
       setDraftName('');
+      setDraftDescription('');
       setCreating(false);
     });
 
@@ -145,13 +149,14 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
   const updateEntry = (entry: AssetEntry, body: Record<string, unknown>) =>
     run(() => api.patch(`${base}/entries/${entry.id}`, body));
 
-  const upload = (variant: AssetVariant, file: File) =>
+  const upload = (variant: AssetVariant, file: File, entryType?: AssetEntryType) =>
     run(async () => {
       const asset = await uploadFile(file, 'generation_reference');
       await api.post(`${base}/${segment}/${variant.id}/entries`, {
         asset_id: asset.id,
         entry_type:
-          kind === 'character' ? 'other' : (variant.entries ?? []).length ? 'shot' : 'master',
+          entryType ??
+          (kind === 'character' ? 'other' : (variant.entries ?? []).length ? 'shot' : 'master'),
       });
       notify(t('uploaded'), 'success');
     });
@@ -235,7 +240,7 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
 
         {creating ? (
           <form
-            className="flex items-end gap-2"
+            className="flex flex-col gap-2"
             onSubmit={(event) => {
               event.preventDefault();
               if (draftName.trim()) void createVariant();
@@ -248,7 +253,17 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
               onChange={(event) => setDraftName(event.target.value)}
               placeholder={t(kind === 'character' ? 'lookPlaceholder' : 'variantPlaceholder')}
             />
-            <Button type="submit" disabled={!draftName.trim()}>
+            {kind === 'character' ? (
+              <TextArea
+                label={t('lookDescription')}
+                value={draftDescription}
+                maxLength={2000}
+                onChange={(event) => setDraftDescription(event.target.value)}
+                placeholder={t('lookDescriptionPlaceholder')}
+                className="min-h-16"
+              />
+            ) : null}
+            <Button type="submit" disabled={!draftName.trim()} className="self-end">
               {t('create')}
             </Button>
           </form>
@@ -264,7 +279,7 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
             entryTypes={entryTypes}
             onUpdate={(body) => void updateVariant(active, body)}
             onDelete={() => void deleteVariant(active)}
-            onUpload={(file) => void upload(active, file)}
+            onUpload={(file, entryType) => void upload(active, file, entryType)}
             onEntryUpdate={(entry, body) => void updateEntry(entry, body)}
             onEntryDelete={(entry) => void run(() => api.delete(`${base}/entries/${entry.id}`))}
             onAnchor={(entry) => void run(() => api.post(`${base}/entries/${entry.id}:anchor`))}
@@ -312,7 +327,7 @@ function VariantPanel({
   entryTypes: AssetEntryType[];
   onUpdate: (body: Record<string, unknown>) => void;
   onDelete: () => void;
-  onUpload: (file: File) => void;
+  onUpload: (file: File, entryType?: AssetEntryType) => void;
   onEntryUpdate: (entry: AssetEntry, body: Record<string, unknown>) => void;
   onEntryDelete: (entry: AssetEntry) => void;
   onAnchor: (entry: AssetEntry) => void;
@@ -405,6 +420,25 @@ function VariantPanel({
             }}
           />
         </label>
+        {kind === 'character' && !variant.is_default ? (
+          <label
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-[var(--radius-sm)] border border-border px-2.5 py-1.5 text-xs text-muted hover:text-text"
+            title={t('uploadOutfitHint')}
+          >
+            <IconUpload className="size-3.5" />
+            {t('uploadOutfit')}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="sr-only"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) onUpload(file, 'outfit_detail');
+                event.target.value = '';
+              }}
+            />
+          </label>
+        ) : null}
       </div>
 
       {groups.length === 0 ? (

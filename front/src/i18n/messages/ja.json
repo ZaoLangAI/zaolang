@@ -3233,7 +3233,8 @@
     "referencePickLookDefault": "画像を選ばない場合は、その衣装の既定の参考画像を使います。",
     "assetKindPortraitHint": "正面・胸から上のメイク写真を生成します。確定後はキャラクターの基準となり、すべての衣装がこの顔に合わせられます。",
     "referenceEmotionLabel": "参考の感情（任意）",
-    "referenceEmotionNone": "指定なし"
+    "referenceEmotionNone": "指定なし",
+    "outfitChangeHint": "衣装替え：「{name}」— 顔はメイク写真に合わせ、この衣装の説明と参考画像で生成します。"
   },
   "scenes": {
     "eyebrow": "シーンライブラリ",
@@ -3812,6 +3813,9 @@
     "close": "閉じる",
     "filterVariants": "バリエーションを絞り込む",
     "filterVariantsPlaceholder": "例：夕暮れ、雨、損傷",
-    "matrixPlanning": "{count} 通りの組み合わせ — 見積もり中…"
+    "matrixPlanning": "{count} 通りの組み合わせ — 見積もり中…",
+    "lookDescriptionPlaceholder": "例：白いサテンのウェディングドレス、床まで届くベール、パールのイヤリング",
+    "uploadOutfit": "衣装の参考をアップロード",
+    "uploadOutfitHint": "衣装のみの参考として使い、顔には使いません。"
   }
 }

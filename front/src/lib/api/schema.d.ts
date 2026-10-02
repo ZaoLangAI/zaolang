@@ -9431,6 +9431,7 @@ export interface components {
             scene_variants?: components["schemas"]["ScenePresetCombo"][] | null;
             /** Reference Labels */
             reference_labels?: components["schemas"]["ReferenceLabel"][] | null;
+            target_look?: components["schemas"]["TargetLook"] | null;
             /** Extra */
             extra?: {
                 [key: string]: unknown;
@@ -13050,6 +13051,17 @@ export interface components {
              * @default 0
              */
             usage_count: number;
+        };
+        /**
+         * TargetLook
+         * @description The look a character job files into, as the prompt needs it
+         *     (`reference_resolver` writes it, never a client).
+         */
+        TargetLook: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
         };
         /**
          * ThemePreference

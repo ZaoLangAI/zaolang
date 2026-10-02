@@ -3233,7 +3233,8 @@
     "referencePickLookDefault": "未勾选图片时，使用该造型的默认参考图。",
     "assetKindPortraitHint": "生成一张正面头肩定妆照，定稿后作为该角色的身份锚点，所有造型都以这张脸为准。",
     "referenceEmotionLabel": "参考情绪（可选）",
-    "referenceEmotionNone": "不指定"
+    "referenceEmotionNone": "不指定",
+    "outfitChangeHint": "换装：「{name}」——以定妆照锁定面部，按该造型的服装描述与服装参考生成。"
   },
   "scenes": {
     "eyebrow": "场景库",
@@ -3812,6 +3813,9 @@
     "close": "关闭",
     "filterVariants": "筛选变体",
     "filterVariantsPlaceholder": "如：黄昏、雨、战损",
-    "matrixPlanning": "共 {count} 个组合，正在计算报价…"
+    "matrixPlanning": "共 {count} 个组合，正在计算报价…",
+    "lookDescriptionPlaceholder": "如：白色缎面婚纱，及地头纱，珍珠耳环",
+    "uploadOutfit": "上传服装参考",
+    "uploadOutfitHint": "只作为服装参考：生成时只取衣服，不取脸。"
   }
 }
