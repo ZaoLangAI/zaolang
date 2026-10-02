@@ -15,6 +15,8 @@ import { Badge } from '@/components/ui/primitives';
 import { Sheet } from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/toast';
 import {
+  AGE_STAGES,
+  keysOf,
   SCENE_LIGHTINGS,
   SCENE_PERIODS,
   SCENE_STATES,
@@ -374,6 +376,21 @@ function VariantPanel({
         onChange={(event) => setDescription(event.target.value)}
         className="min-h-20"
       />
+      {kind === 'character' ? (
+        <Select
+          label={t('ageStageLabel')}
+          hint={t('ageStageHint')}
+          value={(variant.presets as { age_stage?: string } | undefined)?.age_stage ?? ''}
+          onChange={(event) => onUpdate({ presets: { age_stage: event.target.value || null } })}
+          options={[
+            { value: '', label: t('ageStageNone') },
+            ...keysOf(AGE_STAGES).map((key) => ({
+              value: key,
+              label: t(AGE_STAGES[key].labelKey),
+            })),
+          ]}
+        />
+      ) : null}
       {kind === 'scene' ? (
         <div className="grid grid-cols-2 gap-2">
           {PRESET_AXES.map(({ axis, table }) => (

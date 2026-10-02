@@ -171,8 +171,11 @@ def test_someone_elses_scene_is_a_404(client: TestClient, db: Session, author: U
 
 def test_scene_cards_take_more_than_twelve_variants(db: Session, author: User) -> None:
     scene = _scene(db, author)
-    for index in range(14):
-        av.create_variant(
-            db, scene.skill, name=f"变体{index}", presets={"lighting": "day", "n": str(index)}
-        )
+    combos = [
+        {"lighting": lighting, "weather": weather}
+        for lighting in ("day", "dusk", "night_interior")
+        for weather in ("clear", "rain", "snow", "fog", "sandstorm")
+    ][:14]
+    for index, presets in enumerate(combos):
+        av.create_variant(db, scene.skill, name=f"变体{index}", presets=presets)
     assert len(av.variants(scene.skill)) == 15

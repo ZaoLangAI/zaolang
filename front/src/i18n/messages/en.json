@@ -3843,6 +3843,17 @@
     "fillRetry": "Retry",
     "fillDone": "Done — the new images are on this look.",
     "fillStuck": "The result for “{slots}” did not reach the card, so auto-continue stopped. Check and retry.",
-    "fillOpenJob": "Open job details"
+    "fillOpenJob": "Open job details",
+    "ageStageLabel": "Age stage",
+    "ageStageHint": "The same person at another age: the face's features and bone structure follow the identity portrait and only age naturally.",
+    "ageStageNone": "Not set",
+    "ageStage": {
+      "child": "Child (6–12)",
+      "teen": "Teen (13–17)",
+      "youth": "Young adult (18–29)",
+      "adult": "Adult (30–44)",
+      "middle_aged": "Middle-aged (45–59)",
+      "elderly": "Elderly (60+)"
+    }
   }
 }

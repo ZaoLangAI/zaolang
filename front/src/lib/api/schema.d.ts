@@ -13132,6 +13132,8 @@ export interface components {
             name?: string | null;
             /** Description */
             description?: string | null;
+            /** Age Stage */
+            age_stage?: ("child" | "teen" | "youth" | "adult" | "middle_aged" | "elderly") | null;
         };
         /**
          * ThemePreference
@@ -13394,7 +13396,9 @@ export interface components {
         };
         /**
          * VariantPresets
-         * @description Scene variant presets (P0 vocabulary) or a look's `age_stage`.
+         * @description Scene variant presets (P0 vocabulary) or a look's `age_stage` (P2-6).
+         *     The service rejects the other kind's keys (a look has no lighting, a
+         *     scene variant no age).
          */
         VariantPresets: {
             /** Lighting */
@@ -13406,7 +13410,7 @@ export interface components {
             /** Period */
             period?: ("ancient" | "republic" | "1980s" | "1990s" | "contemporary" | "near_future") | null;
             /** Age Stage */
-            age_stage?: string | null;
+            age_stage?: ("child" | "teen" | "youth" | "adult" | "middle_aged" | "elderly") | null;
         };
         /** VendorCatalogView */
         VendorCatalogView: {

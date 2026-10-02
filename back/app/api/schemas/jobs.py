@@ -15,6 +15,7 @@ from app.domain.image_assets.vocabulary import (
     MAX_OUTFIT_LABEL_LEN,
     MAX_SCENE_VARIANTS,
     MIN_SCENE_VARIANTS,
+    AgeStage,
     CharacterExpression,
     SceneLighting,
     ScenePeriod,
@@ -403,6 +404,7 @@ class TargetLook(ApiModel):
 
     name: str | None = Field(default=None, max_length=40)
     description: str | None = Field(default=None, max_length=2000)
+    age_stage: AgeStage | None = None
 
 
 def _check_selection(picked: list[str], allowed: list[str], *, field: str, noun: str) -> None:

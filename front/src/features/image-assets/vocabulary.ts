@@ -15,6 +15,7 @@ export type SceneWeather = NonNullable<Combo['weather']>;
 export type SceneState = NonNullable<Combo['state']>;
 export type ScenePeriod = NonNullable<Combo['period']>;
 export type ScenePresetCombo = Combo;
+export type AgeStage = NonNullable<components['schemas']['VariantPresets']['age_stage']>;
 export type CharacterRefSelection = NonNullable<Params['character_ref_selection']>[number];
 export type SceneRefSelection = NonNullable<Params['scene_ref_selection']>[number];
 
@@ -70,6 +71,16 @@ export const SCENE_PERIODS: Record<ScenePeriod, { labelKey: string }> = {
   '1990s': { labelKey: 'period.1990s' },
   contemporary: { labelKey: 'period.contemporary' },
   near_future: { labelKey: 'period.near_future' },
+};
+
+/** A character look's age stage (P2-6) — `vocabulary.AgeStage`. */
+export const AGE_STAGES: Record<AgeStage, { labelKey: string }> = {
+  child: { labelKey: 'ageStage.child' },
+  teen: { labelKey: 'ageStage.teen' },
+  youth: { labelKey: 'ageStage.youth' },
+  adult: { labelKey: 'ageStage.adult' },
+  middle_aged: { labelKey: 'ageStage.middle_aged' },
+  elderly: { labelKey: 'ageStage.elderly' },
 };
 
 /** Mirrors `vocabulary.MAX_CHARACTER_EXPRESSIONS` / `MIN/MAX_SCENE_VARIANTS`. */

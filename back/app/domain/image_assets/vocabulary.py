@@ -55,12 +55,15 @@ SceneState = Literal[
     "festive",
 ]
 ScenePeriod = Literal["ancient", "republic", "1980s", "1990s", "contemporary", "near_future"]
+# A character look's age stage (P2-6): the same person at another age.
+AgeStage = Literal["child", "teen", "youth", "adult", "middle_aged", "elderly"]
 
 CHARACTER_EXPRESSIONS: tuple[str, ...] = get_args(CharacterExpression)
 SCENE_LIGHTINGS: tuple[str, ...] = get_args(SceneLighting)
 SCENE_WEATHERS: tuple[str, ...] = get_args(SceneWeather)
 SCENE_STATES: tuple[str, ...] = get_args(SceneState)
 SCENE_PERIODS: tuple[str, ...] = get_args(ScenePeriod)
+AGE_STAGES: tuple[str, ...] = get_args(AgeStage)
 
 # One composite expression image holds at most this many faces.
 MAX_CHARACTER_EXPRESSIONS = 9
@@ -320,6 +323,61 @@ EXPRESSION_GRID: dict[int, tuple[int, int]] = {
     8: (3, 3),
     9: (3, 3),
 }
+
+# A look's age stage. The prompt states renderable changes (face fat,
+# bone structure, skin, hair) and always keeps reference 1's identity —
+# the negative keeps the model from swapping in a different person.
+AGE_STAGE_PRESETS: dict[str, Preset] = {
+    "child": Preset(
+        "童年",
+        "年龄阶段：童年（约 6–12 岁），脸型更圆、五官比例更小、额头相对更宽，"
+        "身高明显更矮、四肢纤细",
+        "成年人身材，胡须，化妆，皱纹",
+    ),
+    "teen": Preset(
+        "少年",
+        "年龄阶段：少年（约 13–17 岁），面部仍带婴儿肥、下颌线柔和，皮肤光滑，"
+        "身形单薄、尚未完全长开",
+        "胡须，皱纹，成熟妆容，中年发福",
+    ),
+    "youth": Preset(
+        "青年",
+        "年龄阶段：青年（约 18–29 岁），面部紧致、轮廓清晰，皮肤饱满有光泽，体态挺拔",
+        "皱纹，白发，眼袋，稚气的孩童脸",
+    ),
+    "adult": Preset(
+        "壮年",
+        "年龄阶段：壮年（约 30–44 岁），轮廓更硬朗、眼神更沉稳，眼角可见细纹，体格结实",
+        "孩童脸，明显白发，老年斑",
+    ),
+    "middle_aged": Preset(
+        "中年",
+        "年龄阶段：中年（约 45–59 岁），法令纹与眼角纹明显、两鬓略见斑白，面部略松弛，体态稍有发福",
+        "孩童脸，光滑无纹的少年皮肤，满头白发",
+    ),
+    "elderly": Preset(
+        "老年",
+        "年龄阶段：老年（60 岁以上），皮肤松弛有皱纹与老年斑，头发花白或稀疏，背部略弯",
+        "光滑年轻的皮肤，乌黑浓密的头发，孩童体型",
+    ),
+}
+AGE_IDENTITY_SENTENCE = (
+    "保持参考图1人物的五官比例、骨相与辨识特征，只按该年龄自然变化，不要变成另一个人。"
+)
+AGE_IDENTITY_NEGATIVE = "不同的人，换脸，五官比例改变"
+
+
+def age_stage_fragments(age_stage: object) -> tuple[str, str]:
+    """`(prompt sentence, negative)` for a look's age stage; empty when unset
+    or unknown."""
+    preset = AGE_STAGE_PRESETS.get(str(age_stage or ""))
+    if preset is None:
+        return "", ""
+    return (
+        f"{preset.prompt}。{AGE_IDENTITY_SENTENCE}",
+        f"{preset.negative}，{AGE_IDENTITY_NEGATIVE}",
+    )
+
 
 SCENE_PRESET_TABLES: dict[str, Mapping[str, Preset]] = {
     "lighting": LIGHTING_PRESETS,
