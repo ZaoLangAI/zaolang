@@ -372,6 +372,20 @@ export function InlineImageResult({
         </div>
       ) : null}
 
+      {job.status === 'succeeded' && job.candidate_entries > 0 ? (
+        <div role="status" className="flex flex-wrap items-center gap-2 text-sm text-muted">
+          <span>{t('candidateFiled', { count: job.candidate_entries })}</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() =>
+              router.push(job.asset_kind === 'scene' ? '/create/scenes' : '/create/characters')
+            }
+          >
+            {t('reviewCandidates')}
+          </Button>
+        </div>
+      ) : null}
       {job.status === 'failed' ? (
         <ErrorNotice
           title={job.failure_message ?? t('failedTitle')}

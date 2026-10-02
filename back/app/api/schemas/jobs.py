@@ -898,6 +898,10 @@ class GenerationJobResponse(ApiModel):
     # auto-relink without the user re-picking from `ScriptLinkPicker`.
     linked_character_id: str | None = None
     linked_scene_id: str | None = None
+    # How many of this job's images landed on that card as candidates — the
+    # slot already held an approved image (P2-1). The studio uses it to
+    # point the owner at the library to approve or discard them.
+    candidate_entries: int = 0
     draft_id: str | None = None
     # Echoes `GenerationParams.prompt` back. Lets a client (the image studio's
     # inline version-history strip) show what prompt produced each past

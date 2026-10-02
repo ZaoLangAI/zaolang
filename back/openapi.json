@@ -5766,6 +5766,74 @@
         }
       }
     },
+    "/v1/characters/{card_id}/entries/{entry_id}:approve": {
+      "post": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Approve Entry",
+        "description": "Makes a candidate its slot's approved image; the one it replaces\nbecomes a candidate (and hands over the anchor if it held it).",
+        "operationId": "approve_character_entry",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetEntryView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/scenes/{card_id}/variants": {
       "post": {
         "tags": [
@@ -6188,6 +6256,74 @@
         ],
         "summary": "Set Anchor",
         "operationId": "set_scene_anchor",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetEntryView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenes/{card_id}/entries/{entry_id}:approve": {
+      "post": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Approve Entry",
+        "description": "Makes a candidate its slot's approved image; the one it replaces\nbecomes a candidate (and hands over the anchor if it held it).",
+        "operationId": "approve_scene_entry",
         "parameters": [
           {
             "name": "card_id",
@@ -31556,6 +31692,11 @@
               }
             ],
             "title": "Linked Scene Id"
+          },
+          "candidate_entries": {
+            "type": "integer",
+            "title": "Candidate Entries",
+            "default": 0
           },
           "draft_id": {
             "anyOf": [

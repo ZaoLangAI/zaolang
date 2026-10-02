@@ -9,7 +9,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, defer
 
 from app.agents import router as routing
@@ -47,9 +47,10 @@ from app.domain.jobs.cancellation import (
     should_honor_immediately,
 )
 from app.domain.licensing import service as licensing
-from app.models import Asset, Draft, GenerationJob, Work, WorkVersion
+from app.models import Asset, Draft, GenerationJob, SkillAssetEntry, Work, WorkVersion
 from app.models.base import new_id
 from app.models.enums import (
+    AssetEntryStatus,
     CharacterViewAngle,
     ImageAssetKind,
     JobOrigin,
@@ -707,6 +708,7 @@ def _job_response(
         duration_seconds=_duration_seconds_of(job),
         linked_character_id=job.linked_character_id,
         linked_scene_id=job.linked_scene_id,
+        candidate_entries=_candidate_entries_of(session, job),
         draft_id=job.draft_id,
         prompt=_prompt_of(job),
         analysis=_analysis_of(job),
@@ -785,6 +787,26 @@ def _forced_model_of(job: GenerationJob) -> str | None:
     params = job.request_json if isinstance(job.request_json, dict) else {}
     raw = params.get("forced_model")
     return raw if isinstance(raw, str) and raw else None
+
+
+def _candidate_entries_of(session: Session, job: GenerationJob) -> int:
+    """This job's images its write-back filed as candidates (P2-1). Only a
+    succeeded job linked to a card can have any, so nothing else queries."""
+    card_id = job.linked_character_id or job.linked_scene_id
+    if job.status != JobStatus.SUCCEEDED or not card_id:
+        return 0
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(SkillAssetEntry)
+            .where(
+                SkillAssetEntry.skill_id == card_id,
+                SkillAssetEntry.source_job_id == job.id,
+                SkillAssetEntry.status == AssetEntryStatus.CANDIDATE.value,
+            )
+        )
+        or 0
+    )
 
 
 def _character_views_of(job: GenerationJob) -> list[CharacterViewAngle] | None:

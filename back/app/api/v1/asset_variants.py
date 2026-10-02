@@ -230,6 +230,22 @@ def _register(
         session.commit()
         return presenter.entry_view(session, entry)
 
+    @router.post(
+        f"/{prefix}/{{card_id}}/entries/{{entry_id}}:approve",
+        response_model=AssetEntryView,
+        operation_id=f"approve_{kind}_entry",
+    )
+    def approve_entry(
+        card_id: str, entry_id: str, user: CurrentUser, session: DbSession, _: Write
+    ) -> AssetEntryView:
+        """Makes a candidate its slot's approved image; the one it replaces
+        becomes a candidate (and hands over the anchor if it held it)."""
+        skill = load(session, user.id, card_id)
+        entry = av.approve_entry(session, skill, _entry(skill, entry_id))
+        skill_library_service.withdraw_after_edit(session, skill)
+        session.commit()
+        return presenter.entry_view(session, entry)
+
 
 _register("characters", "looks", _character)
 _register("scenes", "variants", _scene)

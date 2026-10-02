@@ -2588,7 +2588,9 @@
     "promoteInsufficientCredits": "クレジットが不足しているため、このクオリティにはアップグレードできません。",
     "quoteFailed": "見積もりの取得に失敗しました。再試行してください。",
     "download": "ダウンロード",
-    "downloadFailed": "ダウンロードに失敗しました。再試行してください。"
+    "downloadFailed": "ダウンロードに失敗しました。再試行してください。",
+    "candidateFiled": "{count} 枚を候補として保存しました。確定済みの画像はそのままです。",
+    "reviewCandidates": "確定へ"
   },
   "learnPage": {
     "eyebrow": "ZAOLANG ACADEMY",
@@ -3760,6 +3762,25 @@
       "outfit_detail": "衣装ディテール",
       "prop": "小道具",
       "master": "メイン",
+      "shot": "カット",
+      "other": "その他"
+    },
+    "candidate": "候補",
+    "candidateCount": "候補 {count}",
+    "approve": "確定",
+    "approveHint": "現在の確定画像をこの画像に置き換えます。元の画像は候補として残ります。公開中のカードは下書きに戻ります。",
+    "clearCandidates": "候補をクリア（{count}）",
+    "clearCandidatesTitle": "候補画像 {count} 枚を削除しますか？",
+    "clearCandidatesHint": "カードから外すだけで、画像は素材ライブラリに残ります。",
+    "clearCandidatesConfirm": "削除",
+    "cancel": "キャンセル",
+    "group": {
+      "portrait": "メイク写真",
+      "sheet": "設定画",
+      "view": "アングル",
+      "expression": "表情",
+      "detail": "ディテール・その他",
+      "master": "メイン画像",
       "shot": "カット",
       "other": "その他"
     }

@@ -31,7 +31,14 @@ def entry_view(session: Session, entry: SkillAssetEntry) -> AssetEntryView:
     )
 
 
-def variant_view(session: Session, variant: SkillAssetVariant) -> AssetVariantView:
+def variant_view(
+    session: Session, variant: SkillAssetVariant, *, approved_only: bool = False
+) -> AssetVariantView:
+    shown = [
+        entry
+        for entry in variant.entries
+        if not approved_only or asset_variants_service.is_approved(entry)
+    ]
     return AssetVariantView(
         id=variant.id,
         name=variant.name,
@@ -39,12 +46,19 @@ def variant_view(session: Session, variant: SkillAssetVariant) -> AssetVariantVi
         presets=dict(variant.presets_json or {}),
         is_default=variant.is_default,
         sort_order=variant.sort_order,
-        entries=[entry_view(session, entry) for entry in variant.entries],
+        entries=[entry_view(session, entry) for entry in shown],
     )
 
 
-def variant_views(session: Session, skill: CreationSkill) -> list[AssetVariantView]:
-    return [variant_view(session, v) for v in asset_variants_service.variants(skill)]
+def variant_views(
+    session: Session, skill: CreationSkill, *, approved_only: bool = False
+) -> list[AssetVariantView]:
+    """Every look with its images. `approved_only` drops candidates — for
+    anyone but the owner's own editor (an unlocked marketplace card)."""
+    return [
+        variant_view(session, v, approved_only=approved_only)
+        for v in asset_variants_service.variants(skill)
+    ]
 
 
 def anchor_entry_id(skill: CreationSkill) -> str | None:

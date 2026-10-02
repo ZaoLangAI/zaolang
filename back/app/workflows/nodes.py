@@ -911,6 +911,9 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                                 "variant_id": ctx.params.get("target_variant_id"),
                                 "expressions": list(expressions) if expressions else None,
                                 "source_job_id": ctx.job.id,
+                                # A filled slot keeps its approved image; this
+                                # one becomes a candidate (P2-1).
+                                "generated": True,
                             },
                         )
                 except Exception:
@@ -953,6 +956,7 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                                 or scene_presets_from(ctx.params)
                                 or None,
                                 "source_job_id": ctx.job.id,
+                                "generated": True,
                             },
                         )
                 except Exception:

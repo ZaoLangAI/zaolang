@@ -414,6 +414,7 @@ def append_reference_asset(
     source_job_id: str | None = None,
     variant_id: str | None = None,
     expressions: list[str] | None = None,
+    generated: bool = False,
 ) -> CharacterView:
     """Files one image under a look — the P0 `(view, label)` call shape,
     translated: a non-expression `label` names the look (created on first
@@ -424,6 +425,11 @@ def append_reference_asset(
     anchor when it has none. `variant_id` (a look of this card) wins over the
     label; a stale one falls back to the label/default. `expressions` names
     an expression sheet's faces.
+
+    `generated` (a job's write-back) never replaces: an image for a slot
+    that already holds an approved one (the look's front sheet, a view, the
+    same set of expressions) is kept as a candidate beside it
+    (`asset_variants.service.file_generated`) for the owner to approve.
 
     Called by the character library UI and by
     `app.workflows.nodes.execute_asset_output_link`.
@@ -439,7 +445,7 @@ def append_reference_asset(
     )
     if expressions:
         entry_type, entry_view = AssetEntryType.EXPRESSION_SHEET.value, None
-    if entry_type in (AssetEntryType.CHARACTER_SHEET, AssetEntryType.VIEW):
+    if not generated and entry_type in (AssetEntryType.CHARACTER_SHEET, AssetEntryType.VIEW):
         for stale in [
             e
             for e in variant.entries
@@ -447,7 +453,8 @@ def append_reference_asset(
         ]:
             variant.entries.remove(stale)
         session.flush()
-    entry = asset_variants_service.add_entry(
+    file = asset_variants_service.file_generated if generated else asset_variants_service.add_entry
+    entry = file(
         session,
         skill,
         variant,
@@ -462,6 +469,7 @@ def append_reference_asset(
     # never become the identity every job leads with.
     if (
         asset_variants_service.anchor(skill) is None
+        and asset_variants_service.is_approved(entry)
         and entry_type == AssetEntryType.CHARACTER_SHEET
         and variant.is_default
     ):

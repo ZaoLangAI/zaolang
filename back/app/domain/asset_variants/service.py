@@ -15,6 +15,16 @@ truth. Two read shapes come out of them:
 Every mutation goes through the relationships (`skill.asset_variants`,
 `variant.entries`) so the in-memory collections stay consistent within a
 request, and ends with `sync_mirror`.
+
+Candidates (P2-1): a generated image filed into a *slot* that already holds
+an approved image — a look's front sheet, one side/back view, one set of
+expressions, the card's identity portrait, a variant's master plate — is
+kept as a `candidate` beside it instead of replacing it (`file_generated`).
+`approve_entry` swaps the two. Every read meant for someone other than the
+owner's own editor (the flat projection, the mirror, defaults, thumbnails,
+an unlocked card's detail) sees approved entries only, and the entry caps
+count approved entries only — candidates are kept until the owner deletes
+them.
 """
 
 from __future__ import annotations
@@ -89,12 +99,22 @@ def entries(skill: CreationSkill) -> list[SkillAssetEntry]:
     return anchor + [entry for entry in ordered if not entry.is_anchor]
 
 
+def is_approved(entry: SkillAssetEntry) -> bool:
+    return entry.status == AssetEntryStatus.APPROVED
+
+
+def approved_entries(skill: CreationSkill) -> list[SkillAssetEntry]:
+    """`entries`, without candidates — what anyone but the owner's own
+    editor gets to see or use."""
+    return [entry for entry in entries(skill) if is_approved(entry)]
+
+
 def anchor(skill: CreationSkill) -> SkillAssetEntry | None:
     return next((entry for entry in entries(skill) if entry.is_anchor), None)
 
 
 def asset_ids(skill: CreationSkill) -> list[str]:
-    return list(dict.fromkeys(entry.asset_id for entry in entries(skill)))
+    return list(dict.fromkeys(entry.asset_id for entry in approved_entries(skill)))
 
 
 def _projected_view(skill: CreationSkill, entry: SkillAssetEntry) -> str:
@@ -112,9 +132,11 @@ def _projected_view(skill: CreationSkill, entry: SkillAssetEntry) -> str:
 def project(skill: CreationSkill) -> list[dict[str, Any]]:
     """The P0 `reference_assets` shape, plus `variant_id`/`entry_type`/
     `is_anchor`. A non-default look's entries carry the look's name as their
-    `label` — P0's meaning of a label (the outfit/variant it belongs to)."""
+    `label` — P0's meaning of a label (the outfit/variant it belongs to).
+    Approved entries only: every reader of this shape treats it as the card's
+    settled set of references."""
     projected: list[dict[str, Any]] = []
-    for entry in entries(skill):
+    for entry in approved_entries(skill):
         variant = entry.variant
         label = entry.label if variant.is_default else variant.name
         projected.append(
@@ -286,6 +308,148 @@ def _check_entry_type(skill: CreationSkill, entry_type: str) -> None:
         raise ValidationFailed("参考图类型与卡片类别不匹配。", fields={"entry_type": "类型无效"})
 
 
+# Entry types that fill one slot — a newer generated image of the same slot
+# becomes a candidate instead of replacing the approved one.
+_SLOT_TYPES = frozenset(
+    {
+        AssetEntryType.IDENTITY_PORTRAIT.value,
+        AssetEntryType.CHARACTER_SHEET.value,
+        AssetEntryType.VIEW.value,
+        AssetEntryType.EXPRESSION_SHEET.value,
+        AssetEntryType.MASTER.value,
+    }
+)
+
+
+def _expression_set(expressions: list[Any] | None) -> tuple[str, ...]:
+    return tuple(sorted(str(item) for item in expressions or []))
+
+
+def slot_mates(
+    skill: CreationSkill,
+    variant: SkillAssetVariant,
+    *,
+    entry_type: str,
+    view: str | None,
+    expressions: list[Any] | None,
+    exclude: SkillAssetEntry | None = None,
+) -> list[SkillAssetEntry]:
+    """Every entry (any status) competing for the same slot, or `[]` for a
+    type that has none (poses, details, props, shots, other accumulate).
+
+    The identity portrait is card-wide (one face for every look); the other
+    slots are per look / variant: the front sheet, each single view, each
+    distinct set of expressions, the master plate.
+    """
+    if entry_type not in _SLOT_TYPES:
+        return []
+    if entry_type == AssetEntryType.IDENTITY_PORTRAIT:
+        pool = entries(skill)
+    else:
+        pool = list(variant.entries)
+    wanted = _expression_set(expressions)
+    mates: list[SkillAssetEntry] = []
+    for entry in pool:
+        if entry is exclude or entry.entry_type != entry_type:
+            continue
+        if entry_type == AssetEntryType.VIEW and entry.view != view:
+            continue
+        if (
+            entry_type == AssetEntryType.EXPRESSION_SHEET
+            and _expression_set(entry.expressions_json) != wanted
+        ):
+            continue
+        mates.append(entry)
+    return mates
+
+
+def _approved_counts(skill: CreationSkill, variant: SkillAssetVariant) -> tuple[int, int]:
+    in_variant = sum(1 for e in variant.entries if is_approved(e))
+    return in_variant, len(approved_entries(skill))
+
+
+def _check_approved_room(skill: CreationSkill, variant: SkillAssetVariant, field: str) -> None:
+    """The caps limit approved entries only; candidates never block a write."""
+    in_variant, in_skill = _approved_counts(skill, variant)
+    if in_variant >= MAX_ENTRIES_PER_VARIANT:
+        raise ValidationFailed(
+            f"每个造型/变体最多 {MAX_ENTRIES_PER_VARIANT} 张定稿参考图。",
+            fields={field: "数量已达上限"},
+        )
+    if in_skill >= MAX_ENTRIES_PER_SKILL:
+        raise ValidationFailed(
+            f"每张卡片最多 {MAX_ENTRIES_PER_SKILL} 张定稿参考图。",
+            fields={field: "数量已达上限"},
+        )
+
+
+def file_generated(
+    session: Session,
+    skill: CreationSkill,
+    variant: SkillAssetVariant,
+    *,
+    asset_id: str,
+    entry_type: str,
+    view: str | None = None,
+    label: str | None = None,
+    expressions: list[str] | None = None,
+    source_job_id: str | None = None,
+) -> SkillAssetEntry:
+    """Files a generated image: approved when its slot holds no approved
+    image yet (and the caps leave room), otherwise a candidate beside it.
+    Never replaces or evicts anything."""
+    mates = slot_mates(skill, variant, entry_type=entry_type, view=view, expressions=expressions)
+    in_variant, in_skill = _approved_counts(skill, variant)
+    room = in_variant < MAX_ENTRIES_PER_VARIANT and in_skill < MAX_ENTRIES_PER_SKILL
+    taken = any(is_approved(m) and m.asset_id != asset_id for m in mates)
+    status = AssetEntryStatus.APPROVED if room and not taken else AssetEntryStatus.CANDIDATE
+    return add_entry(
+        session,
+        skill,
+        variant,
+        asset_id=asset_id,
+        entry_type=entry_type,
+        view=view,
+        label=label,
+        expressions=expressions,
+        source_job_id=source_job_id,
+        status=status.value,
+    )
+
+
+def approve_entry(
+    session: Session, skill: CreationSkill, entry: SkillAssetEntry
+) -> SkillAssetEntry:
+    """Makes `entry` the slot's approved image. The one it displaces goes
+    back to candidate (kept, never deleted) and hands over the anchor if it
+    held it. Over the approved caps is a 422."""
+    if is_approved(entry):
+        return entry
+    displaced = [
+        mate
+        for mate in slot_mates(
+            skill,
+            entry.variant,
+            entry_type=entry.entry_type,
+            view=entry.view,
+            expressions=entry.expressions_json,
+            exclude=entry,
+        )
+        if is_approved(mate)
+    ]
+    if not displaced:
+        _check_approved_room(skill, entry.variant, "status")
+    moves_anchor = any(mate.is_anchor for mate in displaced)
+    for mate in displaced:
+        mate.status = AssetEntryStatus.CANDIDATE.value
+    entry.status = AssetEntryStatus.APPROVED.value
+    session.flush()
+    if moves_anchor:
+        set_anchor(session, skill, entry, sync=False)
+    sync_mirror(session, skill)
+    return entry
+
+
 def add_entry(
     session: Session,
     skill: CreationSkill,
@@ -298,33 +462,27 @@ def add_entry(
     expressions: list[str] | None = None,
     source_job_id: str | None = None,
     sync: bool = True,
+    status: str = AssetEntryStatus.APPROVED.value,
 ) -> SkillAssetEntry:
     """Files `asset_id` under `variant`. Re-adding an asset already in that
-    variant updates the existing entry instead of duplicating it. Over a
-    limit is a 422 — never a silent eviction."""
+    variant updates the existing entry instead of duplicating it (keeping
+    its status). Over an approved-entry limit is a 422 — never a silent
+    eviction; a candidate never counts against it."""
     _check_entry_type(skill, entry_type)
     existing = next((e for e in variant.entries if e.asset_id == asset_id), None)
     if existing is None:
-        if len(variant.entries) >= MAX_ENTRIES_PER_VARIANT:
-            raise ValidationFailed(
-                f"每个造型/变体最多 {MAX_ENTRIES_PER_VARIANT} 张参考图。",
-                fields={"reference_asset_ids": "数量已达上限"},
-            )
-        if len(entries(skill)) >= MAX_ENTRIES_PER_SKILL:
-            raise ValidationFailed(
-                f"每张卡片最多 {MAX_ENTRIES_PER_SKILL} 张参考图。",
-                fields={"reference_asset_ids": "数量已达上限"},
-            )
+        if status == AssetEntryStatus.APPROVED:
+            _check_approved_room(skill, variant, "reference_asset_ids")
         existing = SkillAssetEntry(
             skill_id=skill.id,
             asset_id=asset_id,
             entry_type=entry_type,
-            status=AssetEntryStatus.APPROVED.value,
+            status=status,
             sort_order=max((e.sort_order for e in variant.entries), default=-1) + 1,
         )
         variant.entries.append(existing)
     existing.entry_type = entry_type
-    if entry_type == AssetEntryType.MASTER:
+    if entry_type == AssetEntryType.MASTER and is_approved(existing):
         _demote_other_masters(variant, existing)
     existing.view = view
     existing.label = (label or "").strip()[:60] or None
@@ -355,8 +513,13 @@ def remove_asset(session: Session, skill: CreationSkill, asset_id: str) -> int:
     return removed
 
 
-def set_anchor(session: Session, skill: CreationSkill, entry: SkillAssetEntry | None) -> None:
-    """Moves the card's single anchor to `entry` (or clears it)."""
+def set_anchor(
+    session: Session, skill: CreationSkill, entry: SkillAssetEntry | None, *, sync: bool = True
+) -> None:
+    """Moves the card's single anchor to `entry` (or clears it). Only an
+    approved image can be the identity every job leads with (422)."""
+    if entry is not None and not is_approved(entry):
+        raise ValidationFailed("候选图需要先定稿，才能设为锚点。", fields={"entry_id": "未定稿"})
     for other in entries(skill):
         if other.is_anchor and other is not entry:
             other.is_anchor = False
@@ -365,21 +528,29 @@ def set_anchor(session: Session, skill: CreationSkill, entry: SkillAssetEntry | 
     if entry is not None:
         entry.is_anchor = True
         session.flush()
-    sync_mirror(session, skill)
+    if sync:
+        sync_mirror(session, skill)
 
 
 def set_members(session: Session, skill: CreationSkill, asset_ids_in_order: list[str]) -> None:
     """The legacy flat-list edit (`reference_asset_ids` on create/PATCH):
     drops entries whose asset is no longer listed, files new ones under the
     default as `other`, and keeps every surviving entry's type, view and
-    look — an id-only edit form must not erase which image is the 婚礼 sheet."""
+    look — an id-only edit form must not erase which image is the 婚礼 sheet.
+    Candidates are left alone: the flat list is built from the approved
+    projection, so a candidate's absence from it means nothing."""
     wanted = list(dict.fromkeys(asset_ids_in_order))
     default = ensure_default(session, skill)
     for variant in skill.asset_variants:
-        for entry in [e for e in variant.entries if e.asset_id not in wanted]:
+        stale = [e for e in variant.entries if e.asset_id not in wanted and is_approved(e)]
+        for entry in stale:
             variant.entries.remove(entry)
     session.flush()
     known = {entry.asset_id for entry in entries(skill)}
+    for entry in entries(skill):
+        if entry.asset_id in wanted and not is_approved(entry):
+            # Listing a candidate in the flat edit approves it.
+            entry.status = AssetEntryStatus.APPROVED.value
     for asset_id in wanted:
         if asset_id not in known:
             add_entry(
@@ -561,7 +732,7 @@ def update_entry(
     if entry_type is not None:
         _check_entry_type(skill, entry_type)
         entry.entry_type = entry_type
-        if entry_type == AssetEntryType.MASTER:
+        if entry_type == AssetEntryType.MASTER and is_approved(entry):
             _demote_other_masters(variant or entry.variant, entry)
     if view is not None or clear_view:
         entry.view = None if clear_view else check_view(skill, view)
@@ -569,16 +740,17 @@ def update_entry(
         entry.label = label.strip()[:60] or None
     if expressions is not None:
         entry.expressions_json = list(expressions) or None
-    if status is not None:
-        entry.status = AssetEntryStatus(status).value
+    if status == AssetEntryStatus.CANDIDATE and is_approved(entry):
+        if entry.is_anchor:
+            raise ValidationFailed(
+                "锚点不能改为候选，请先把锚点设到另一张图。", fields={"status": "锚点"}
+            )
+        entry.status = AssetEntryStatus.CANDIDATE.value
     if variant is not None and variant is not entry.variant:
         if any(e.asset_id == entry.asset_id for e in variant.entries):
             raise ValidationFailed("目标造型/变体里已有这张图。", fields={"variant_id": "重复"})
-        if len(variant.entries) >= MAX_ENTRIES_PER_VARIANT:
-            raise ValidationFailed(
-                f"每个造型/变体最多 {MAX_ENTRIES_PER_VARIANT} 张参考图。",
-                fields={"variant_id": "数量已达上限"},
-            )
+        if is_approved(entry):
+            _check_approved_room(skill, variant, "variant_id")
         entry.variant.entries.remove(entry)
         session.flush()
         moved = SkillAssetEntry(
@@ -597,14 +769,17 @@ def update_entry(
         variant.entries.append(moved)
         entry = moved
     session.flush()
+    if status == AssetEntryStatus.APPROVED and not is_approved(entry):
+        return approve_entry(session, skill, entry)
     sync_mirror(session, skill)
     return entry
 
 
 def _demote_other_masters(variant: SkillAssetVariant, keep: SkillAssetEntry) -> None:
-    """One master plate per scene variant: any other becomes a shot."""
+    """One approved master plate per scene variant: any other approved one
+    becomes a shot (candidate masters keep competing for the slot)."""
     for other in variant.entries:
-        if other is not keep and other.entry_type == AssetEntryType.MASTER:
+        if other is not keep and other.entry_type == AssetEntryType.MASTER and is_approved(other):
             other.entry_type = AssetEntryType.SHOT.value
 
 

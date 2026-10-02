@@ -227,3 +227,78 @@ def test_scene_cards_cannot_be_written_through_skills(
         headers=auth_header(author),
     )
     assert response.status_code == 422
+
+
+def _generated_sheets(db: Session, author: User, character_id: str, count: int) -> list[str]:
+    """Files `count` front sheets the way a job's write-back does: the
+    first is approved, the rest wait as candidates."""
+    from app.domain.characters import service as characters_service
+
+    ids = []
+    for _ in range(count):
+        asset = _asset(db, author)
+        characters_service.append_reference_asset(
+            db,
+            user_id=author.id,
+            character_id=character_id,
+            asset_id=asset.id,
+            view="front",
+            generated=True,
+        )
+        ids.append(asset.id)
+    db.flush()
+    return ids
+
+
+def test_approving_a_candidate_swaps_it_in(client: TestClient, db: Session, author: User) -> None:
+    character = _character(client, author)
+    base = f"/v1/characters/{character['id']}"
+    first, second = _generated_sheets(db, author, character["id"], 2)
+
+    card = client.get(base, headers=auth_header(author)).json()
+    by_asset = {e["asset_id"]: e for e in card["looks"][0]["entries"]}
+    assert by_asset[second]["status"] == "candidate"
+    # The flat projection (iOS, older readers) shows the approved sheet only.
+    assert [e["asset_id"] for e in card["reference_assets"]] == [first]
+
+    approved = client.post(
+        f"{base}/entries/{by_asset[second]['id']}:approve", headers=auth_header(author)
+    )
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+    card = client.get(base, headers=auth_header(author)).json()
+    by_asset = {e["asset_id"]: e for e in card["looks"][0]["entries"]}
+    assert by_asset[first]["status"] == "candidate"
+    assert card["anchor_entry_id"] == by_asset[second]["id"]
+
+
+def test_approving_is_owner_only_and_withdraws_a_published_card(
+    client: TestClient, db: Session, author: User
+) -> None:
+    character = _character(client, author)
+    base = f"/v1/characters/{character['id']}"
+    _, second = _generated_sheets(db, author, character["id"], 2)
+    card = client.get(base, headers=auth_header(author)).json()
+    entry_id = next(e["id"] for e in card["looks"][0]["entries"] if e["asset_id"] == second)
+    stranger = make_user(db, email="approver@example.com", handle="approver", display_name="路人")
+
+    assert (
+        client.post(f"{base}/entries/{entry_id}:approve", headers=auth_header(stranger)).status_code
+        == 404
+    )
+
+    skill = db.get(CreationSkill, character["id"])
+    assert skill is not None
+    skill.status = CreationSkillStatus.PUBLISHED
+    skill.visibility = CreationSkillVisibility.PUBLIC
+    db.flush()
+    client.post(f"{base}/entries/{entry_id}:approve", headers=auth_header(author))
+    db.expire_all()
+    assert db.get(CreationSkill, character["id"]).status == CreationSkillStatus.DRAFT  # type: ignore[union-attr]
+
+
+def test_skill_detail_hides_candidates(client: TestClient, db: Session, author: User) -> None:
+    character = _character(client, author)
+    first, _ = _generated_sheets(db, author, character["id"], 2)
+    body = client.get(f"/v1/skills/{character['id']}", headers=auth_header(author)).json()
+    assert [e["asset_id"] for e in body["asset_variants"][0]["entries"]] == [first]

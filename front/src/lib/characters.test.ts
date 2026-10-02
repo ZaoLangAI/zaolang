@@ -23,6 +23,7 @@ function job(overrides: Partial<GenerationJob>): GenerationJob {
     quoted_credits: 12,
     reserved_credits: 12,
     estimated_seconds: 10,
+    candidate_entries: 0,
     cancel_requested: false,
     created_at: '2026-08-30T00:00:00Z',
     asset_kind: 'character',
