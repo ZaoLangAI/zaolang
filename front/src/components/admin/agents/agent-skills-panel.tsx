@@ -587,7 +587,6 @@ export function AgentSkillEditorDialog({
   useEffect(() => {
     void load();
   }, [load]);
-
   // Both form fills below are adjusted during render rather than set from an
   // effect: every fetch that lands (initial, slot switch, publish, rollback)
   // yields a new `versions` array, which reseeds the form from the active

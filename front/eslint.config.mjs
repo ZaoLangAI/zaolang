@@ -12,15 +12,26 @@ import prettier from 'eslint-config-prettier';
  */
 const heavyDependencyBoundaries = [
   {
-    packages: ['@xyflow/react', '@dagrejs/dagre'],
+    packages: ['@xyflow/react'],
+    allow: [
+      'src/components/admin/workflows/**',
+      'src/components/lineage/**',
+      'src/features/canvas/**',
+    ],
+    reason:
+      'graph-rendering weight belongs only to the admin workflow canvas, the lineage graph (loaded via next/dynamic from LineageDialog) or the studio canvas route — import it there, not from a route that never renders a graph.',
+  },
+  {
+    packages: ['@dagrejs/dagre'],
     allow: ['src/components/admin/workflows/**', 'src/components/lineage/**'],
     reason:
-      'graph-layout weight belongs only to the admin workflow canvas or the lineage graph (loaded via next/dynamic from LineageDialog) — import it there, not from a route that never renders a graph.',
+      'graph-layout weight belongs only to the admin workflow canvas or the lineage graph (loaded via next/dynamic from LineageDialog) — import it there, not from a route that never lays out a graph.',
   },
   {
     packages: ['recharts'],
-    allow: ['src/components/admin/**'],
-    reason: 'charting only exists in the admin console today — no consumer route renders a chart.',
+    allow: ['src/components/charts/**'],
+    reason:
+      'go through the shared TrendChart / BarComparisonChart / ChannelSharePieChart wrappers in components/charts — they bind chart colors to the --color-* tokens.',
   },
   {
     packages: ['@mdxeditor/editor'],
@@ -41,18 +52,57 @@ const heavyDependencyBoundaries = [
   },
 ];
 
-const heavyDependencyBoundaryConfigs = heavyDependencyBoundaries.map(
-  ({ packages, allow, reason }) => ({
-    files: ['src/**/*.ts', 'src/**/*.tsx'],
-    ignores: allow,
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        { paths: packages.map((name) => ({ name, message: reason })) },
-      ],
+/**
+ * Flat config doesn't merge a rule's options across config objects — a later
+ * `no-restricted-imports` replaces an earlier one outright. So instead of one
+ * config per boundary, emit exactly one config per region of files: every
+ * distinct allow glob is its own region (restricting all packages that glob
+ * isn't allowed), and everything outside every allow glob restricts them all.
+ */
+const heavyDependencySourceFiles = ['src/**/*.ts', 'src/**/*.tsx'];
+
+const restrictHeavyDependencies = (boundaries) => ({
+  'no-restricted-imports': [
+    'error',
+    {
+      paths: boundaries.flatMap(({ packages, reason }) =>
+        packages.map((name) => ({ name, message: reason })),
+      ),
     },
-  }),
-);
+  ],
+});
+
+const heavyDependencyAllowGlobs = [
+  ...new Set(heavyDependencyBoundaries.flatMap(({ allow }) => allow)),
+];
+
+// Each file must land in at most one region, or the last matching config
+// silently wins again. Allow globs are either a `dir/**` or a single file, so
+// two regions overlap exactly when one path prefix contains the other.
+const allowGlobRoot = (glob) => glob.replace(/\/\*\*$/, '');
+for (const a of heavyDependencyAllowGlobs) {
+  for (const b of heavyDependencyAllowGlobs) {
+    if (a !== b && allowGlobRoot(b).startsWith(`${allowGlobRoot(a)}/`)) {
+      throw new Error(`heavyDependencyBoundaries: allow globs ${a} and ${b} overlap`);
+    }
+  }
+}
+
+const heavyDependencyBoundaryConfigs = [
+  {
+    files: heavyDependencySourceFiles,
+    ignores: heavyDependencyAllowGlobs,
+    rules: restrictHeavyDependencies(heavyDependencyBoundaries),
+  },
+  ...heavyDependencyAllowGlobs.map((glob) => ({
+    // Nested array = match every pattern, so a `dir/**` glob stays limited to
+    // the TS sources above instead of pulling other files into the lint run.
+    files: heavyDependencySourceFiles.map((sourceGlob) => [glob, sourceGlob]),
+    rules: restrictHeavyDependencies(
+      heavyDependencyBoundaries.filter(({ allow }) => !allow.includes(glob)),
+    ),
+  })),
+];
 
 const config = [
   {

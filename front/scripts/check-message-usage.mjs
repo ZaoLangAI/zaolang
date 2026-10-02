@@ -65,9 +65,10 @@ for (const file of walk(join(root, 'src'))) {
   }
 }
 
-if (missing.length > 0) {
-  console.error(`Missing message keys (${missing.length}):`);
-  for (const line of [...new Set(missing)].sort()) console.error(`  ${line}`);
+const unique = [...new Set(missing)].sort();
+if (unique.length > 0) {
+  console.error(`Missing message keys (${unique.length}):`);
+  for (const line of unique) console.error(`  ${line}`);
   process.exit(1);
 }
 
