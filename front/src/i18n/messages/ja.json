@@ -3228,7 +3228,9 @@
     "targetSceneVariant": "保存先のバリエーション",
     "targetSceneVariantHint": "生成結果は選んだバリエーションに追加されます。",
     "targetSceneVariantAuto": "自動（プリセットまたはメインシーン）",
-    "referencePickLookDefault": "画像を選ばない場合は、その衣装の既定の参考画像を使います。"
+    "referencePickLookDefault": "画像を選ばない場合は、その衣装の既定の参考画像を使います。",
+    "referenceEmotionLabel": "参考の感情（任意）",
+    "referenceEmotionNone": "指定なし"
   },
   "scenes": {
     "eyebrow": "シーンライブラリ",

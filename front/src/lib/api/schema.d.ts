@@ -9393,6 +9393,10 @@ export interface components {
             character_ref_selection?: components["schemas"]["CharacterRefSelection"][] | null;
             /** Scene Ref Selection */
             scene_ref_selection?: components["schemas"]["SceneRefSelection"][] | null;
+            /** Reference Shot Size */
+            reference_shot_size?: ("extreme_wide" | "wide" | "full" | "medium" | "medium_close" | "close" | "extreme_close") | null;
+            /** Reference Emotion */
+            reference_emotion?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze") | null;
             /** Scene Lighting */
             scene_lighting?: ("dawn" | "day" | "dusk" | "night_interior" | "night_exterior" | "candle" | "neon" | "overcast") | null;
             /** Scene Weather */

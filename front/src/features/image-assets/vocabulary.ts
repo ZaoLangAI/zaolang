@@ -114,6 +114,7 @@ export type AssetPresetParams = Pick<
   | 'character_outfit_label'
   | 'character_ref_selection'
   | 'scene_ref_selection'
+  | 'reference_emotion'
   | 'scene_lighting'
   | 'scene_weather'
   | 'scene_state'

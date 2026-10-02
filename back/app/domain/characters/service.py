@@ -631,7 +631,13 @@ def admin_portrait_consent_at(skill: CreationSkill) -> str | None:
 # ---- Generation + publish wiring ----------------------------------------
 
 
-def apply_character_refs(session: Session, *, user_id: str, params: dict[str, Any]) -> None:
+def apply_character_refs(
+    session: Session,
+    *,
+    user_id: str,
+    params: dict[str, Any],
+    hints: asset_variants_service.ReferenceHints | None = None,
+) -> None:
     """Merges the selected cast's reference images and voice hints into job params.
 
     Called right before a job is priced and persisted (`jobs/service.py`), so
@@ -663,6 +669,7 @@ def apply_character_refs(session: Session, *, user_id: str, params: dict[str, An
             asset_ids=list(item.get("asset_ids") or []) if item else None,
             owner=f"角色「{character.name}」",
             field="params.character_ref_selection",
+            hints=hints,
         )
         for asset_id in picked:
             if asset_id not in merged_refs and len(merged_refs) < MAX_JOB_REFERENCE_ASSETS:

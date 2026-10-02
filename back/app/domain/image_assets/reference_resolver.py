@@ -13,17 +13,23 @@
 3. `params["reference_labels"]`: what each reference *is*
    (`角色「林夏」·婚礼·设定图`), for the prompt's 参考图说明 legend.
 
-`shot_hint` / `emotion_hint` are accepted for the P2 ranking (close-up →
-portrait + matching expression, wide → turnaround) and ignored for now.
+Default references are ranked for the shot (P2-7,
+`asset_variants.service.ReferenceHints`): `shot_hint` / `emotion_hint`, else
+`reference_shot_size` / `reference_emotion`, else the shot size in the
+prompt's 「镜头：」 line — what a script segment's camera block becomes
+(`front/src/features/script/script-prompts.ts`), read with the blockout's
+own camera grammar (`blocking.camera_language.parse_camera_text`).
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.domain.asset_variants import service as asset_variants_service
+from app.domain.blocking import camera_language
 from app.domain.characters import service as characters_service
 from app.domain.errors import NotFound
 from app.domain.scenes import service as scenes_service
@@ -40,9 +46,13 @@ def resolve(
 ) -> None:
     # Server-written below; a client never sets it.
     params.pop("reference_labels", None)
-    characters_service.apply_character_refs(session, user_id=user_id, params=params)
+    hints = asset_variants_service.ReferenceHints(
+        shot=shot_hint or params.get("reference_shot_size") or _prompt_shot_size(params),
+        emotion=emotion_hint or params.get("reference_emotion"),
+    )
+    characters_service.apply_character_refs(session, user_id=user_id, params=params, hints=hints)
     _borrow_expression_reference(session, user_id=user_id, params=params)
-    scenes_service.apply_scene_refs(session, user_id=user_id, params=params)
+    scenes_service.apply_scene_refs(session, user_id=user_id, params=params, hints=hints)
     _label_references(session, user_id=user_id, params=params)
 
 
@@ -61,6 +71,16 @@ def _borrow_expression_reference(session: Session, *, user_id: str, params: dict
     params["reference_asset_ids"] = characters_service.default_reference_asset_ids(
         character, variant_id=params.get("target_variant_id")
     )
+
+
+_CAMERA_LINE = re.compile(r"镜头[：:]\s*([^\n]+)")
+
+
+def _prompt_shot_size(params: dict[str, Any]) -> str | None:
+    """The shot size named in the prompt's 「镜头：」 line, if any. Only that
+    line — 「特写」 elsewhere in a description says nothing about framing."""
+    match = _CAMERA_LINE.search(str(params.get("prompt") or ""))
+    return camera_language.parse_camera_text(match.group(1)).size if match else None
 
 
 def _card_ids(params: dict[str, Any], list_key: str, target_key: str) -> list[str]:

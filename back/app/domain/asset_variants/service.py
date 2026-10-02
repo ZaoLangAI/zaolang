@@ -29,6 +29,7 @@ them.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
@@ -111,6 +112,17 @@ def approved_entries(skill: CreationSkill) -> list[SkillAssetEntry]:
 
 def anchor(skill: CreationSkill) -> SkillAssetEntry | None:
     return next((entry for entry in entries(skill) if entry.is_anchor), None)
+
+
+def identity_portrait(skill: CreationSkill) -> SkillAssetEntry | None:
+    """The card's approved identity portrait (定妆照): the anchor when it is
+    one, else the first approved portrait."""
+    portraits = [
+        entry
+        for entry in approved_entries(skill)
+        if entry.entry_type == AssetEntryType.IDENTITY_PORTRAIT
+    ]
+    return portraits[0] if portraits else None
 
 
 def asset_ids(skill: CreationSkill) -> list[str]:
@@ -588,7 +600,35 @@ def _approved(items: list[SkillAssetEntry]) -> list[SkillAssetEntry]:
     return [e for e in items if e.status == AssetEntryStatus.APPROVED]
 
 
-def default_subset(skill: CreationSkill, variant: SkillAssetVariant | None = None) -> list[str]:
+# Shot sizes (`blocking.vocabulary.ShotSize`) that re-rank a card's default
+# references (P2-7): a close-up needs the face, a wide shot the turnaround.
+CLOSE_SHOTS = frozenset({"extreme_close", "close", "medium_close"})
+WIDE_SHOTS = frozenset({"full", "wide", "extreme_wide"})
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceHints:
+    """What the shot needs from a card's references when the caller picked
+    no exact images (`reference_resolver.resolve` fills it)."""
+
+    shot: str | None = None
+    emotion: str | None = None
+
+    @property
+    def framing(self) -> str | None:
+        if self.shot in CLOSE_SHOTS:
+            return "close"
+        if self.shot in WIDE_SHOTS:
+            return "wide"
+        return None
+
+
+def default_subset(
+    skill: CreationSkill,
+    variant: SkillAssetVariant | None = None,
+    *,
+    hints: ReferenceHints | None = None,
+) -> list[str]:
     """What a job gets from this card when the caller named at most a look.
 
     Character: the anchor (only when it is the default look's — or, for
@@ -596,19 +636,27 @@ def default_subset(skill: CreationSkill, variant: SkillAssetVariant | None = Non
     sheet and single views front → side → back, else its other non-
     expression images; at most 3. Scene: the variant's master then its
     shots, else the card's anchor (the structure every variant shares); at
-    most 2. With no look named and nothing in the default, anything.
+    most 2. With no look named and nothing in the default, anything approved.
+
+    `hints` re-rank within the same caps (P2-7). Character: a close shot
+    leads with the identity portrait and an expression sheet showing
+    `emotion`; a wide shot leads with the sheet and views; otherwise a
+    matching expression sheet follows the anchor. Scene: a close shot
+    leads with the shots (details, reverse angles) before the master.
     """
     target = variant or find_default(skill)
     target_entries = _approved(list(target.entries)) if target else []
-    picked: list[str] = []
     card_anchor = anchor(skill)
+    framing = hints.framing if hints else None
+    emotion = hints.emotion if hints else None
 
     if is_character(skill):
+        lead: list[SkillAssetEntry] = []
         if card_anchor is not None and card_anchor.status == AssetEntryStatus.APPROVED:
             same_look = target is not None and card_anchor.variant_id == target.id
             face_only = card_anchor.entry_type == AssetEntryType.IDENTITY_PORTRAIT
             if same_look or face_only:
-                picked.append(card_anchor.asset_id)
+                lead.append(card_anchor)
         sheets = sorted(
             (
                 e
@@ -622,17 +670,33 @@ def default_subset(skill: CreationSkill, variant: SkillAssetVariant | None = Non
         pool = sheets or [
             e for e in target_entries if e.entry_type != AssetEntryType.EXPRESSION_SHEET
         ]
+        faces = [
+            e
+            for e in target_entries
+            if emotion
+            and e.entry_type == AssetEntryType.EXPRESSION_SHEET
+            and emotion in (e.expressions_json or [])
+        ]
+        if framing == "close":
+            portrait = identity_portrait(skill)
+            ordered = ([portrait] if portrait else []) + faces + lead + pool
+        elif framing == "wide":
+            ordered = sheets + lead + pool
+        else:
+            ordered = lead + faces + pool
         limit = MAX_DEFAULT_CHARACTER_REFERENCES
     else:
         masters = [e for e in target_entries if e.entry_type == AssetEntryType.MASTER]
-        pool = masters + [e for e in target_entries if e.entry_type != AssetEntryType.MASTER]
-        if not pool and card_anchor is not None:
-            pool = [card_anchor]
+        others = [e for e in target_entries if e.entry_type != AssetEntryType.MASTER]
+        ordered = others + masters if framing == "close" else masters + others
+        if not ordered and card_anchor is not None:
+            ordered = [card_anchor]
         limit = MAX_DEFAULT_SCENE_REFERENCES
 
-    if not pool and not picked and variant is None:
-        pool = entries(skill)
-    for entry in pool:
+    if not ordered and variant is None:
+        ordered = approved_entries(skill)
+    picked: list[str] = []
+    for entry in ordered:
         if entry.asset_id not in picked:
             picked.append(entry.asset_id)
     return picked[:limit]
@@ -645,6 +709,7 @@ def select_assets(
     asset_ids: list[str] | None,
     owner: str,
     field: str,
+    hints: ReferenceHints | None = None,
 ) -> list[str]:
     """A caller's `*_ref_selection` item for this card: a look (its default
     subset), exact images (each one of the card's own), or both (the images
@@ -658,7 +723,7 @@ def select_assets(
                 f"{owner}的造型/变体不存在。", fields={field: "variant_id 不属于该卡片"}
             )
     if not asset_ids:
-        return default_subset(skill, variant)
+        return default_subset(skill, variant, hints=hints)
     pool = variant.entries if variant is not None else entries(skill)
     owned = {e.asset_id for e in pool}
     if any(asset_id not in owned for asset_id in asset_ids):

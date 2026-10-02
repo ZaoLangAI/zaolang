@@ -33,6 +33,11 @@ import {
 } from '@/components/studio/style-and-skill-picker';
 import { Select, TextInput } from '@/components/ui/field';
 import {
+  CHARACTER_EXPRESSIONS,
+  type CharacterExpression,
+  keysOf,
+} from '@/features/image-assets/vocabulary';
+import {
   IconGear,
   IconLandscape,
   IconPortrait,
@@ -263,6 +268,10 @@ export function VideoGenerationStudio({
   // 婚礼 outfit) — unset means the backend's default subset.
   const characterRefPicks = useReferencePicks();
   const sceneRefPicks = useReferencePicks();
+  // Ranks the picked characters' *default* references (P2-7): an expression
+  // sheet showing this emotion goes in first. The shot size comes from the
+  // prompt's 「镜头：」 line on the backend.
+  const [referenceEmotion, setReferenceEmotion] = useState<CharacterExpression | ''>('');
 
   // Inline progress/result + version history state — the same shape
   // `ImageGenerationStudio` uses. `draftId` is created on the first submit
@@ -633,6 +642,8 @@ export function VideoGenerationStudio({
         scene_ref_selection: sceneRefPicks
           .selectionFor(selectedReferenceSceneIds)
           .map(({ ownerId, ...pick }) => ({ scene_id: ownerId, ...pick })),
+        reference_emotion:
+          selectedReferenceCharacterIds.length && referenceEmotion ? referenceEmotion : null,
       },
       sourceWorkId: source?.work.id,
       maxCredits: quote?.credits,
@@ -760,6 +771,22 @@ export function VideoGenerationStudio({
           ) : (
             <p className="text-xs text-muted">{t('referenceCastEmpty')}</p>
           )}
+          {selectedReferenceCharacterIds.length > 0 ? (
+            <Select
+              label={t('referenceEmotionLabel')}
+              value={referenceEmotion}
+              onChange={(event) =>
+                setReferenceEmotion(event.target.value as CharacterExpression | '')
+              }
+              options={[
+                { value: '', label: t('referenceEmotionNone') },
+                ...keysOf(CHARACTER_EXPRESSIONS).map((key) => ({
+                  value: key,
+                  label: t(`presets.${CHARACTER_EXPRESSIONS[key].labelKey}`),
+                })),
+              ]}
+            />
+          ) : null}
 
           <p className="mt-1 text-xs text-muted">{t('referenceScenesLabel')}</p>
           {scenes.length > 0 ? (

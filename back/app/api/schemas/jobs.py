@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic import Field, ValidationError, model_validator
 
 from app.api.schemas.common import ApiModel
+from app.domain.blocking.vocabulary import ShotSize
 from app.domain.image_assets.vocabulary import (
     MAX_CHARACTER_EXPRESSIONS,
     MAX_OUTFIT_LABEL_LEN,
@@ -526,6 +527,12 @@ class GenerationParams(ApiModel):
     # Per-scene pick of which reference images to send; same rules as
     # `character_ref_selection` against `scene_ids`.
     scene_ref_selection: list[SceneRefSelection] | None = Field(default=None, max_length=4)
+    # How the picked cards' *default* references are ranked (P2-7) — never
+    # an explicit `asset_ids` pick. A close shot leads with the identity
+    # portrait (and a matching expression sheet), a wide one with the
+    # turnaround. Unset shot → read from the prompt's 「镜头：」 line.
+    reference_shot_size: ShotSize | None = None
+    reference_emotion: CharacterExpression | None = None
     # `asset_kind=scene` only: one preset per axis for a single scene image.
     scene_lighting: SceneLighting | None = None
     scene_weather: SceneWeather | None = None

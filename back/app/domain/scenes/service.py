@@ -461,7 +461,13 @@ def admin_reference_assets(session: Session, skill: CreationSkill) -> list[dict[
 # ---- Generation wiring -----------------------------------------------------
 
 
-def apply_scene_refs(session: Session, *, user_id: str, params: dict[str, Any]) -> None:
+def apply_scene_refs(
+    session: Session,
+    *,
+    user_id: str,
+    params: dict[str, Any],
+    hints: asset_variants_service.ReferenceHints | None = None,
+) -> None:
     """Merges the selected scenes' reference assets into job params.
 
     Mirrors `characters.service.apply_character_refs`; called right after it
@@ -492,6 +498,7 @@ def apply_scene_refs(session: Session, *, user_id: str, params: dict[str, Any]) 
             asset_ids=list(item.get("asset_ids") or []) if item else None,
             owner=f"场景「{scene.name}」",
             field="params.scene_ref_selection",
+            hints=hints,
         )
         for asset_id in picked:
             if asset_id not in merged_refs and len(merged_refs) < MAX_JOB_REFERENCE_ASSETS:

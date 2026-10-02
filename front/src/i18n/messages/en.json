@@ -3228,7 +3228,9 @@
     "targetSceneVariant": "File under variant",
     "targetSceneVariantHint": "The result joins the chosen variant.",
     "targetSceneVariantAuto": "Automatic (presets or main scene)",
-    "referencePickLookDefault": "With no image ticked, the look's default references are used."
+    "referencePickLookDefault": "With no image ticked, the look's default references are used.",
+    "referenceEmotionLabel": "Reference emotion (optional)",
+    "referenceEmotionNone": "Not set"
   },
   "scenes": {
     "eyebrow": "Scene library",

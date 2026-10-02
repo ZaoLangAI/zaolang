@@ -3228,7 +3228,9 @@
     "targetSceneVariant": "归档到变体",
     "targetSceneVariantHint": "生成结果会加入所选变体。",
     "targetSceneVariantAuto": "自动（按预设或主场景）",
-    "referencePickLookDefault": "未勾选图片时，使用该造型的默认参考图。"
+    "referencePickLookDefault": "未勾选图片时，使用该造型的默认参考图。",
+    "referenceEmotionLabel": "参考情绪（可选）",
+    "referenceEmotionNone": "不指定"
   },
   "scenes": {
     "eyebrow": "场景库",
