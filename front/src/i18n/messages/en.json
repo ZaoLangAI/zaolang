@@ -3220,7 +3220,9 @@
         "1990s": "1990s",
         "contemporary": "Contemporary",
         "near_future": "Near future"
-      }
+      },
+      "portraitLabel": "Identity portrait (front, head and shoulders, neutral)",
+      "portraitHint": "The character's identity anchor — once approved, every look's sheet keeps this face."
     },
     "targetLook": "File under look",
     "targetLookHint": "The result joins the chosen look.",
@@ -3228,7 +3230,8 @@
     "targetSceneVariant": "File under variant",
     "targetSceneVariantHint": "The result joins the chosen variant.",
     "targetSceneVariantAuto": "Automatic (presets or main scene)",
-    "referencePickLookDefault": "With no image ticked, the look's default references are used."
+    "referencePickLookDefault": "With no image ticked, the look's default references are used.",
+    "assetKindPortraitHint": "Generates a front head-and-shoulders identity portrait; once approved it is the character's anchor and every look keeps this face."
   },
   "scenes": {
     "eyebrow": "Scene library",
@@ -3784,6 +3787,8 @@
       "master": "Master plate",
       "shot": "Shots",
       "other": "Other"
-    }
+    },
+    "portraitFirst": "Start with an identity portrait: one front-facing head-and-shoulders shot every look is drawn from.",
+    "generatePortrait": "Generate identity portrait"
   }
 }

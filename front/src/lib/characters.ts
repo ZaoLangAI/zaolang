@@ -51,16 +51,22 @@ export function characterImageStudioHref(input: {
   returnTo?: string;
   /** File the sheet under this look (`target_variant_id`). */
   variantId?: string;
+  /** Open on the identity portrait (定妆照) — identity text, no sheet layout. */
+  portrait?: boolean;
 }): string {
+  const sheetPrompt = characterSheetPrompt({ name: input.name, appearance: input.appearance });
   const params = new URLSearchParams({
     mode: 'image_creation',
     assetKind: 'character',
     targetCharacterId: input.characterId,
-    prompt: characterSheetPrompt({ name: input.name, appearance: input.appearance }),
+    prompt: input.portrait
+      ? sheetPrompt.replace(CHARACTER_SHEET_PROMPT_HINT, '').replace(/。$/, '')
+      : sheetPrompt,
     subjectNameHint: input.name.trim().slice(0, 60),
     returnTo: input.returnTo ?? CHARACTER_LIBRARY_RETURN_TO,
   });
   if (input.variantId) params.set('targetVariantId', input.variantId);
+  if (input.portrait) params.set('characterPortrait', '1');
   return `/create/new?${params.toString()}`;
 }
 

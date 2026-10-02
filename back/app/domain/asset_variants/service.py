@@ -113,6 +113,17 @@ def anchor(skill: CreationSkill) -> SkillAssetEntry | None:
     return next((entry for entry in entries(skill) if entry.is_anchor), None)
 
 
+def identity_portrait(skill: CreationSkill) -> SkillAssetEntry | None:
+    """The card's approved identity portrait (定妆照): the anchor when it is
+    one, else the first approved portrait."""
+    portraits = [
+        entry
+        for entry in approved_entries(skill)
+        if entry.entry_type == AssetEntryType.IDENTITY_PORTRAIT
+    ]
+    return portraits[0] if portraits else None
+
+
 def asset_ids(skill: CreationSkill) -> list[str]:
     return list(dict.fromkeys(entry.asset_id for entry in approved_entries(skill)))
 
@@ -446,8 +457,22 @@ def approve_entry(
     session.flush()
     if moves_anchor:
         set_anchor(session, skill, entry, sync=False)
+    prefer_portrait_anchor(session, skill, entry, sync=False)
     sync_mirror(session, skill)
     return entry
+
+
+def prefer_portrait_anchor(
+    session: Session, skill: CreationSkill, entry: SkillAssetEntry, *, sync: bool = True
+) -> None:
+    """An approved identity portrait (定妆照) is the anchor of choice: it
+    takes over from no anchor or from a sheet (the P1 automatic anchor), but
+    never from another portrait — the owner can still re-anchor by hand."""
+    if entry.entry_type != AssetEntryType.IDENTITY_PORTRAIT or not is_approved(entry):
+        return
+    current = anchor(skill)
+    if current is None or current.entry_type == AssetEntryType.CHARACTER_SHEET:
+        set_anchor(session, skill, entry, sync=sync)
 
 
 def add_entry(
@@ -567,6 +592,20 @@ def set_members(session: Session, skill: CreationSkill, asset_ids_in_order: list
                 entry.sort_order = order
     session.flush()
     sync_mirror(session, skill)
+
+
+def is_identity_portrait(session: Session, asset_id: str) -> bool:
+    """`asset_id` is an approved identity portrait (定妆照) on some card."""
+    found = session.scalar(
+        select(SkillAssetEntry.id)
+        .where(
+            SkillAssetEntry.asset_id == asset_id,
+            SkillAssetEntry.entry_type == AssetEntryType.IDENTITY_PORTRAIT.value,
+            SkillAssetEntry.status == AssetEntryStatus.APPROVED.value,
+        )
+        .limit(1)
+    )
+    return found is not None
 
 
 def skills_referencing_asset(session: Session, asset_id: str) -> list[str]:

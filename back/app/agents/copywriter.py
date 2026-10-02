@@ -953,6 +953,21 @@ def restore_expression_prompt(text: str, *, count: int) -> str:
     return f"{cleaned}。{sentence}" if cleaned else sentence
 
 
+# An identity portrait (定妆照) is one clean head-and-shoulders face, never a
+# sheet — same tug-of-war with the character coach as the expression image.
+IDENTITY_PORTRAIT_SENTENCE = "单人正面头肩定妆照，中性表情，纯色背景，画面无文字。"
+
+
+def restore_identity_portrait_prompt(text: str) -> str:
+    """Strips character-sheet layout clauses and keeps one portrait sentence;
+    the full portrait layout itself comes from the builder."""
+    cleaned = _EXPRESSION_SHEET_MARKER_SENTENCE.sub("", text.strip())
+    cleaned = re.sub(r"[。；;.]{2,}", "。", cleaned).strip(" \t\n。；;.")
+    if "定妆照" in cleaned:
+        return f"{cleaned}。" if cleaned else IDENTITY_PORTRAIT_SENTENCE
+    return f"{cleaned}。{IDENTITY_PORTRAIT_SENTENCE}" if cleaned else IDENTITY_PORTRAIT_SENTENCE
+
+
 def _asset_preset_labels(asset_presets: dict[str, Any] | None) -> dict[str, str]:
     """`{"表情": "冷笑/隐忍", "光照": "黄昏", …}` for the coach's user message."""
     if not asset_presets:
@@ -960,6 +975,8 @@ def _asset_preset_labels(asset_presets: dict[str, Any] | None) -> dict[str, str]
     from app.domain.image_assets import vocabulary as vocab
 
     labels: dict[str, str] = {}
+    if asset_presets.get("character_portrait"):
+        labels["输出"] = "定妆照（正面头肩照，中性表情）"
     expressions = asset_presets.get("character_expressions")
     if isinstance(expressions, list):
         names = [
@@ -1134,7 +1151,16 @@ def _sanitize_enhance_outcome(
 ) -> AgentOutcome:
     enhanced = str(outcome.data.get("prompt") or "").strip() or prompt
     expressions = (asset_presets or {}).get("character_expressions")
-    if asset_kind == "character" and expressions:
+    portrait = bool((asset_presets or {}).get("character_portrait"))
+    if asset_kind == "character" and portrait:
+        restored = restore_identity_portrait_prompt(enhanced)
+        if restored != enhanced:
+            note = "已去掉设定图版式，保持单张定妆照。"
+            existing = str(outcome.data.get("feedback") or "").rstrip()
+            if note not in existing:
+                outcome.data["feedback"] = f"{existing} {note}".strip()
+            enhanced = restored
+    elif asset_kind == "character" and expressions:
         restored = restore_expression_prompt(enhanced, count=len(expressions))
         if restored != enhanced:
             note = "已去掉设定图版式，保持表情合集图。"

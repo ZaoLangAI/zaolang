@@ -66,6 +66,7 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
   onClose,
   onCardChange,
   generateHref,
+  portraitHref,
 }: {
   kind: CardKind;
   card: TCard;
@@ -76,6 +77,8 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
   onCardChange: (card: TCard) => void;
   /** Image-studio deep link that files its output under `variant`. */
   generateHref: (variant: AssetVariant) => string;
+  /** Characters: image-studio deep link for the identity portrait (定妆照). */
+  portraitHref?: string;
 }) {
   const t = useTranslations('assetVariants');
   const { notify } = useToast();
@@ -89,6 +92,12 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
   const [creating, setCreating] = useState(false);
 
   const active = variants.find((v) => v.id === activeId) ?? variants[0];
+  // The card's face every look is drawn from (P2-2); offered until one is approved.
+  const hasPortrait = variants.some((variant) =>
+    (variant.entries ?? []).some(
+      (entry) => entry.entry_type === 'identity_portrait' && entry.status !== 'candidate',
+    ),
+  );
   const entryTypes = kind === 'character' ? CHARACTER_ENTRY_TYPES : SCENE_ENTRY_TYPES;
 
   const run = async (work: () => Promise<unknown>) => {
@@ -147,6 +156,19 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
       error={error}
     >
       <div className="flex flex-col gap-4">
+        {kind === 'character' && portraitHref && !hasPortrait ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-dashed border-border p-3">
+            <p className="text-xs text-muted">{t('portraitFirst')}</p>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<IconSparkle className="size-3.5" />}
+              onClick={() => router.push(portraitHref)}
+            >
+              {t('generatePortrait')}
+            </Button>
+          </div>
+        ) : null}
         <div role="tablist" className="flex flex-wrap gap-1.5">
           {variants.map((variant) => (
             <button

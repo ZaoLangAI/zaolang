@@ -58,7 +58,9 @@ export interface PromptEnhanceScriptSegment {
   blocks: PromptEnhanceScriptBlock[];
 }
 
-export type PromptEnhancePayload = S['PromptEnhanceRequest'] & {
+export type PromptEnhancePayload = Omit<S['PromptEnhanceRequest'], 'character_portrait'> & {
+  /** Defaulted (`false`) on the backend; only the image studio sends it. */
+  character_portrait?: boolean;
   script_segment?: PromptEnhanceScriptSegment;
   /** Answers to the previous round's `questions`, keyed by question id. */
   question_answers?: Record<string, string | string[]>;

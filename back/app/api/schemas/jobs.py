@@ -515,6 +515,12 @@ class GenerationParams(ApiModel):
     character_outfit_label: str | None = Field(
         default=None, min_length=1, max_length=MAX_OUTFIT_LABEL_LEN
     )
+    # `asset_kind=character` only: produce the card's identity portrait
+    # (定妆照: one front-facing head-and-shoulders shot, neutral expression,
+    # plain background) instead of a sheet. Filed as `identity_portrait` in
+    # the default look; once approved it is the anchor every look's sheet
+    # and every video job leads with. Exclusive with expressions/outfit.
+    character_portrait: bool = False
     # `asset_kind=character|scene`: the look / scene variant of the target
     # card this job's output is filed under (`asset_output_link`). Unset →
     # the outfit label / the scene presets' variant / the default.
@@ -550,6 +556,13 @@ class GenerationParams(ApiModel):
             raise ValueError("表情与造型名称仅适用于 asset_kind=character。")
         if self.character_expressions and self.character_outfit_label:
             raise ValueError("表情合集图不能同时指定造型名称。")
+        if self.character_portrait:
+            if not is_character:
+                raise ValueError("定妆照仅适用于 asset_kind=character。")
+            if self.character_expressions or self.character_outfit_label:
+                raise ValueError("定妆照不能同时指定表情或造型名称。")
+            if self.character_views not in (None, [CharacterViewAngle.FRONT]):
+                raise ValueError("定妆照不能与侧面/背面视角同时生成。")
         if self.target_variant_id and not (is_character or is_scene):
             raise ValueError("target_variant_id 仅适用于 asset_kind=character/scene。")
         if self.target_variant_id and self.character_outfit_label:

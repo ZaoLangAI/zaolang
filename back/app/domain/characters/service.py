@@ -415,6 +415,7 @@ def append_reference_asset(
     variant_id: str | None = None,
     expressions: list[str] | None = None,
     generated: bool = False,
+    portrait: bool = False,
 ) -> CharacterView:
     """Files one image under a look — the P0 `(view, label)` call shape,
     translated: a non-expression `label` names the look (created on first
@@ -425,6 +426,10 @@ def append_reference_asset(
     anchor when it has none. `variant_id` (a look of this card) wins over the
     label; a stale one falls back to the label/default. `expressions` names
     an expression sheet's faces.
+
+    `portrait` files an identity portrait (定妆照) — one face for the
+    whole card, so always in the default look; once approved it takes the
+    anchor from a sheet (`asset_variants.service.prefer_portrait_anchor`).
 
     `generated` (a job's write-back) never replaces: an image for a slot
     that already holds an approved one (the look's front sheet, a view, the
@@ -445,6 +450,9 @@ def append_reference_asset(
     )
     if expressions:
         entry_type, entry_view = AssetEntryType.EXPRESSION_SHEET.value, None
+    if portrait:
+        entry_type, entry_view = AssetEntryType.IDENTITY_PORTRAIT.value, None
+        variant = asset_variants_service.ensure_default(session, skill)
     if not generated and entry_type in (AssetEntryType.CHARACTER_SHEET, AssetEntryType.VIEW):
         for stale in [
             e
@@ -465,9 +473,11 @@ def append_reference_asset(
         expressions=expressions,
         source_job_id=source_job_id,
     )
+    if portrait:
+        asset_variants_service.prefer_portrait_anchor(session, skill, entry)
     # The anchor is the default look's sheet: another outfit's sheet must
     # never become the identity every job leads with.
-    if (
+    elif (
         asset_variants_service.anchor(skill) is None
         and asset_variants_service.is_approved(entry)
         and entry_type == AssetEntryType.CHARACTER_SHEET

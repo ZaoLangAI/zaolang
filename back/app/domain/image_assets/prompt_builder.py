@@ -37,6 +37,7 @@ class AssetPass(StrEnum):
     """What one `asset_planning` pass is producing."""
 
     CHARACTER_SHEET = "character_sheet"
+    IDENTITY_PORTRAIT = "identity_portrait"
     CHARACTER_COMPLETION = "character_completion"
     CHARACTER_EXPRESSIONS = "character_expressions"
     SCENE = "scene"
@@ -82,6 +83,23 @@ CHARACTER_PHOTOREAL_NEGATIVE = "动漫、二次元、卡通、anime、illustrati
 CHARACTER_ANIME_NEGATIVE = "真人照片、摄影棚写实"
 _PHOTOREAL_MEDIUM_MARKERS = ("真人", "写实", "影视", "photoreal")
 _ANIME_MEDIUM_MARKERS = ("动漫", "二次元", "anime", "插画")
+
+# The identity portrait (定妆照): the clean, single-face reference the anchor
+# should be — the shape face-reference methods (Midjourney --cref/--oref,
+# InstantID/PuLID) work best from. Head-and-shoulders, chosen 2026-10-02.
+IDENTITY_PORTRAIT_LAYOUT = (
+    "输出一张角色定妆照（单张画面，不要拆成多张）：单人、正面、头肩构图（取景到锁骨下方），"
+    "双眼直视镜头、中性表情、嘴唇自然闭合；浅灰纯色背景，柔和均匀的正面光，面部无明显阴影；"
+    "头发、饰品与手不遮挡五官与额头轮廓。"
+)
+IDENTITY_PORTRAIT_NEGATIVE = (
+    "多人、多分格、拼接、三视图、设定图、色板、全身像、侧脸、背影、夸张表情、"
+    "墨镜、口罩、遮挡面部、强烈阴影、复杂背景、文字、水印"
+)
+# A sheet / expression pass whose reference 1 is that portrait.
+IDENTITY_LOCK_PREFIX = (
+    "以参考图1（定妆照）中人物的面部为准，严格保持五官、发型发色、肤色与脸型完全一致；"
+)
 
 # A 换装 sheet with the character's existing sheet attached as reference 1.
 OUTFIT_CHANGE_PREFIX = (
@@ -163,6 +181,8 @@ def resolve_pass(
             return AssetPass.CHARACTER_COMPLETION
         if _expressions(params):
             return AssetPass.CHARACTER_EXPRESSIONS
+        if params.get("character_portrait"):
+            return AssetPass.IDENTITY_PORTRAIT
         return AssetPass.CHARACTER_SHEET
     if asset_kind == ImageAssetKind.SCENE.value:
         # A scene variant set runs one SCENE pass per variant, with that
@@ -180,15 +200,28 @@ def compose(
     params: dict[str, Any],
     character_view: str | None = None,
     has_reference: bool = False,
+    identity_reference: bool = False,
 ) -> tuple[str, str | None]:
-    """The pass's prompt and negative prompt before the planner adds to them."""
+    """The pass's prompt and negative prompt before the planner adds to them.
+
+    `identity_reference`: reference 1 is the card's approved identity
+    portrait, so a sheet pass locks the face to it (`IDENTITY_LOCK_PREFIX`).
+    """
     if asset_pass is AssetPass.CHARACTER_COMPLETION and character_view:
         return (
             CHARACTER_COMPLETION_FIXED_PROMPTS[character_view],
             merge_negative(negative, CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT),
         )
+    if asset_pass is AssetPass.IDENTITY_PORTRAIT:
+        return _compose_identity_portrait(prompt, negative, has_reference=has_reference)
     if asset_pass is AssetPass.CHARACTER_SHEET:
-        return _compose_character_sheet(prompt, negative, params, has_reference=has_reference)
+        return _compose_character_sheet(
+            prompt,
+            negative,
+            params,
+            has_reference=has_reference,
+            identity_reference=identity_reference,
+        )
     if asset_pass is AssetPass.CHARACTER_EXPRESSIONS:
         return _compose_expressions(prompt, negative, _expressions(params))
     if asset_pass is AssetPass.SCENE:
@@ -198,14 +231,35 @@ def compose(
     return prompt, negative
 
 
+def _compose_identity_portrait(
+    prompt: str, negative: str | None, *, has_reference: bool
+) -> tuple[str, str]:
+    """Keeps the caller's identity text, drops any sheet-layout sentence a
+    library jump-out seeded, and asks for one clean head-and-shoulders face."""
+    prompt = _strip_sheet_layout(prompt)
+    if has_reference:
+        prompt = EXPRESSION_IDENTITY_PREFIX + prompt
+    prompt = _join(prompt, IDENTITY_PORTRAIT_LAYOUT)
+    prompt, negative_out = apply_visual_medium(prompt, negative)
+    return prompt, merge_negative(negative_out, IDENTITY_PORTRAIT_NEGATIVE)
+
+
 def _compose_character_sheet(
-    prompt: str, negative: str | None, params: dict[str, Any], *, has_reference: bool
+    prompt: str,
+    negative: str | None,
+    params: dict[str, Any],
+    *,
+    has_reference: bool,
+    identity_reference: bool = False,
 ) -> tuple[str, str]:
     outfit = str(params.get("character_outfit_label") or "").strip()
     if outfit and has_reference:
+        # 换装 already locks the face to reference 1 — one sentence, not two.
         prompt = OUTFIT_CHANGE_PREFIX.format(label=outfit) + prompt
     elif outfit:
         prompt = _join(prompt, OUTFIT_LABEL_SENTENCE.format(label=outfit))
+    if identity_reference and not (outfit and has_reference):
+        prompt = IDENTITY_LOCK_PREFIX + prompt
     if CHARACTER_SHEET_LAYOUT_SUFFIX not in prompt:
         prompt = _join(prompt, CHARACTER_SHEET_LAYOUT_SUFFIX)
     return apply_visual_medium(prompt, negative)
@@ -309,9 +363,8 @@ def sanitize_enhancements(
         text = str(item or "").strip()
         if not text:
             continue
-        if asset_pass in (AssetPass.CHARACTER_EXPRESSIONS, AssetPass.SCENE) and any(
-            marker in text for marker in _SHEET_MARKERS
-        ):
+        sheetless = (AssetPass.CHARACTER_EXPRESSIONS, AssetPass.IDENTITY_PORTRAIT, AssetPass.SCENE)
+        if asset_pass in sheetless and any(marker in text for marker in _SHEET_MARKERS):
             continue
         if foreign_periods and any(marker in text for marker in foreign_periods):
             continue

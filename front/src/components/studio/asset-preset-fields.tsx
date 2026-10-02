@@ -80,18 +80,23 @@ function ChipGroup<T extends string>({
 }
 
 /**
- * Character-image extras: a composite expression image (pick 1–9
- * expressions → one grid) or a named outfit for a new sheet. The two are
- * mutually exclusive (`GenerationParams`), so picking expressions clears
- * and disables the outfit name.
+ * Character-image extras: the identity portrait (定妆照 — one clean
+ * head-and-shoulders face that becomes the card's anchor), a composite
+ * expression image (pick 1–9 expressions → one grid) or a named outfit for
+ * a new sheet. All three are mutually exclusive (`GenerationParams`):
+ * turning one on clears and disables the others.
  */
 export function CharacterPresetFields({
+  portrait,
+  onPortraitChange,
   expressions,
   onExpressionsChange,
   outfitLabel,
   onOutfitLabelChange,
   outfitDisabled = false,
 }: {
+  portrait: boolean;
+  onPortraitChange: (next: boolean) => void;
   expressions: CharacterExpression[];
   onExpressionsChange: (next: CharacterExpression[]) => void;
   outfitLabel: string;
@@ -101,6 +106,7 @@ export function CharacterPresetFields({
 }) {
   const t = useTranslations('remixPage');
   const outfitId = useId();
+  const portraitId = useId();
   const toggle = (value: CharacterExpression) => {
     const next = expressions.includes(value)
       ? expressions.filter((item) => item !== value)
@@ -110,35 +116,55 @@ export function CharacterPresetFields({
   };
   return (
     <div className="flex flex-col gap-2 border-t border-border pt-3">
-      <ChipGroup
-        label={t('presets.expressionsLabel')}
-        options={keysOf(CHARACTER_EXPRESSIONS).map((key) => ({
-          value: key,
-          label: t(`presets.${CHARACTER_EXPRESSIONS[key].labelKey}`),
-        }))}
-        selected={expressions}
-        onToggle={toggle}
-        max={MAX_CHARACTER_EXPRESSIONS}
-      />
-      <p className="text-[11px] text-muted">
-        {expressions.length > 0
-          ? t('presets.expressionsActiveHint', { count: expressions.length })
-          : t('presets.expressionsHint')}
-      </p>
-      <label htmlFor={outfitId} className="text-xs text-muted">
-        {t('presets.outfitLabel')}
+      <label htmlFor={portraitId} className="flex items-center gap-2 text-sm text-text">
+        <input
+          id={portraitId}
+          type="checkbox"
+          checked={portrait}
+          onChange={(event) => {
+            onPortraitChange(event.target.checked);
+            if (event.target.checked) {
+              onExpressionsChange([]);
+              onOutfitLabelChange('');
+            }
+          }}
+        />
+        {t('presets.portraitLabel')}
       </label>
-      <input
-        id={outfitId}
-        type="text"
-        value={outfitLabel}
-        maxLength={MAX_OUTFIT_LABEL_LENGTH}
-        disabled={expressions.length > 0 || outfitDisabled}
-        onChange={(event) => onOutfitLabelChange(event.target.value)}
-        placeholder={t('presets.outfitPlaceholder')}
-        className="h-9 rounded-[var(--radius-sm)] border border-border bg-transparent px-3 text-sm text-text placeholder:text-muted disabled:opacity-50"
-      />
-      <p className="text-[11px] text-muted">{t('presets.outfitHint')}</p>
+      <p className="text-[11px] text-muted">{t('presets.portraitHint')}</p>
+      {portrait ? null : (
+        <>
+          <ChipGroup
+            label={t('presets.expressionsLabel')}
+            options={keysOf(CHARACTER_EXPRESSIONS).map((key) => ({
+              value: key,
+              label: t(`presets.${CHARACTER_EXPRESSIONS[key].labelKey}`),
+            }))}
+            selected={expressions}
+            onToggle={toggle}
+            max={MAX_CHARACTER_EXPRESSIONS}
+          />
+          <p className="text-[11px] text-muted">
+            {expressions.length > 0
+              ? t('presets.expressionsActiveHint', { count: expressions.length })
+              : t('presets.expressionsHint')}
+          </p>
+          <label htmlFor={outfitId} className="text-xs text-muted">
+            {t('presets.outfitLabel')}
+          </label>
+          <input
+            id={outfitId}
+            type="text"
+            value={outfitLabel}
+            maxLength={MAX_OUTFIT_LABEL_LENGTH}
+            disabled={expressions.length > 0 || outfitDisabled}
+            onChange={(event) => onOutfitLabelChange(event.target.value)}
+            placeholder={t('presets.outfitPlaceholder')}
+            className="h-9 rounded-[var(--radius-sm)] border border-border bg-transparent px-3 text-sm text-text placeholder:text-muted disabled:opacity-50"
+          />
+          <p className="text-[11px] text-muted">{t('presets.outfitHint')}</p>
+        </>
+      )}
     </div>
   );
 }

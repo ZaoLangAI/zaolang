@@ -130,6 +130,9 @@ class PromptEnhanceRequest(ApiModel):
     character_expressions: list[CharacterExpression] | None = Field(
         default=None, max_length=MAX_CHARACTER_EXPRESSIONS
     )
+    # `GenerationParams.character_portrait`: polish toward one head-and-
+    # shoulders identity portrait instead of a sheet.
+    character_portrait: bool = False
     scene_lighting: SceneLighting | None = None
     scene_weather: SceneWeather | None = None
     scene_state: SceneState | None = None

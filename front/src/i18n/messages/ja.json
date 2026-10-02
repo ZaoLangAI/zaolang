@@ -3220,7 +3220,9 @@
         "1990s": "1990年代",
         "contemporary": "現代",
         "near_future": "近未来"
-      }
+      },
+      "portraitLabel": "メイク写真（正面・胸から上・無表情）",
+      "portraitHint": "キャラクターの基準となる顔です。確定後、すべての衣装の設定画がこの顔に合わせられます。"
     },
     "targetLook": "保存先の衣装",
     "targetLookHint": "生成結果は選んだ衣装に追加されます。",
@@ -3228,7 +3230,8 @@
     "targetSceneVariant": "保存先のバリエーション",
     "targetSceneVariantHint": "生成結果は選んだバリエーションに追加されます。",
     "targetSceneVariantAuto": "自動（プリセットまたはメインシーン）",
-    "referencePickLookDefault": "画像を選ばない場合は、その衣装の既定の参考画像を使います。"
+    "referencePickLookDefault": "画像を選ばない場合は、その衣装の既定の参考画像を使います。",
+    "assetKindPortraitHint": "正面・胸から上のメイク写真を生成します。確定後はキャラクターの基準となり、すべての衣装がこの顔に合わせられます。"
   },
   "scenes": {
     "eyebrow": "シーンライブラリ",
@@ -3784,6 +3787,8 @@
       "master": "メイン画像",
       "shot": "カット",
       "other": "その他"
-    }
+    },
+    "portraitFirst": "まずメイク写真を：正面の胸から上の写真で、すべての衣装はこの顔を基準にします。",
+    "generatePortrait": "メイク写真を生成"
   }
 }

@@ -49,6 +49,8 @@ export function studioSessionKey(input: {
   scenePresets?: string;
   /** The look / scene variant a library jump-out files into. */
   targetVariantId?: string;
+  /** The library's "生成定妆照" jump-out — a different job from the sheet. */
+  characterPortrait?: string;
 }): string {
   if (input.draftId) {
     return input.jobId ? `draft:${input.draftId}|job:${input.jobId}` : `draft:${input.draftId}`;
@@ -66,6 +68,7 @@ export function studioSessionKey(input: {
     input.skillId,
     input.scenePresets,
     input.targetVariantId,
+    input.characterPortrait ? 'portrait' : undefined,
   ]
     .filter((part) => Boolean(part))
     .join('|');

@@ -32,6 +32,8 @@ def _asset_presets(payload: PromptEnhanceRequest) -> dict | None:
     presets: dict[str, object] = {}
     if payload.character_expressions:
         presets["character_expressions"] = list(payload.character_expressions)
+    if payload.character_portrait:
+        presets["character_portrait"] = True
     for field in ("scene_lighting", "scene_weather", "scene_state", "scene_period"):
         value = getattr(payload, field)
         if value:

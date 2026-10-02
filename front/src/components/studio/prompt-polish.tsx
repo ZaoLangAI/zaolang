@@ -46,7 +46,12 @@ export interface PromptPolishContext {
    * them instead of re-deciding light, damage, era or expressions. */
   assetPresets?: Pick<
     PromptEnhancePayload,
-    'character_expressions' | 'scene_lighting' | 'scene_weather' | 'scene_state' | 'scene_period'
+    | 'character_expressions'
+    | 'character_portrait'
+    | 'scene_lighting'
+    | 'scene_weather'
+    | 'scene_state'
+    | 'scene_period'
   >;
 }
 

@@ -215,3 +215,15 @@ describe('draftReturnParams', () => {
     expect(draftReturnParams({})).toBeUndefined();
   });
 });
+
+describe('studioSessionKey and the identity portrait', () => {
+  it("keeps a portrait jump-out apart from the same card's sheet jump-out", () => {
+    const sheet = studioSessionKey({ mode: 'image_creation', targetCharacterId: 'skl_char' });
+    const portrait = studioSessionKey({
+      mode: 'image_creation',
+      targetCharacterId: 'skl_char',
+      characterPortrait: '1',
+    });
+    expect(portrait).not.toBe(sheet);
+  });
+});
