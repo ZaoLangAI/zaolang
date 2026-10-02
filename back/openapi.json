@@ -6384,6 +6384,99 @@
         }
       }
     },
+    "/v1/characters/{card_id}/looks/{look_id}:fill": {
+      "post": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Fill Character Look",
+        "operationId": "fill_character_look",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "look_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Look Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LookFillRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LookFillResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/scenes/{card_id}/variants:matrix": {
       "post": {
         "tags": [
@@ -34424,6 +34517,211 @@
           "password"
         ],
         "title": "LoginRequest"
+      },
+      "LookFillLineView": {
+        "properties": {
+          "wave": {
+            "type": "integer",
+            "title": "Wave"
+          },
+          "slots": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "portrait",
+                "front",
+                "side",
+                "back",
+                "expressions"
+              ]
+            },
+            "type": "array",
+            "title": "Slots"
+          },
+          "output_count": {
+            "type": "integer",
+            "title": "Output Count"
+          },
+          "credits": {
+            "type": "integer",
+            "title": "Credits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "wave",
+          "slots",
+          "output_count",
+          "credits"
+        ],
+        "title": "LookFillLineView"
+      },
+      "LookFillRequest": {
+        "properties": {
+          "slots": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "portrait",
+                    "front",
+                    "side",
+                    "back",
+                    "expressions"
+                  ]
+                },
+                "type": "array",
+                "maxItems": 5
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slots"
+          },
+          "expressions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "neutral",
+                    "smile",
+                    "laugh",
+                    "smirk",
+                    "restrained",
+                    "breakdown",
+                    "anger",
+                    "shock",
+                    "fear",
+                    "sad",
+                    "shy",
+                    "cold_gaze"
+                  ]
+                },
+                "type": "array",
+                "maxItems": 9,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expressions"
+          },
+          "quality_tier": {
+            "$ref": "#/components/schemas/QualityTier",
+            "default": "standard"
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "maxLength": 16,
+            "title": "Aspect Ratio",
+            "default": "16:9"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "LookFillRequest"
+      },
+      "LookFillResponse": {
+        "properties": {
+          "gaps": {
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "present",
+                "candidate",
+                "missing"
+              ]
+            },
+            "propertyNames": {
+              "enum": [
+                "portrait",
+                "front",
+                "side",
+                "back",
+                "expressions"
+              ]
+            },
+            "type": "object",
+            "title": "Gaps"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/LookFillLineView"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "total_credits": {
+            "type": "integer",
+            "title": "Total Credits"
+          },
+          "available_credits": {
+            "type": "integer",
+            "title": "Available Credits"
+          },
+          "period_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Remaining"
+          },
+          "within_spend_limit": {
+            "type": "boolean",
+            "title": "Within Spend Limit"
+          },
+          "sufficient": {
+            "type": "boolean",
+            "title": "Sufficient"
+          },
+          "submitted_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted Job Id"
+          },
+          "submitted_slots": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "portrait",
+                "front",
+                "side",
+                "back",
+                "expressions"
+              ]
+            },
+            "type": "array",
+            "title": "Submitted Slots"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gaps",
+          "lines",
+          "total_credits",
+          "available_credits",
+          "within_spend_limit",
+          "sufficient"
+        ],
+        "title": "LookFillResponse"
       },
       "McpTokenCreateRequest": {
         "properties": {

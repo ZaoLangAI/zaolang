@@ -3816,6 +3816,33 @@
     "matrixPlanning": "{count} 通りの組み合わせ — 見積もり中…",
     "lookDescriptionPlaceholder": "例：白いサテンのウェディングドレス、床まで届くベール、パールのイヤリング",
     "uploadOutfit": "衣装の参考をアップロード",
-    "uploadOutfitHint": "衣装のみの参考として使い、顔には使いません。"
+    "uploadOutfitHint": "衣装のみの参考として使い、顔には使いません。",
+    "fillOpen": "不足分を補完",
+    "fillTitle": "「{name}」を補完",
+    "fillHint": "完全な衣装はメイク写真・正面の設定画・側面・背面・基本表情のグリッド 1 枚で構成されます。不足分を段階的に生成し、各段階が終わると次が自動で始まります。",
+    "fillSlot": {
+      "portrait": "メイク写真",
+      "front": "正面の設定画",
+      "side": "側面",
+      "back": "背面",
+      "expressions": "基本表情（グリッド 1 枚）"
+    },
+    "fillStatus": {
+      "present": "あり",
+      "candidate": "候補あり（先に確定か削除）",
+      "missing": "不足"
+    },
+    "fillExpressions": "グリッドの表情",
+    "fillQuote": "全 {steps} 段階、合計 {credits} クレジット",
+    "fillInsufficient": "{credits} クレジットが必要です。利用可能：{available}。",
+    "fillNothing": "この衣装は揃っています。",
+    "fillSubmit": "補完を開始（{credits} クレジット）",
+    "fillRunning": "生成中：{slots}",
+    "fillWaveWaiting": "完了すると次の段階が自動で始まります",
+    "fillWaveFailed": "この段階は完了しませんでした",
+    "fillRetry": "再試行",
+    "fillDone": "補完しました。新しい画像はこの衣装に保存されています。",
+    "fillStuck": "「{slots}」の結果がカードに保存されなかったため、自動継続を停止しました。確認して再試行してください。",
+    "fillOpenJob": "タスクの詳細を見る"
   }
 }

@@ -481,6 +481,86 @@ def test_labelled_references_reach_the_provider_with_a_legend(db: Session, funde
     assert prompt.endswith(event.payload_json["base_prompt"])
 
 
+def test_side_and_back_passes_draw_from_the_jobs_own_front_sheet(
+    db: Session, funded: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """补齐缺失's views job: pass 1 makes the front sheet; the side and back
+    passes send that new image first ("参考本图生成侧面图"), ahead of the
+    card's portrait (P2-4)."""
+    from app.domain.asset_variants import service as av
+    from app.domain.characters import service as characters_service
+    from app.domain.workflow_templates import service as workflow_templates_service
+
+    workflow_templates_service.ensure_default_templates(db)
+    character = characters_service.create_character(
+        db,
+        user_id=funded.id,
+        name="林夏",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    portrait_asset = Asset(
+        owner_user_id=funded.id,
+        object_key=f"test/{funded.id}/{new_id('obj')}.png",
+        media_type=MediaType.IMAGE,
+        mime_type="image/png",
+        size_bytes=1024,
+        checksum_sha256="d" * 64,
+        role=AssetRole.GENERATION_OUTPUT,
+    )
+    db.add(portrait_asset)
+    db.flush()
+    av.add_entry(
+        db,
+        character.skill,
+        av.find_default(character.skill),
+        asset_id=portrait_asset.id,
+        entry_type="identity_portrait",
+    )
+    job = jobs_service.submit(
+        db,
+        user_id=funded.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={
+            "prompt": "林夏",
+            "aspect_ratio": "16:9",
+            "asset_kind": "character",
+            "target_character_id": character.id,
+            "character_views": ["front", "side", "back"],
+        },
+        idempotency_key=new_id("idk"),
+    ).job
+    assert job.request_json["reference_asset_ids"] == [portrait_asset.id]
+
+    from app.domain.media import service as media_service
+    from app.workflows import nodes
+
+    sent: list[list[str]] = []
+    original = media_service.provider_references_for
+
+    def recording(session, **kwargs):
+        sent.append(list(kwargs.get("asset_ids") or []))
+        return original(session, **kwargs)
+
+    monkeypatch.setattr(media_service, "provider_references_for", recording)
+
+    outcome = pipeline.run_generation_pipeline(db, job.id)
+
+    assert outcome.status == JobStatus.SUCCEEDED
+    db.refresh(job)
+    front_output = (job.output_asset_ids_json or [])[0]
+    assert sent == [
+        [portrait_asset.id],
+        [front_output, portrait_asset.id],
+        [front_output, portrait_asset.id],
+    ]
+    # Pass 1 keeps the submitted labels; the chained image has its own name.
+    assert job.request_json["reference_labels"][0]["asset_id"] == portrait_asset.id
+    assert nodes.CHAINED_FRONT_LABEL == "本任务刚生成的正面设定图"
+
+
 def test_a_scene_variant_set_generates_one_labelled_image_per_variant(
     db: Session, funded: User
 ) -> None:

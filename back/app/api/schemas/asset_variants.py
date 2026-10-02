@@ -140,3 +140,44 @@ class SceneMatrixResponse(ApiModel):
     within_spend_limit: bool
     sufficient: bool
     submitted: int = 0
+
+
+# ---- 补齐缺失 (P2-4) -----------------------------------------------------------
+
+FillSlot = Literal["portrait", "front", "side", "back", "expressions"]
+
+
+class LookFillRequest(ApiModel):
+    # Restrict to these slots; default every missing one.
+    slots: list[FillSlot] | None = Field(default=None, max_length=5)
+    # The expression image's faces (default: six everyday expressions).
+    expressions: list[CharacterExpression] | None = Field(
+        default=None, min_length=1, max_length=MAX_CHARACTER_EXPRESSIONS
+    )
+    quality_tier: QualityTier = QualityTier.STANDARD
+    aspect_ratio: str = Field(default="16:9", max_length=16)
+    # `true` (the default) only plans and prices; `false` submits the next
+    # wave (one job).
+    dry_run: bool = True
+
+
+class LookFillLineView(ApiModel):
+    wave: int
+    slots: list[FillSlot]
+    output_count: int
+    credits: int
+
+
+class LookFillResponse(ApiModel):
+    # Each slot: `present` (approved), `candidate` (only candidates — approve
+    # or delete them; never regenerated) or `missing`.
+    gaps: dict[FillSlot, Literal["present", "candidate", "missing"]]
+    lines: list[LookFillLineView]
+    total_credits: int
+    available_credits: int
+    period_remaining: int | None = None
+    within_spend_limit: bool
+    sufficient: bool
+    # Set on a submit: the job for the next wave and the slots it fills.
+    submitted_job_id: str | None = None
+    submitted_slots: list[FillSlot] = Field(default_factory=list)

@@ -1490,6 +1490,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/characters/{card_id}/looks/{look_id}:fill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fill Character Look */
+        post: operations["fill_character_look"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/scenes/{card_id}/variants:matrix": {
         parameters: {
             query?: never;
@@ -10278,6 +10295,59 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** LookFillLineView */
+        LookFillLineView: {
+            /** Wave */
+            wave: number;
+            /** Slots */
+            slots: ("portrait" | "front" | "side" | "back" | "expressions")[];
+            /** Output Count */
+            output_count: number;
+            /** Credits */
+            credits: number;
+        };
+        /** LookFillRequest */
+        LookFillRequest: {
+            /** Slots */
+            slots?: ("portrait" | "front" | "side" | "back" | "expressions")[] | null;
+            /** Expressions */
+            expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
+            /** @default standard */
+            quality_tier: components["schemas"]["QualityTier"];
+            /**
+             * Aspect Ratio
+             * @default 16:9
+             */
+            aspect_ratio: string;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+        };
+        /** LookFillResponse */
+        LookFillResponse: {
+            /** Gaps */
+            gaps: {
+                [key: string]: "present" | "candidate" | "missing";
+            };
+            /** Lines */
+            lines: components["schemas"]["LookFillLineView"][];
+            /** Total Credits */
+            total_credits: number;
+            /** Available Credits */
+            available_credits: number;
+            /** Period Remaining */
+            period_remaining?: number | null;
+            /** Within Spend Limit */
+            within_spend_limit: boolean;
+            /** Sufficient */
+            sufficient: boolean;
+            /** Submitted Job Id */
+            submitted_job_id?: string | null;
+            /** Submitted Slots */
+            submitted_slots?: ("portrait" | "front" | "side" | "back" | "expressions")[];
+        };
         /** McpTokenCreateRequest */
         McpTokenCreateRequest: {
             /** Series Id */
@@ -17249,6 +17319,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fill_character_look: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                card_id: string;
+                look_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LookFillRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LookFillResponse"];
                 };
             };
             /** @description Validation Error */

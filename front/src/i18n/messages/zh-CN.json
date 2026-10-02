@@ -3816,6 +3816,33 @@
     "matrixPlanning": "共 {count} 个组合，正在计算报价…",
     "lookDescriptionPlaceholder": "如：白色缎面婚纱，及地头纱，珍珠耳环",
     "uploadOutfit": "上传服装参考",
-    "uploadOutfitHint": "只作为服装参考：生成时只取衣服，不取脸。"
+    "uploadOutfitHint": "只作为服装参考：生成时只取衣服，不取脸。",
+    "fillOpen": "补齐缺失",
+    "fillTitle": "补齐「{name}」",
+    "fillHint": "一套完整造型包括定妆照、正面设定图、侧面、背面和一张基础表情宫格。缺的部分会分几步依次生成，每步完成后自动开始下一步。",
+    "fillSlot": {
+      "portrait": "定妆照",
+      "front": "正面设定图",
+      "side": "侧面",
+      "back": "背面",
+      "expressions": "基础表情（一张宫格图）"
+    },
+    "fillStatus": {
+      "present": "已有",
+      "candidate": "有候选，先定稿或删除",
+      "missing": "缺失"
+    },
+    "fillExpressions": "宫格里的表情",
+    "fillQuote": "共 {steps} 步，合计 {credits} 积分",
+    "fillInsufficient": "需要 {credits} 积分，当前可用 {available}。",
+    "fillNothing": "这个造型已经齐全。",
+    "fillSubmit": "开始补齐（{credits} 积分）",
+    "fillRunning": "正在生成：{slots}",
+    "fillWaveWaiting": "完成后自动开始下一步",
+    "fillWaveFailed": "这一步没有完成",
+    "fillRetry": "重试",
+    "fillDone": "已补齐，新图片已存入这个造型。",
+    "fillStuck": "「{slots}」的结果没有存入角色卡，已停止自动续跑。请检查后重试。",
+    "fillOpenJob": "查看任务详情"
   }
 }

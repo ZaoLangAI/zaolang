@@ -32,6 +32,7 @@ from app.api.v1 import (
     gateway,
     jobs,
     learning,
+    look_fill,
     privacy,
     profiles,
     prompts,
@@ -66,6 +67,7 @@ def build_router() -> APIRouter:
     router.include_router(characters.router)
     router.include_router(scenes.router)
     router.include_router(asset_variants.router)
+    router.include_router(look_fill.router)
     router.include_router(scene_matrix.router)
     router.include_router(gateway.router)
     router.include_router(uploads.router)
