@@ -27,7 +27,7 @@ Copy coaches, asset-kind prompt rules, scene skill packs, follow-up questions. S
 | `back/app/domain/image_assets/prompt_builder.py` `CHARACTER_SHEET_LAYOUT_SUFFIX` | appended on a sheet pass (keeps caller's identity prompt; re-exported as `nodes._CHARACTER_SHEET_LAYOUT_SUFFIX`) |
 | `back/app/domain/image_assets/prompt_builder.py` `CHARACTER_COMPLETION_FIXED_PROMPTS` | side/back pass prompt **replaced** by a fixed reference-driven prompt + anti-collage negative |
 | `back/app/domain/image_assets/prompt_builder.py` `apply_visual_medium` | sheet/expression pass with no named medium gets a photoreal lock; named anime/photoreal kept |
-| `back/app/agents/copywriter.py` `ENHANCE_SYSTEM_PROMPT_CHARACTER`, `restore_character_sheet_prompt` | coach + repair: missing `三视图`/`色板` or collapse markers → re-append `CHARACTER_SHEET_LAYOUT_SENTENCE` |
+| `back/app/agents/copywriter.py` `ENHANCE_SYSTEM_PROMPT_CHARACTER`, `restore_character_sheet_prompt` | coach + repair: missing `三视图`/`色板` or collapse markers → re-append `CHARACTER_SHEET_LAYOUT_SENTENCE`; with `character_portrait` the repair is `restore_identity_portrait_prompt` instead (strip sheet sentences, keep `IDENTITY_PORTRAIT_SENTENCE`) |
 | `front/src/lib/characters.ts` `characterSheetPrompt` | library/script jump-out prompt sent to the image studio (web submits front only) |
 
 ## Character/scene preset vocabulary
@@ -36,7 +36,7 @@ Copy coaches, asset-kind prompt rules, scene skill packs, follow-up questions. S
 
 ## Prompt builder (`back/app/domain/image_assets/prompt_builder.py`)
 
-- `resolve_pass` → `AssetPass` (`character_sheet`/`character_completion`/`character_expressions`/`scene`/`other`; a scene variant set is one `scene` pass per variant); `compose` writes the pass's fixed text before the planner runs; `execute_asset_planning` passes `asset_pass` to `planner.plan_asset`.
+- `resolve_pass` → `AssetPass` (`character_sheet`/`identity_portrait`/`character_completion`/`character_expressions`/`scene`/`other`; `identity_portrait` = `character_portrait`: one front head-and-shoulders face, `IDENTITY_PORTRAIT_LAYOUT`/`_NEGATIVE`, sheet sentences stripped; a sheet whose reference 1 is an approved portrait (`asset_variants.service.is_identity_portrait`) gets `IDENTITY_LOCK_PREFIX` unless the 换装 prefix already locks the face; a scene variant set is one `scene` pass per variant); `compose` writes the pass's fixed text before the planner runs; `execute_asset_planning` passes `asset_pass` to `planner.plan_asset`.
 - Expression pass: `EXPRESSION_IDENTITY_PREFIX` + caller identity + `expression_layout` (grid from `vocabulary.expression_grid`, one sentence per cell) + medium lock; never the sheet suffix. Per-expression negatives only for a single close-up (they contradict across cells).
 - Outfit sheet with a reference: `OUTFIT_CHANGE_PREFIX` locks face/hair/body to reference 1.
 - Scene: preset fragments + period cues (pitfalls → negative); with a reference, `SCENE_VARIANT_PREFIX` pins geometry to reference 1. 

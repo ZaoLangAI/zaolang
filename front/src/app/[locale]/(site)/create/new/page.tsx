@@ -147,6 +147,7 @@ export default async function NewCreationPage({
     sceneLighting?: string;
     sceneWeather?: string;
     targetVariantId?: string;
+    characterPortrait?: string;
   }>;
 }) {
   const {
@@ -174,6 +175,7 @@ export default async function NewCreationPage({
     sceneLighting,
     sceneWeather,
     targetVariantId,
+    characterPortrait,
   } = await searchParams;
   const t = await getTranslations('createPage');
 
@@ -274,6 +276,7 @@ export default async function NewCreationPage({
           continuitySourceAssetId: resolvedContinuityAssetId,
           skillId: resolvedSkillId,
           targetVariantId: parseVariantId(targetVariantId),
+          characterPortrait: characterPortrait === '1' ? '1' : undefined,
           scenePresets: [initialScenePresets.lighting, initialScenePresets.weather]
             .filter(Boolean)
             .join('+'),
@@ -301,6 +304,7 @@ export default async function NewCreationPage({
         initialReferenceAssetIds={resolvedReferenceAssetIds}
         initialScenePresets={initialScenePresets}
         initialTargetVariantId={parseVariantId(targetVariantId)}
+        initialCharacterPortrait={characterPortrait === '1'}
       />
     </div>
   );

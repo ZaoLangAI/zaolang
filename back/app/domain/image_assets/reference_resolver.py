@@ -9,7 +9,9 @@
    plus the characters' voice hints (`characters.service.apply_character_refs`
    / `scenes.service.apply_scene_refs`);
 2. a composite expression image with no reference at all borrows its target
-   character's sheet (from `target_variant_id`'s look when given);
+   character's sheet (from `target_variant_id`'s look when given); any other
+   character image (sheet, identity portrait) with no reference borrows the
+   target's approved identity portrait, so every look is drawn from one face;
 3. `params["reference_labels"]`: what each reference *is*
    (`角色「林夏」·婚礼·设定图`), for the prompt's 参考图说明 legend.
 
@@ -42,6 +44,7 @@ def resolve(
     params.pop("reference_labels", None)
     characters_service.apply_character_refs(session, user_id=user_id, params=params)
     _borrow_expression_reference(session, user_id=user_id, params=params)
+    _borrow_identity_reference(session, user_id=user_id, params=params)
     scenes_service.apply_scene_refs(session, user_id=user_id, params=params)
     _label_references(session, user_id=user_id, params=params)
 
@@ -61,6 +64,29 @@ def _borrow_expression_reference(session: Session, *, user_id: str, params: dict
     params["reference_asset_ids"] = characters_service.default_reference_asset_ids(
         character, variant_id=params.get("target_variant_id")
     )
+
+
+def _borrow_identity_reference(session: Session, *, user_id: str, params: dict[str, Any]) -> None:
+    """A character sheet or portrait job with no reference at all but a
+    named target starts from that card's approved identity portrait (定妆照)
+    — the face every look shares. A stale target is left to write-back's
+    own fallback rather than failing the submit."""
+    if params.get("asset_kind") != "character" or params.get("reference_asset_ids"):
+        return
+    if params.get("character_expressions"):
+        return
+    target_id = params.get("target_character_id")
+    if not target_id:
+        return
+    try:
+        character = characters_service.get_character(
+            session, user_id=user_id, character_id=str(target_id)
+        )
+    except NotFound:
+        return
+    portrait = asset_variants_service.identity_portrait(character.skill)
+    if portrait is not None:
+        params["reference_asset_ids"] = [portrait.asset_id]
 
 
 def _card_ids(params: dict[str, Any], list_key: str, target_key: str) -> list[str]:

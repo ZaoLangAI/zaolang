@@ -108,6 +108,7 @@ export function ImageGenerationStudio({
   initialReferenceAssetIds,
   initialScenePresets,
   initialTargetVariantId,
+  initialCharacterPortrait,
 }: {
   source?: StudioSource;
   reference?: WorkDetail;
@@ -150,6 +151,8 @@ export function ImageGenerationStudio({
   initialScenePresets?: ScenePresets;
   /** Look / scene variant of the target card to file the output under. */
   initialTargetVariantId?: string;
+  /** Open on the identity portrait (定妆照) instead of a sheet. */
+  initialCharacterPortrait?: boolean;
 }) {
   const t = useTranslations('remixPage');
   const tCredits = useTranslations('credits');
@@ -204,6 +207,8 @@ export function ImageGenerationStudio({
   // sheet (`character_outfit_label`) — mutually exclusive.
   const [expressions, setExpressions] = useState<CharacterExpression[]>([]);
   const [outfitLabel, setOutfitLabel] = useState('');
+  // The identity portrait (定妆照) instead of a sheet — exclusive with both.
+  const [portrait, setPortrait] = useState(Boolean(initialCharacterPortrait));
   // The target card's look / variant this output is filed under; '' = by
   // outfit name / scene presets / the default (`target_variant_id`).
   const [targetVariantId, setTargetVariantId] = useState(initialTargetVariantId ?? '');
@@ -660,7 +665,8 @@ export function ImageGenerationStudio({
         ? {
             character_expressions: expressions.length ? expressions : null,
             character_outfit_label:
-              expressions.length || targetLookId ? null : outfitLabel.trim() || null,
+              portrait || expressions.length || targetLookId ? null : outfitLabel.trim() || null,
+            character_portrait: portrait,
             target_variant_id: targetLookId || null,
           }
         : isScene
@@ -704,7 +710,9 @@ export function ImageGenerationStudio({
           ]}
         />
         <p className="text-[11px] text-muted">
-          {assetKind === 'character' ? t('assetKindCharacterHint') : t('assetKindHint')}
+          {assetKind === 'character'
+            ? t(portrait ? 'assetKindPortraitHint' : 'assetKindCharacterHint')
+            : t('assetKindHint')}
         </p>
 
         {isCharacterAssetKind ? (
@@ -750,6 +758,8 @@ export function ImageGenerationStudio({
               />
             ) : null}
             <CharacterPresetFields
+              portrait={portrait}
+              onPortraitChange={setPortrait}
               expressions={expressions}
               onExpressionsChange={(next) => {
                 // An expression image is an extra, not the roster's sheet:
@@ -880,7 +890,10 @@ export function ImageGenerationStudio({
         hasReference: uploads.length > 0 || Boolean(source),
         assetKind,
         assetPresets: isCharacterAssetKind
-          ? { character_expressions: expressions.length ? expressions : null }
+          ? {
+              character_expressions: expressions.length ? expressions : null,
+              character_portrait: portrait,
+            }
           : isScene
             ? scenePresetParams(scenePresets)
             : undefined,

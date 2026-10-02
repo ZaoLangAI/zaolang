@@ -32140,6 +32140,11 @@
             ],
             "title": "Character Outfit Label"
           },
+          "character_portrait": {
+            "type": "boolean",
+            "title": "Character Portrait",
+            "default": false
+          },
           "target_variant_id": {
             "anyOf": [
               {
@@ -37565,6 +37570,11 @@
               }
             ],
             "title": "Character Expressions"
+          },
+          "character_portrait": {
+            "type": "boolean",
+            "title": "Character Portrait",
+            "default": false
           },
           "scene_lighting": {
             "anyOf": [

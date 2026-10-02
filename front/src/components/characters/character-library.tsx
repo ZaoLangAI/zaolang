@@ -698,6 +698,12 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
               variantId: look.id,
             })
           }
+          portraitHref={characterImageStudioHref({
+            characterId: looksTarget.id,
+            name: looksTarget.name,
+            appearance: looksTarget.description,
+            portrait: true,
+          })}
         />
       ) : null}
     </div>

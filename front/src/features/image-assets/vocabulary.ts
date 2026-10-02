@@ -120,7 +120,11 @@ export type AssetPresetParams = Pick<
   | 'scene_period'
   | 'scene_variants'
   | 'target_variant_id'
->;
+> & {
+  /** Defaulted (`false`) on the backend, so the generated type marks it
+   * required; only the image studio's character kind ever sends it. */
+  character_portrait?: boolean;
+};
 
 export function scenePresetParams(presets: ScenePresets): AssetPresetParams {
   return {

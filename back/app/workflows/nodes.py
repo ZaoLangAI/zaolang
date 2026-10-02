@@ -21,6 +21,7 @@ from app.agents import copywriter, planner, quality, router, safety
 from app.agents import custom as custom_agent
 from app.agents import intent_router as intent_router_agent
 from app.config import get_settings
+from app.domain.asset_variants import service as asset_variants_service
 from app.domain.characters import service as characters_service
 from app.domain.costs import service as costs_service
 from app.domain.credits.pricing import settlement_credits
@@ -646,6 +647,15 @@ def _asset_axis(ctx: WorkflowContext) -> tuple[str, str] | None:
     return None
 
 
+def _first_reference_is_identity_portrait(ctx: WorkflowContext) -> bool:
+    """Reference 1 is an approved identity portrait (定妆照) on some card —
+    the sheet then locks the face to it (`prompt_builder.IDENTITY_LOCK_PREFIX`)."""
+    refs = ctx.params.get("reference_asset_ids")
+    if not isinstance(refs, list) or not refs:
+        return False
+    return asset_variants_service.is_identity_portrait(ctx.session, str(refs[0]))
+
+
 def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) -> NodeResult:
     """Runs the planner agent's `asset_plan` slot for a character/scene/cover
     image job — or its video-side equivalent for a scene/character-action/
@@ -704,6 +714,7 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
         params=pass_params,
         character_view=character_view,
         has_reference=bool(ctx.params.get("reference_asset_ids")),
+        identity_reference=is_character and _first_reference_is_identity_portrait(ctx),
     )
 
     if media_axis == "video":
@@ -910,6 +921,7 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                             filing={
                                 "variant_id": ctx.params.get("target_variant_id"),
                                 "expressions": list(expressions) if expressions else None,
+                                "portrait": bool(ctx.params.get("character_portrait")),
                                 "source_job_id": ctx.job.id,
                                 # A filled slot keeps its approved image; this
                                 # one becomes a candidate (P2-1).

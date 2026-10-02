@@ -65,6 +65,7 @@ export function CreateStudio({
   initialReferenceAssetIds,
   initialScenePresets,
   initialTargetVariantId,
+  initialCharacterPortrait,
 }: {
   operation: 'text_to_image' | 'text_to_video' | 'audio_generation' | 'music_generation';
   initialPrompt?: string;
@@ -96,6 +97,8 @@ export function CreateStudio({
   initialScenePresets?: ScenePresets;
   /** Look / scene variant the output is filed under (`target_variant_id`). */
   initialTargetVariantId?: string;
+  /** Open the image studio on the identity portrait (定妆照). */
+  initialCharacterPortrait?: boolean;
 }) {
   if (operation === 'audio_generation') {
     return <AudioGenerationStudio initialPrompt={initialPrompt} reference={reference} />;
@@ -122,6 +125,7 @@ export function CreateStudio({
         initialReferenceAssetIds={initialReferenceAssetIds}
         initialScenePresets={initialScenePresets}
         initialTargetVariantId={initialTargetVariantId}
+        initialCharacterPortrait={initialCharacterPortrait}
       />
     );
   }

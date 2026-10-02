@@ -51,6 +51,18 @@ describe('characterSheetPrompt', () => {
 });
 
 describe('characterImageStudioHref', () => {
+  it('opens on the identity portrait with identity text and no sheet layout', () => {
+    const href = characterImageStudioHref({
+      characterId: 'skl_char',
+      name: '林深',
+      appearance: '银发风衣',
+      portrait: true,
+    });
+    const url = new URL(href, 'https://example.test');
+    expect(url.searchParams.get('characterPortrait')).toBe('1');
+    expect(url.searchParams.get('prompt')).toBe('林深。银发风衣');
+  });
+
   it('targets the image studio with the character sheet query', () => {
     const href = characterImageStudioHref({
       characterId: 'skl_char',

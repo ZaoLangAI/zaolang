@@ -262,6 +262,9 @@ ASSET_PLAN_SYSTEM_PROMPT = f"""你是造浪平台的图片资产规划器，
   必须排除年代穿帮的现代物件与对立媒介（插画/3D 渲染/游戏截图/概念设定图）
 - asset_pass 说明这一张具体是什么，优先级高于 character_view 的设定图规则：
   character_sheet = 角色设定图（按上面的设定图版式）；
+  identity_portrait = 角色定妆照：单人正面头肩照、中性表情、纯色背景，作为全卡的身份锚点，
+  禁止补三视图/设定图/色板/全身像/夸张表情，
+  prompt_enhancements 只补充五官、发型、肤色等可辨识的身份细节；
   character_expressions = 表情合集图（source_params.character_expressions 列出各格表情）：
   只出同一人物的头肩特写宫格，禁止补三视图/设定图/色板/全身像，
   prompt_enhancements 只补充保持五官、发型、服装在各格一致的描述；

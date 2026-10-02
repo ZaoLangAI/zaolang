@@ -9387,6 +9387,11 @@ export interface components {
             character_expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
             /** Character Outfit Label */
             character_outfit_label?: string | null;
+            /**
+             * Character Portrait
+             * @default false
+             */
+            character_portrait: boolean;
             /** Target Variant Id */
             target_variant_id?: string | null;
             /** Character Ref Selection */
@@ -11473,6 +11478,11 @@ export interface components {
             };
             /** Character Expressions */
             character_expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
+            /**
+             * Character Portrait
+             * @default false
+             */
+            character_portrait: boolean;
             /** Scene Lighting */
             scene_lighting?: ("dawn" | "day" | "dusk" | "night_interior" | "night_exterior" | "candle" | "neon" | "overcast") | null;
             /** Scene Weather */

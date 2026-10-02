@@ -3220,7 +3220,9 @@
         "1990s": "九十年代",
         "contemporary": "当代",
         "near_future": "近未来"
-      }
+      },
+      "portraitLabel": "生成定妆照（正面头肩、中性表情）",
+      "portraitHint": "定妆照是这个角色的身份锚点，定稿后所有造型的设定图都以它的脸为准。"
     },
     "targetLook": "归档到造型",
     "targetLookHint": "生成结果会加入所选造型。",
@@ -3228,7 +3230,8 @@
     "targetSceneVariant": "归档到变体",
     "targetSceneVariantHint": "生成结果会加入所选变体。",
     "targetSceneVariantAuto": "自动（按预设或主场景）",
-    "referencePickLookDefault": "未勾选图片时，使用该造型的默认参考图。"
+    "referencePickLookDefault": "未勾选图片时，使用该造型的默认参考图。",
+    "assetKindPortraitHint": "生成一张正面头肩定妆照，定稿后作为该角色的身份锚点，所有造型都以这张脸为准。"
   },
   "scenes": {
     "eyebrow": "场景库",
@@ -3784,6 +3787,8 @@
       "master": "主图",
       "shot": "机位",
       "other": "其他"
-    }
+    },
+    "portraitFirst": "先生成定妆照：一张正面头肩照，所有造型都以这张脸为准。",
+    "generatePortrait": "生成定妆照"
   }
 }
