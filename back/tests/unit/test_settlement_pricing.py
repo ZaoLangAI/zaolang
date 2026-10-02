@@ -85,3 +85,28 @@ def test_every_operation_settles_to_a_positive_amount(operation: str) -> None:
         delivered_duration_ms=3_000,
     )
     assert charged > 0
+
+
+@pytest.mark.parametrize(
+    ("reserved", "requested", "delivered", "expected"),
+    [
+        (30, 3, 2, 20),  # divides evenly
+        (10, 3, 2, 6),  # floors, never rounds up past what was delivered
+        (10, 3, 3, 10),  # everything arrived: the full quote
+        (1, 4, 1, 1),  # never free
+    ],
+)
+def test_a_partly_delivered_image_set_is_charged_per_image(
+    reserved: int, requested: int, delivered: int, expected: int
+) -> None:
+    """A multi-pass image job whose later pass failed pays only for the
+    images it got — it was priced per image."""
+    charged = settlement_credits(
+        reserved_credits=reserved,
+        operation=Operation.TEXT_TO_IMAGE,
+        requested_duration_seconds=0,
+        delivered_duration_ms=None,
+        requested_outputs=requested,
+        delivered_outputs=delivered,
+    )
+    assert charged == expected

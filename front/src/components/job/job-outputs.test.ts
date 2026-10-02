@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { jobOutputs } from './job-outputs';
+import { jobOutputs, partialDelivery } from './job-outputs';
 
 describe('jobOutputs', () => {
   it('reads the singular fields, which is what an ordinary job sets', () => {
@@ -30,5 +30,27 @@ describe('jobOutputs', () => {
   it('is empty for a job with no output, and for no job at all', () => {
     expect(jobOutputs({})).toEqual({ urls: [], assetIds: [] });
     expect(jobOutputs(null)).toEqual({ urls: [], assetIds: [] });
+  });
+});
+
+describe('partialDelivery', () => {
+  const job = {
+    status: 'succeeded',
+    requested_outputs: 3,
+    output_asset_id: 'ast_1',
+    output_asset_ids: ['ast_1', 'ast_2'],
+  };
+
+  it('reports how many of the priced images a succeeded job delivered', () => {
+    expect(partialDelivery(job)).toEqual({ delivered: 2, requested: 3 });
+  });
+
+  it('is null once every priced image arrived', () => {
+    expect(partialDelivery({ ...job, output_asset_ids: ['ast_1', 'ast_2', 'ast_3'] })).toBeNull();
+  });
+
+  it('is null for a single-image job and for a job that has not succeeded', () => {
+    expect(partialDelivery({ ...job, requested_outputs: 1 })).toBeNull();
+    expect(partialDelivery({ ...job, status: 'running' })).toBeNull();
   });
 });

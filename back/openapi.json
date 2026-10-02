@@ -31524,6 +31524,11 @@
             ],
             "title": "Character Views"
           },
+          "requested_outputs": {
+            "type": "integer",
+            "title": "Requested Outputs",
+            "default": 1
+          },
           "duration_seconds": {
             "anyOf": [
               {

@@ -20,6 +20,8 @@
 4. Pricing multiplies by `jobs_service.character_output_count` (`output_count` in `back/app/domain/credits/pricing.py`); time limits add `_IMAGE_EXTRA_VIEW` per extra view up to `_IMAGE_GENERATION_CAP` (`back/app/workers/tasks.py`).
 5. Progress rescales per view (`nodes._scale_for_character_views`) so the bar doesn't restart each loop.
 6. Each later view gets a fresh routing budget: `nodes._start_next_asset_pass` resets `route_attempts`/`tried_providers`/`failure_code`. `attempt_seq` keeps counting across the job and is what `attempt_number` (→ object key `output_{n}.png`) uses, so views never overwrite each other; both counters ride `_provider_checkpoint`/`_input_checkpoint`.
+7. The quality retry cap (`quality.MAX_QUALITY_RETRIES`) is per pass: `execute_quality_check` passes `route_attempts`, not the job-wide `attempt_number`, so a later view or variant can still be regenerated once.
+8. Partial delivery: when a later pass fails (route budget spent, or quality fail with no retry) after earlier passes recorded outputs, `execute_fail` hands off to `nodes._finish_partial_asset_job` — no graph edge, so templates need no data migration. It attaches the delivered outputs with the graph's own `asset_output_link` config (`WorkflowContext.node_configs`, set by `WorkflowRunner._walk`), settles per image via `settlement_credits(requested_outputs, delivered_outputs)`, and ends `SUCCEEDED` with `delivered_outputs`/`requested_outputs`/`failure_code` in the event payload. `GenerationJobResponse.requested_outputs` lets clients show "已交付 d/N" (`front/src/components/job/job-outputs.ts:partialDelivery`).
 
 ## `execute_asset_planning` rules (`back/app/workflows/nodes.py`)
 

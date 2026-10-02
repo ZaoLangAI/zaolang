@@ -2133,7 +2133,11 @@ def _maybe_fill_linked_episode_preview(session: Any, draft: Draft) -> None:
 def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> NodeResult:
     result = ctx.state.get("result")
     capability = ctx.state.get("capability")
-    attempt_number = ctx.state.get("attempt_number", 1)
+    # The retry cap is per pass: `route_attempts` restarts at each view /
+    # scene variant (`_start_next_asset_pass`), whereas `attempt_number`
+    # keeps counting across the job and would forbid any retry after the
+    # first pass of a multi-pass job.
+    attempt_number = int(ctx.state.get("route_attempts") or ctx.state.get("attempt_number", 1))
 
     _emit(ctx, JobEventType.QUALITY_CHECK, JobStatus.RUNNING, "正在校验输出质量", 78)
     with _live_thinking(ctx):
@@ -2271,6 +2275,7 @@ def execute_settle_success(ctx: WorkflowContext, config: SettleSuccessConfig) ->
     actual = ctx.state.get("actual_credits")
     if actual is None:
         actual = ctx.job.reserved_credits
+    partial = ctx.state.get(_PARTIAL_DELIVERY_STATE_KEY)
     jobs_service.settle_success(ctx.session, ctx.job, actual_credits=actual)
     ctx.job = sm.transition(
         ctx.session,
@@ -2281,15 +2286,69 @@ def execute_settle_success(ctx: WorkflowContext, config: SettleSuccessConfig) ->
         output_asset_ids=asset_ids or None,
         analysis_result_json=result_json,
     )
-    _emit(
-        ctx,
-        JobEventType.SUCCEEDED,
-        JobStatus.SUCCEEDED,
-        "生成完成",
-        100,
-        payload={"asset_id": asset_id} if asset_id else {"has_analysis": bool(result_json)},
+    payload: dict[str, Any] = (
+        {"asset_id": asset_id} if asset_id else {"has_analysis": bool(result_json)}
     )
+    message = "生成完成"
+    if partial:
+        payload.update(partial)
+        message = (
+            f"已交付 {partial['delivered_outputs']}/{partial['requested_outputs']} 张，"
+            "未完成部分的积分已退回"
+        )
+    _emit(ctx, JobEventType.SUCCEEDED, JobStatus.SUCCEEDED, message, 100, payload=payload)
     return NodeResult(port="_terminal", terminal=terminal)
+
+
+# Set by `_finish_partial_asset_job`: `{delivered_outputs, requested_outputs,
+# failure_code}` of a multi-pass job that ended early but kept some images.
+_PARTIAL_DELIVERY_STATE_KEY = "_partial_delivery"
+
+
+def _finish_partial_asset_job(ctx: WorkflowContext, *, failure_code: str) -> NodeResult | None:
+    """Ends a multi-pass image job whose later pass failed as a partial success.
+
+    Earlier passes already registered their images (`quality_check`) and
+    recorded them (`execute_asset_output_advance`), so failing the whole job
+    would refund everything and leave those images off the card. Instead
+    they are attached exactly as `asset_output_link` would — with the
+    graph's own config for that node — and the job settles per delivered
+    image (`settlement_credits`). Handled here rather than with a new graph
+    edge so existing (and operator-edited) templates need no data migration.
+
+    `None` when nothing was delivered, or every requested image was: the
+    caller fails the job as before.
+    """
+    outputs = ctx.state.get(ASSET_OUTPUTS_STATE_KEY) or []
+    delivered = sum(1 for o in outputs if o.get("asset_id"))
+    if not delivered or _asset_axis(ctx) is None:
+        return None
+    requested = jobs_service.requested_output_count(
+        asset_kind=ctx.params.get("asset_kind"),
+        character_views=ctx.params.get("character_views"),
+        scene_variants=ctx.params.get("scene_variants"),
+    )
+    if delivered >= requested:
+        return None
+
+    link_config = AssetOutputLinkConfig.model_validate(
+        ctx.node_configs.get("asset_output_link") or {}
+    )
+    execute_asset_output_link(ctx, link_config)
+    ctx.state["actual_credits"] = settlement_credits(
+        reserved_credits=ctx.job.reserved_credits,
+        operation=ctx.job.operation,
+        requested_duration_seconds=0,
+        delivered_duration_ms=None,
+        requested_outputs=requested,
+        delivered_outputs=delivered,
+    )
+    ctx.state[_PARTIAL_DELIVERY_STATE_KEY] = {
+        "delivered_outputs": delivered,
+        "requested_outputs": requested,
+        "failure_code": failure_code,
+    }
+    return execute_settle_success(ctx, SettleSuccessConfig())
 
 
 def execute_fail(ctx: WorkflowContext, config: FailConfig) -> NodeResult:
@@ -2299,6 +2358,10 @@ def execute_fail(ctx: WorkflowContext, config: FailConfig) -> NodeResult:
     terminal = PipelineOutcome(status=JobStatus.FAILED, failure_code=code)
     if ctx.dry_run:
         return NodeResult(port="_terminal", terminal=terminal)
+
+    partial = _finish_partial_asset_job(ctx, failure_code=code)
+    if partial is not None:
+        return partial
 
     jobs_service.settle_release(ctx.session, ctx.job, reason=code)
     try:
