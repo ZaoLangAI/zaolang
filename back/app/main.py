@@ -35,6 +35,7 @@ from app.api.v1 import (
     privacy,
     profiles,
     prompts,
+    scene_matrix,
     scenes,
     scripts,
     shortform,
@@ -65,6 +66,7 @@ def build_router() -> APIRouter:
     router.include_router(characters.router)
     router.include_router(scenes.router)
     router.include_router(asset_variants.router)
+    router.include_router(scene_matrix.router)
     router.include_router(gateway.router)
     router.include_router(uploads.router)
     router.include_router(credits.router)

@@ -31,7 +31,7 @@ const AXES: { axis: Axis; table: Record<string, { labelKey: string }>; labelKey:
 ];
 
 /** Multi-select chips — a checkbox group styled like `OptionGroup`. */
-function ChipGroup<T extends string>({
+export function ChipGroup<T extends string>({
   label,
   options,
   selected,

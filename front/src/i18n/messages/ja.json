@@ -3784,6 +3784,27 @@
       "master": "メイン画像",
       "shot": "カット",
       "other": "その他"
-    }
+    },
+    "matrixOpen": "バリエーション一括",
+    "matrixTitle": "シーンバリエーションを一括生成",
+    "matrixHint": "照明・天気・状態・時代を組み合わせ、組み合わせごとに 1 枚生成して対応するバリエーションに保存します。確定済みメイン画像や候補がある組み合わせはスキップします。",
+    "matrixEmpty": "少なくとも 1 つの軸を選んでください。",
+    "matrixCount": "{count} 通りの組み合わせ",
+    "matrixTooMany": "{count} 通り — 1 回につき最大 {max} 通りです。選択を減らすか分けて送信してください。",
+    "matrixSubmit": "{count} 枚を生成（{credits} クレジット）",
+    "matrixSubmitted": "{count} 件のタスクを送信しました。完了すると各バリエーションに表示されます。",
+    "matrixInsufficient": "{credits} クレジットが必要です。利用可能：{available}。",
+    "matrixOverSpendLimit": "{credits} クレジットが必要で、今月の利用上限を超えています。",
+    "matrixCellQueued": "送信済み",
+    "matrixCellFailed": "送信失敗",
+    "matrixStatus": {
+      "new": "未生成",
+      "exists": "あり",
+      "candidate": "候補あり"
+    },
+    "close": "閉じる",
+    "filterVariants": "バリエーションを絞り込む",
+    "filterVariantsPlaceholder": "例：夕暮れ、雨、損傷",
+    "matrixPlanning": "{count} 通りの組み合わせ — 見積もり中…"
   }
 }

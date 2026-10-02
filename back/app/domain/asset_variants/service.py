@@ -48,6 +48,9 @@ from app.models.enums import (
 
 DEFAULT_LOOK_NAME = "默认造型"
 DEFAULT_SCENE_VARIANT_NAME = "主场景"
+# Character looks only. Scene cards are uncapped (P2-5, decided 2026-10-02):
+# a lighting × weather × state × period matrix runs past any fixed number;
+# a scene variant still holds at most `MAX_ENTRIES_PER_VARIANT` approved.
 MAX_VARIANTS_PER_SKILL = 12
 MAX_ENTRIES_PER_VARIANT = 24
 MAX_ENTRIES_PER_SKILL = 120
@@ -217,7 +220,7 @@ def create_variant(
     presets: dict[str, Any] | None = None,
 ) -> SkillAssetVariant:
     ensure_default(session, skill)
-    if len(skill.asset_variants) >= MAX_VARIANTS_PER_SKILL:
+    if is_character(skill) and len(skill.asset_variants) >= MAX_VARIANTS_PER_SKILL:
         raise ValidationFailed(
             f"每个{'角色' if is_character(skill) else '场景'}最多 {MAX_VARIANTS_PER_SKILL} 个"
             f"{'造型' if is_character(skill) else '变体'}。",
@@ -376,7 +379,7 @@ def _check_approved_room(skill: CreationSkill, variant: SkillAssetVariant, field
             f"每个造型/变体最多 {MAX_ENTRIES_PER_VARIANT} 张定稿参考图。",
             fields={field: "数量已达上限"},
         )
-    if in_skill >= MAX_ENTRIES_PER_SKILL:
+    if is_character(skill) and in_skill >= MAX_ENTRIES_PER_SKILL:
         raise ValidationFailed(
             f"每张卡片最多 {MAX_ENTRIES_PER_SKILL} 张定稿参考图。",
             fields={field: "数量已达上限"},
@@ -400,7 +403,9 @@ def file_generated(
     Never replaces or evicts anything."""
     mates = slot_mates(skill, variant, entry_type=entry_type, view=view, expressions=expressions)
     in_variant, in_skill = _approved_counts(skill, variant)
-    room = in_variant < MAX_ENTRIES_PER_VARIANT and in_skill < MAX_ENTRIES_PER_SKILL
+    room = in_variant < MAX_ENTRIES_PER_VARIANT and (
+        not is_character(skill) or in_skill < MAX_ENTRIES_PER_SKILL
+    )
     taken = any(is_approved(m) and m.asset_id != asset_id for m in mates)
     status = AssetEntryStatus.APPROVED if room and not taken else AssetEntryStatus.CANDIDATE
     return add_entry(

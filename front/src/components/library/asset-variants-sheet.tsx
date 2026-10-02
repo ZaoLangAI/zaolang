@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 import { candidateCount, groupEntries } from '@/components/library/entry-groups';
+import { SceneMatrixDialog } from '@/components/scenes/scene-matrix-dialog';
 import { Button, IconButton } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Select, TextArea, TextInput } from '@/components/ui/field';
@@ -39,6 +40,7 @@ const CHARACTER_ENTRY_TYPES: AssetEntryType[] = [
   'other',
 ];
 const SCENE_ENTRY_TYPES: AssetEntryType[] = ['master', 'shot', 'other'];
+const VARIANT_FILTER_THRESHOLD = 8;
 const PRESET_AXES = [
   { axis: 'lighting', table: SCENE_LIGHTINGS },
   { axis: 'weather', table: SCENE_WEATHERS },
@@ -87,6 +89,14 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
   const [error, setError] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [matrixOpen, setMatrixOpen] = useState(false);
+  // Scene cards have no variant cap (P2-5): past a handful, filter the tabs
+  // by name — matrix variants are named by their presets (黄昏 · 雨 · 战损).
+  const [filter, setFilter] = useState('');
+  const visibleVariants =
+    variants.length > VARIANT_FILTER_THRESHOLD && filter.trim()
+      ? variants.filter((variant) => variant.name.includes(filter.trim()))
+      : variants;
 
   const active = variants.find((v) => v.id === activeId) ?? variants[0];
   const entryTypes = kind === 'character' ? CHARACTER_ENTRY_TYPES : SCENE_ENTRY_TYPES;
@@ -147,8 +157,16 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
       error={error}
     >
       <div className="flex flex-col gap-4">
+        {variants.length > VARIANT_FILTER_THRESHOLD ? (
+          <TextInput
+            label={t('filterVariants')}
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder={t('filterVariantsPlaceholder')}
+          />
+        ) : null}
         <div role="tablist" className="flex flex-wrap gap-1.5">
-          {variants.map((variant) => (
+          {visibleVariants.map((variant) => (
             <button
               key={variant.id}
               type="button"
@@ -181,6 +199,16 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
           >
             {t(kind === 'character' ? 'newLook' : 'newVariant')}
           </Button>
+          {kind === 'scene' ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<IconSparkle className="size-3.5" />}
+              onClick={() => setMatrixOpen(true)}
+            >
+              {t('matrixOpen')}
+            </Button>
+          ) : null}
         </div>
 
         {creating ? (
@@ -228,6 +256,13 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
           />
         ) : null}
       </div>
+      {kind === 'scene' ? (
+        <SceneMatrixDialog
+          sceneId={card.id}
+          open={matrixOpen}
+          onClose={() => setMatrixOpen(false)}
+        />
+      ) : null}
     </Sheet>
   );
 }
