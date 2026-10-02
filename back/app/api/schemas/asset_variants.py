@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -19,7 +19,7 @@ from app.domain.image_assets.vocabulary import (
     SceneState,
     SceneWeather,
 )
-from app.models.enums import AssetEntryStatus, AssetEntryType
+from app.models.enums import AssetEntryStatus, AssetEntryType, QualityTier
 
 
 class VariantPresets(ApiModel):
@@ -92,3 +92,51 @@ class AssetEntryUpdateRequest(ApiModel):
     )
     label: str | None = Field(default=None, max_length=60)
     status: AssetEntryStatus | None = None
+
+
+# ---- scene variant matrix (P2-5) ------------------------------------------------
+
+
+class SceneMatrixAxes(ApiModel):
+    """The values picked per axis; their cartesian product is the matrix
+    (≤4 per axis, ≤12 cells per request — `scenes.matrix`)."""
+
+    lighting: list[SceneLighting] = Field(default_factory=list, max_length=4)
+    weather: list[SceneWeather] = Field(default_factory=list, max_length=4)
+    state: list[SceneState] = Field(default_factory=list, max_length=4)
+    period: list[ScenePeriod] = Field(default_factory=list, max_length=4)
+
+
+class SceneMatrixRequest(ApiModel):
+    axes: SceneMatrixAxes
+    quality_tier: QualityTier = QualityTier.STANDARD
+    aspect_ratio: str = Field(default="16:9", max_length=16)
+    # Defaults to the card's own name + description.
+    prompt: str | None = Field(default=None, max_length=4096)
+    # `true` (the default) only plans and prices; `false` submits one job
+    # per new cell.
+    dry_run: bool = True
+
+
+class SceneMatrixCellView(ApiModel):
+    presets: dict[str, str]
+    label: str
+    # `new` is generated; `exists` (approved master) and `candidate` (only
+    # unapproved masters) are skipped.
+    status: Literal["new", "exists", "candidate"]
+    variant_id: str | None = None
+    # Set on a submit: the cell's job, or why it could not be submitted.
+    job_id: str | None = None
+    error: str | None = None
+
+
+class SceneMatrixResponse(ApiModel):
+    cells: list[SceneMatrixCellView]
+    unit_credits: int
+    # The new cells only — what a submit reserves in total.
+    total_credits: int
+    available_credits: int
+    period_remaining: int | None = None
+    within_spend_limit: bool
+    sufficient: bool
+    submitted: int = 0

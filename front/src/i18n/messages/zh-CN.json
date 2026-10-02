@@ -3789,6 +3789,27 @@
       "other": "其他"
     },
     "portraitFirst": "先生成定妆照：一张正面头肩照，所有造型都以这张脸为准。",
-    "generatePortrait": "生成定妆照"
+    "generatePortrait": "生成定妆照",
+    "matrixOpen": "批量变体",
+    "matrixTitle": "批量生成场景变体",
+    "matrixHint": "按光照、天气、状态、时期组合，每个组合生成一张图，自动归入对应变体；已有定稿主图或候选图的组合会跳过。",
+    "matrixEmpty": "至少选择一个维度。",
+    "matrixCount": "共 {count} 个组合",
+    "matrixTooMany": "共 {count} 个组合，一次最多 {max} 个，请减少选择或分批提交。",
+    "matrixSubmit": "生成 {count} 张（{credits} 积分）",
+    "matrixSubmitted": "已提交 {count} 个任务，完成后会出现在对应的变体里。",
+    "matrixInsufficient": "需要 {credits} 积分，当前可用 {available}。",
+    "matrixOverSpendLimit": "需要 {credits} 积分，超出本月消费上限。",
+    "matrixCellQueued": "已提交",
+    "matrixCellFailed": "提交失败",
+    "matrixStatus": {
+      "new": "待生成",
+      "exists": "已有",
+      "candidate": "有候选"
+    },
+    "close": "关闭",
+    "filterVariants": "筛选变体",
+    "filterVariantsPlaceholder": "如：黄昏、雨、战损",
+    "matrixPlanning": "共 {count} 个组合，正在计算报价…"
   }
 }

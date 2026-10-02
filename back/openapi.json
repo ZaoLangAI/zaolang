@@ -6384,6 +6384,90 @@
         }
       }
     },
+    "/v1/scenes/{card_id}/variants:matrix": {
+      "post": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Scene Variant Matrix",
+        "operationId": "scene_variant_matrix",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneMatrixRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneMatrixResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/gateway/status": {
       "get": {
         "tags": [
@@ -39277,6 +39361,240 @@
           "name"
         ],
         "title": "SceneCreateRequest"
+      },
+      "SceneMatrixAxes": {
+        "properties": {
+          "lighting": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "dawn",
+                "day",
+                "dusk",
+                "night_interior",
+                "night_exterior",
+                "candle",
+                "neon",
+                "overcast"
+              ]
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Lighting"
+          },
+          "weather": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "clear",
+                "rain",
+                "snow",
+                "fog",
+                "sandstorm"
+              ]
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Weather"
+          },
+          "state": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "intact",
+                "messy",
+                "searched",
+                "damage_light",
+                "damage_medium",
+                "damage_heavy",
+                "ruins",
+                "festive"
+              ]
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "State"
+          },
+          "period": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "ancient",
+                "republic",
+                "1980s",
+                "1990s",
+                "contemporary",
+                "near_future"
+              ]
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Period"
+          }
+        },
+        "type": "object",
+        "title": "SceneMatrixAxes",
+        "description": "The values picked per axis; their cartesian product is the matrix\n(≤4 per axis, ≤12 cells per request — `scenes.matrix`)."
+      },
+      "SceneMatrixCellView": {
+        "properties": {
+          "presets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Presets"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "new",
+              "exists",
+              "candidate"
+            ],
+            "title": "Status"
+          },
+          "variant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Id"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "presets",
+          "label",
+          "status"
+        ],
+        "title": "SceneMatrixCellView"
+      },
+      "SceneMatrixRequest": {
+        "properties": {
+          "axes": {
+            "$ref": "#/components/schemas/SceneMatrixAxes"
+          },
+          "quality_tier": {
+            "$ref": "#/components/schemas/QualityTier",
+            "default": "standard"
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "maxLength": 16,
+            "title": "Aspect Ratio",
+            "default": "16:9"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "axes"
+        ],
+        "title": "SceneMatrixRequest"
+      },
+      "SceneMatrixResponse": {
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/SceneMatrixCellView"
+            },
+            "type": "array",
+            "title": "Cells"
+          },
+          "unit_credits": {
+            "type": "integer",
+            "title": "Unit Credits"
+          },
+          "total_credits": {
+            "type": "integer",
+            "title": "Total Credits"
+          },
+          "available_credits": {
+            "type": "integer",
+            "title": "Available Credits"
+          },
+          "period_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Remaining"
+          },
+          "within_spend_limit": {
+            "type": "boolean",
+            "title": "Within Spend Limit"
+          },
+          "sufficient": {
+            "type": "boolean",
+            "title": "Sufficient"
+          },
+          "submitted": {
+            "type": "integer",
+            "title": "Submitted",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "cells",
+          "unit_credits",
+          "total_credits",
+          "available_credits",
+          "within_spend_limit",
+          "sufficient"
+        ],
+        "title": "SceneMatrixResponse"
       },
       "ScenePresetCombo": {
         "properties": {

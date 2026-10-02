@@ -177,3 +177,6 @@ export interface Page<T> {
   has_more?: boolean;
   total?: number | null;
 }
+export type SceneMatrixAxes = S['SceneMatrixAxes'];
+export type SceneMatrixCell = S['SceneMatrixCellView'];
+export type SceneMatrixResponse = S['SceneMatrixResponse'];

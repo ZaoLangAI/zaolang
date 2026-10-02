@@ -1490,6 +1490,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/scenes/{card_id}/variants:matrix": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scene Variant Matrix */
+        post: operations["scene_variant_matrix"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/gateway/status": {
         parameters: {
             query?: never;
@@ -12156,6 +12173,81 @@ export interface components {
             reference_asset_ids?: string[];
         };
         /**
+         * SceneMatrixAxes
+         * @description The values picked per axis; their cartesian product is the matrix
+         *     (≤4 per axis, ≤12 cells per request — `scenes.matrix`).
+         */
+        SceneMatrixAxes: {
+            /** Lighting */
+            lighting?: ("dawn" | "day" | "dusk" | "night_interior" | "night_exterior" | "candle" | "neon" | "overcast")[];
+            /** Weather */
+            weather?: ("clear" | "rain" | "snow" | "fog" | "sandstorm")[];
+            /** State */
+            state?: ("intact" | "messy" | "searched" | "damage_light" | "damage_medium" | "damage_heavy" | "ruins" | "festive")[];
+            /** Period */
+            period?: ("ancient" | "republic" | "1980s" | "1990s" | "contemporary" | "near_future")[];
+        };
+        /** SceneMatrixCellView */
+        SceneMatrixCellView: {
+            /** Presets */
+            presets: {
+                [key: string]: string;
+            };
+            /** Label */
+            label: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "exists" | "candidate";
+            /** Variant Id */
+            variant_id?: string | null;
+            /** Job Id */
+            job_id?: string | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** SceneMatrixRequest */
+        SceneMatrixRequest: {
+            axes: components["schemas"]["SceneMatrixAxes"];
+            /** @default standard */
+            quality_tier: components["schemas"]["QualityTier"];
+            /**
+             * Aspect Ratio
+             * @default 16:9
+             */
+            aspect_ratio: string;
+            /** Prompt */
+            prompt?: string | null;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+        };
+        /** SceneMatrixResponse */
+        SceneMatrixResponse: {
+            /** Cells */
+            cells: components["schemas"]["SceneMatrixCellView"][];
+            /** Unit Credits */
+            unit_credits: number;
+            /** Total Credits */
+            total_credits: number;
+            /** Available Credits */
+            available_credits: number;
+            /** Period Remaining */
+            period_remaining?: number | null;
+            /** Within Spend Limit */
+            within_spend_limit: boolean;
+            /** Sufficient */
+            sufficient: boolean;
+            /**
+             * Submitted
+             * @default 0
+             */
+            submitted: number;
+        };
+        /**
          * ScenePresetCombo
          * @description One image of a scene variant group (`GenerationParams.scene_variants`):
          *     the preset combination that image should show.
@@ -17141,6 +17233,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scene_variant_matrix: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SceneMatrixRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneMatrixResponse"];
                 };
             };
             /** @description Validation Error */
