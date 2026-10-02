@@ -2589,7 +2589,9 @@
     "promoteInsufficientCredits": "Not enough credits to upgrade to this tier.",
     "quoteFailed": "Could not estimate the price. Please try again.",
     "download": "Download",
-    "downloadFailed": "Could not download. Please try again."
+    "downloadFailed": "Could not download. Please try again.",
+    "candidateFiled": "{count, plural, one {# image was} other {# images were}} saved as candidates; the approved images are unchanged.",
+    "reviewCandidates": "Review candidates"
   },
   "learnPage": {
     "eyebrow": "ZAOLANG ACADEMY",
@@ -3762,6 +3764,25 @@
       "prop": "Prop",
       "master": "Master",
       "shot": "Shot",
+      "other": "Other"
+    },
+    "candidate": "Candidate",
+    "candidateCount": "{count} candidates",
+    "approve": "Approve",
+    "approveHint": "Use this image instead of the approved one, which is kept as a candidate. A published card goes back to draft.",
+    "clearCandidates": "Clear candidates ({count})",
+    "clearCandidatesTitle": "Delete {count} candidate images?",
+    "clearCandidatesHint": "They are only removed from the card; the images stay in your library.",
+    "clearCandidatesConfirm": "Delete",
+    "cancel": "Cancel",
+    "group": {
+      "portrait": "Identity portrait",
+      "sheet": "Character sheet",
+      "view": "Views",
+      "expression": "Expressions",
+      "detail": "Details & other",
+      "master": "Master plate",
+      "shot": "Shots",
       "other": "Other"
     }
   }

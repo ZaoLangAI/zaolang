@@ -2589,7 +2589,9 @@
     "promoteInsufficientCredits": "积分不足，无法升级到该档位。",
     "quoteFailed": "预估价格失败，请重试。",
     "download": "下载",
-    "downloadFailed": "下载失败，请重试。"
+    "downloadFailed": "下载失败，请重试。",
+    "candidateFiled": "有 {count} 张已存为候选，原来的定稿图保持不变。",
+    "reviewCandidates": "去定稿"
   },
   "learnPage": {
     "eyebrow": "ZAOLANG ACADEMY",
@@ -3760,6 +3762,25 @@
       "pose": "姿态",
       "outfit_detail": "服装细节",
       "prop": "道具",
+      "master": "主图",
+      "shot": "机位",
+      "other": "其他"
+    },
+    "candidate": "候选",
+    "candidateCount": "候选 {count}",
+    "approve": "定稿",
+    "approveHint": "用这张替换当前定稿图；原图保留为候选。已发布的卡片会回到草稿。",
+    "clearCandidates": "清空候选（{count}）",
+    "clearCandidatesTitle": "删除 {count} 张候选图？",
+    "clearCandidatesHint": "只从卡片中移除，图片仍保留在你的素材里。",
+    "clearCandidatesConfirm": "删除",
+    "cancel": "取消",
+    "group": {
+      "portrait": "定妆照",
+      "sheet": "设定图",
+      "view": "视角",
+      "expression": "表情",
+      "detail": "细节·其他",
       "master": "主图",
       "shot": "机位",
       "other": "其他"

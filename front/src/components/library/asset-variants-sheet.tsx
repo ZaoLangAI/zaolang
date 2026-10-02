@@ -4,7 +4,9 @@ import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
+import { candidateCount, groupEntries } from '@/components/library/entry-groups';
 import { Button, IconButton } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Select, TextArea, TextInput } from '@/components/ui/field';
 import { IconCheck, IconPlus, IconSparkle, IconTrash, IconUpload } from '@/components/ui/icons';
 import { Badge } from '@/components/ui/primitives';
@@ -49,6 +51,11 @@ const PRESET_AXES = [
  * filed under each — `/v1/{characters|scenes}/{id}/{looks|variants}…`.
  * Every change refetches the card and hands it back via `onCardChange`, so
  * the library grid (sheet thumbnail, `reference_assets`) stays in step.
+ *
+ * Images are grouped by role (`groupEntries`). A generated image whose slot
+ * already had an approved one arrives as a candidate (P2-1): it is shown
+ * after the approved image so the two can be compared, and 定稿 swaps them.
+ * Candidates are never removed automatically — only from here.
  */
 export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
   kind,
@@ -157,7 +164,13 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
             >
               {variant.name}
               {variant.is_default ? ` · ${t('default')}` : ''}
-              <span className="ml-1 text-muted">({(variant.entries ?? []).length})</span>
+              <span className="ml-1 text-muted">
+                ({(variant.entries ?? []).length - candidateCount(variant.entries ?? [])}
+                {candidateCount(variant.entries ?? [])
+                  ? ` · ${t('candidateCount', { count: candidateCount(variant.entries ?? []) })}`
+                  : ''}
+                )
+              </span>
             </button>
           ))}
           <Button
@@ -205,6 +218,12 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
             onEntryUpdate={(entry, body) => void updateEntry(entry, body)}
             onEntryDelete={(entry) => void run(() => api.delete(`${base}/entries/${entry.id}`))}
             onAnchor={(entry) => void run(() => api.post(`${base}/entries/${entry.id}:anchor`))}
+            onApprove={(entry) => void run(() => api.post(`${base}/entries/${entry.id}:approve`))}
+            onClearCandidates={(entries) =>
+              void run(async () => {
+                for (const entry of entries) await api.delete(`${base}/entries/${entry.id}`);
+              })
+            }
             onGenerate={() => router.push(generateHref(active))}
           />
         ) : null}
@@ -225,6 +244,8 @@ function VariantPanel({
   onEntryUpdate,
   onEntryDelete,
   onAnchor,
+  onApprove,
+  onClearCandidates,
   onGenerate,
 }: {
   kind: CardKind;
@@ -238,10 +259,14 @@ function VariantPanel({
   onEntryUpdate: (entry: AssetEntry, body: Record<string, unknown>) => void;
   onEntryDelete: (entry: AssetEntry) => void;
   onAnchor: (entry: AssetEntry) => void;
+  onApprove: (entry: AssetEntry) => void;
+  onClearCandidates: (entries: AssetEntry[]) => void;
   onGenerate: () => void;
 }) {
   const t = useTranslations('assetVariants');
   const tPresets = useTranslations('remixPage');
+  const [clearing, setClearing] = useState<AssetEntry[] | null>(null);
+  const groups = groupEntries(kind, variant.entries ?? []);
   const [name, setName] = useState(variant.name);
   const [description, setDescription] = useState(variant.description ?? '');
   const presets = (variant.presets ?? {}) as ScenePresets;
@@ -325,61 +350,144 @@ function VariantPanel({
         </label>
       </div>
 
-      {(variant.entries ?? []).length === 0 ? (
+      {groups.length === 0 ? (
         <p className="text-xs text-muted">{t('emptyVariant')}</p>
       ) : (
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {(variant.entries ?? []).map((entry) => (
-            <li
-              key={entry.id}
-              className="flex flex-col gap-1.5 rounded-[var(--radius-sm)] border border-border p-1.5"
-            >
-              <div className="relative aspect-square overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
-                {entry.url ? (
-                  <Image src={entry.url} alt="" fill sizes="160px" className="object-cover" />
-                ) : null}
-                {entry.id === anchorEntryId ? (
-                  <span className="absolute left-1 top-1">
-                    <Badge tone="primary">{t('anchor')}</Badge>
-                  </span>
-                ) : null}
-              </div>
-              <Select
-                label={t('entryType')}
-                value={entry.entry_type}
-                onChange={(event) => onEntryUpdate(entry, { entry_type: event.target.value })}
-                options={entryTypes.map((type) => ({ value: type, label: t(`type.${type}`) }))}
-              />
-              {variants.length > 1 ? (
-                <Select
-                  label={t('moveTo')}
-                  value={variant.id}
-                  onChange={(event) => onEntryUpdate(entry, { variant_id: event.target.value })}
-                  options={variants.map((v) => ({ value: v.id, label: v.name }))}
-                />
+        groups.map((group) => (
+          <section key={group.key} className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-xs font-semibold text-muted">{t(`group.${group.key}`)}</h3>
+              {group.candidates ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    setClearing(group.entries.filter((entry) => entry.status === 'candidate'))
+                  }
+                >
+                  {t('clearCandidates', { count: group.candidates })}
+                </Button>
               ) : null}
-              <div className="flex justify-between">
-                <IconButton
-                  size="sm"
-                  label={t('setAnchor')}
-                  disabled={entry.id === anchorEntryId}
-                  onClick={() => onAnchor(entry)}
-                >
-                  <IconCheck className="size-4" />
-                </IconButton>
-                <IconButton
-                  size="sm"
-                  variant="danger"
-                  label={t('removeEntry')}
-                  onClick={() => onEntryDelete(entry)}
-                >
-                  <IconTrash className="size-4" />
-                </IconButton>
-              </div>
-            </li>
-          ))}
-        </ul>
+            </div>
+            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {group.entries.map((entry) => (
+                <EntryCard
+                  key={entry.id}
+                  entry={entry}
+                  variant={variant}
+                  variants={variants}
+                  isAnchor={entry.id === anchorEntryId}
+                  entryTypes={entryTypes}
+                  onUpdate={(body) => onEntryUpdate(entry, body)}
+                  onDelete={() => onEntryDelete(entry)}
+                  onAnchor={() => onAnchor(entry)}
+                  onApprove={() => onApprove(entry)}
+                />
+              ))}
+            </ul>
+          </section>
+        ))
       )}
+
+      <ConfirmDialog
+        open={clearing !== null}
+        onClose={() => setClearing(null)}
+        title={t('clearCandidatesTitle', { count: clearing?.length ?? 0 })}
+        description={t('clearCandidatesHint')}
+        confirmLabel={t('clearCandidatesConfirm')}
+        cancelLabel={t('cancel')}
+        onConfirm={() => {
+          if (clearing) onClearCandidates(clearing);
+          setClearing(null);
+        }}
+      />
     </div>
+  );
+}
+
+function EntryCard({
+  entry,
+  variant,
+  variants,
+  isAnchor,
+  entryTypes,
+  onUpdate,
+  onDelete,
+  onAnchor,
+  onApprove,
+}: {
+  entry: AssetEntry;
+  variant: AssetVariant;
+  variants: AssetVariant[];
+  isAnchor: boolean;
+  entryTypes: AssetEntryType[];
+  onUpdate: (body: Record<string, unknown>) => void;
+  onDelete: () => void;
+  onAnchor: () => void;
+  onApprove: () => void;
+}) {
+  const t = useTranslations('assetVariants');
+  const candidate = entry.status === 'candidate';
+  return (
+    <li
+      className={cn(
+        'flex flex-col gap-1.5 rounded-[var(--radius-sm)] border p-1.5',
+        candidate ? 'border-dashed border-border' : 'border-border',
+      )}
+    >
+      <div
+        className={cn(
+          'relative aspect-square overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft',
+          candidate && 'opacity-70',
+        )}
+      >
+        {entry.url ? (
+          <Image src={entry.url} alt="" fill sizes="160px" className="object-cover" />
+        ) : null}
+        {isAnchor ? (
+          <span className="absolute left-1 top-1">
+            <Badge tone="primary">{t('anchor')}</Badge>
+          </span>
+        ) : candidate ? (
+          <span className="absolute left-1 top-1">
+            <Badge>{t('candidate')}</Badge>
+          </span>
+        ) : null}
+      </div>
+      {candidate ? (
+        <Button size="sm" onClick={onApprove} title={t('approveHint')}>
+          {t('approve')}
+        </Button>
+      ) : (
+        <>
+          <Select
+            label={t('entryType')}
+            value={entry.entry_type}
+            onChange={(event) => onUpdate({ entry_type: event.target.value })}
+            options={entryTypes.map((type) => ({ value: type, label: t(`type.${type}`) }))}
+          />
+          {variants.length > 1 ? (
+            <Select
+              label={t('moveTo')}
+              value={variant.id}
+              onChange={(event) => onUpdate({ variant_id: event.target.value })}
+              options={variants.map((v) => ({ value: v.id, label: v.name }))}
+            />
+          ) : null}
+        </>
+      )}
+      <div className="flex justify-between">
+        {candidate ? (
+          <span />
+        ) : (
+          <IconButton size="sm" label={t('setAnchor')} disabled={isAnchor} onClick={onAnchor}>
+            <IconCheck className="size-4" />
+          </IconButton>
+        )}
+        <IconButton size="sm" variant="danger" label={t('removeEntry')} onClick={onDelete}>
+          <IconTrash className="size-4" />
+        </IconButton>
+      </div>
+    </li>
   );
 }

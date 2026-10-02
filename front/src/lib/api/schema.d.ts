@@ -1361,6 +1361,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/characters/{card_id}/entries/{entry_id}:approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Entry
+         * @description Makes a candidate its slot's approved image; the one it replaces
+         *     becomes a candidate (and hands over the anchor if it held it).
+         */
+        post: operations["approve_character_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/scenes/{card_id}/variants": {
         parameters: {
             query?: never;
@@ -1442,6 +1463,27 @@ export interface paths {
         put?: never;
         /** Set Anchor */
         post: operations["set_scene_anchor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/entries/{entry_id}:approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Entry
+         * @description Makes a candidate its slot's approved image; the one it replaces
+         *     becomes a candidate (and hands over the anchor if it held it).
+         */
+        post: operations["approve_scene_entry"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9210,6 +9252,11 @@ export interface components {
             linked_character_id?: string | null;
             /** Linked Scene Id */
             linked_scene_id?: string | null;
+            /**
+             * Candidate Entries
+             * @default 0
+             */
+            candidate_entries: number;
             /** Draft Id */
             draft_id?: string | null;
             /** Prompt */
@@ -16780,6 +16827,40 @@ export interface operations {
             };
         };
     };
+    approve_character_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_scene_variant: {
         parameters: {
             query?: never;
@@ -16996,6 +17077,40 @@ export interface operations {
         };
     };
     set_scene_anchor: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_scene_entry: {
         parameters: {
             query?: never;
             header?: {

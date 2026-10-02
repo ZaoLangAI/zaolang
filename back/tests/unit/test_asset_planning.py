@@ -452,6 +452,42 @@ def test_asset_output_link_attaches_to_an_existing_target_character(
     assert "created_character_id" not in ctx.state
 
 
+def test_asset_output_link_keeps_the_approved_sheet_and_files_a_candidate(
+    db: Session, author: User
+) -> None:
+    """A regenerated front sheet must not silently replace the one the
+    owner already settled on (P2-1): it waits beside it as a candidate."""
+    from app.domain.asset_variants import service as asset_variants_service
+
+    character = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林夏",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    produced = []
+    for _ in range(2):
+        asset = _asset(db, author)
+        ctx = _ctx(
+            db,
+            author,
+            params={
+                "asset_kind": ImageAssetKind.CHARACTER.value,
+                "target_character_id": character.id,
+            },
+        )
+        ctx.state["asset_id"] = asset.id
+        execute_asset_output_link(ctx, AssetOutputLinkConfig())
+        produced.append(asset.id)
+
+    refreshed = characters_service.get_character(db, user_id=author.id, character_id=character.id)
+    assert refreshed.reference_asset_ids == [produced[0]]
+    statuses = {e.asset_id: e.status for e in asset_variants_service.entries(refreshed.skill)}
+    assert statuses == {produced[0]: "approved", produced[1]: "candidate"}
+
+
 def test_asset_output_link_auto_creates_a_character_when_no_target_is_given(
     db: Session, author: User
 ) -> None:

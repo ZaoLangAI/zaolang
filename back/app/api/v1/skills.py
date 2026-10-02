@@ -360,7 +360,7 @@ def _detail(session: DbSession, skill: CreationSkill, viewer_id: str | None) -> 
         cover_asset_id=skill.cover_asset_id,
         params=_public_params(skill) if unlocked else {},
         reject_reason=skill.reject_reason,
-        asset_variants=asset_variant_presenter.variant_views(session, skill)
+        asset_variants=asset_variant_presenter.variant_views(session, skill, approved_only=True)
         if unlocked and is_card
         else [],
         anchor_asset_id=anchor.asset_id if anchor else None,

@@ -263,7 +263,10 @@ def _promote_master(session: Session, skill: CreationSkill) -> None:
     if asset_variants_service.anchor(skill) is not None:
         return
     default = asset_variants_service.find_default(skill)
-    first = default.entries[0] if default and default.entries else None
+    approved = (
+        [e for e in default.entries if asset_variants_service.is_approved(e)] if default else []
+    )
+    first = approved[0] if approved else None
     if first is None:
         return
     first.entry_type = AssetEntryType.MASTER.value
@@ -313,6 +316,7 @@ def append_reference_asset(
     presets: dict[str, Any] | None = None,
     source_job_id: str | None = None,
     variant_id: str | None = None,
+    generated: bool = False,
 ) -> SceneView:
     """Files one image under a variant — the P0 `(view, label)` shape,
     translated: `variant_id` (a variant of this card) wins, else `presets` (or
@@ -322,6 +326,10 @@ def append_reference_asset(
     becomes a shot); anything else accumulates as a shot up to the variant's
     cap (422 beyond it). With no anchor yet the default variant's first image
     becomes master + anchor.
+
+    `generated` (a job's write-back) never displaces: a master for a
+    variant that already has an approved one is kept as a candidate
+    (`asset_variants.service.file_generated`).
 
     Called by the scene library UI and by
     `app.workflows.nodes.execute_asset_output_link`.
@@ -337,14 +345,16 @@ def append_reference_asset(
     has_master = any(e.entry_type == AssetEntryType.MASTER for e in variant.entries)
     positional = view in ("detail", "reverse")
     if view == MASTER_VIEW or (not has_master and not variant.is_default and not positional):
-        for previous in variant.entries:
-            if previous.entry_type == AssetEntryType.MASTER and previous.asset_id != asset_id:
-                previous.entry_type = AssetEntryType.SHOT.value
+        if not generated:
+            for previous in variant.entries:
+                if previous.entry_type == AssetEntryType.MASTER and previous.asset_id != asset_id:
+                    previous.entry_type = AssetEntryType.SHOT.value
         entry_type, entry_view = AssetEntryType.MASTER.value, None
     else:
         entry_type = AssetEntryType.SHOT.value
         entry_view = view if positional else None
-    entry = asset_variants_service.add_entry(
+    file = asset_variants_service.file_generated if generated else asset_variants_service.add_entry
+    entry = file(
         session,
         skill,
         variant,
@@ -353,8 +363,10 @@ def append_reference_asset(
         view=entry_view,
         source_job_id=source_job_id,
     )
-    if entry_type == AssetEntryType.MASTER and (
-        asset_variants_service.anchor(skill) is None or variant.is_default
+    if (
+        entry_type == AssetEntryType.MASTER
+        and asset_variants_service.is_approved(entry)
+        and (asset_variants_service.anchor(skill) is None or variant.is_default)
     ):
         asset_variants_service.set_anchor(session, skill, entry)
     _promote_master(session, skill)
