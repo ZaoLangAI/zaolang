@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { TextArea } from '@/components/ui/field';
+import { IconVideo } from '@/components/ui/icons';
 import { EmptyState, ErrorNotice, Skeleton } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
@@ -112,12 +113,13 @@ export function ScriptEditor({
   const stream = useScriptTurnStream();
   const createStream = useCreateStream(episodeId);
   const characterLibrary = useResource<Character[]>('/v1/characters');
+  const refetchCharacterLibrary = characterLibrary.refetch;
 
   // Seeds the retry composer with the idea/skills that produced the current
   // (possibly missing) first draft — once, the first time a real idea shows
-  // up. Lives up here, ahead of the loading/error early returns below, and
-  // is adjusted during render (same pattern as `command-palette.tsx`) with a
-  // state guard rather than a ref, since refs can't be read during render.
+  // up. Adjusted during render (ahead of the loading/error early returns
+  // below) rather than in an effect, so the composer never renders empty
+  // for a frame first.
   const seedIdea = (createStream?.idea || detail?.source_idea || '').trim();
   if (!retryIdeaSeeded && seedIdea) {
     setRetryIdeaSeeded(true);
@@ -231,17 +233,31 @@ export function ScriptEditor({
   const updateLink = useCallback(
     async (
       update:
-        | { kind: 'character'; name: string; refId: string | null }
-        | { kind: 'scene'; heading: string; refId: string | null },
+        | { kind: 'character'; name: string; refId: string | null; variantId?: string | null }
+        | { kind: 'scene'; heading: string; refId: string | null; variantId?: string | null },
     ) => {
       try {
         const script = await scriptApi.updateScriptLinks(episodeId, {
           characters:
             update.kind === 'character'
-              ? [{ name: update.name, character_ref_id: update.refId }]
+              ? [
+                  {
+                    name: update.name,
+                    character_ref_id: update.refId,
+                    look_id: update.variantId ?? null,
+                  },
+                ]
               : [],
           scenes:
-            update.kind === 'scene' ? [{ heading: update.heading, ref_id: update.refId }] : [],
+            update.kind === 'scene'
+              ? [
+                  {
+                    heading: update.heading,
+                    ref_id: update.refId,
+                    variant_id: update.variantId ?? null,
+                  },
+                ]
+              : [],
         });
         setDetail((current) => (current ? { ...current, script } : current));
         setViewedScript(script);
@@ -256,8 +272,8 @@ export function ScriptEditor({
     invalidateResource('/v1/characters');
     invalidateResource('/v1/scenes');
     setLibraryRevision((current) => current + 1);
-    characterLibrary.refetch();
-  }, [characterLibrary.refetch]);
+    refetchCharacterLibrary();
+  }, [refetchCharacterLibrary]);
 
   const videoBindings = useMemo(
     () => indexBreakpointVideos(linkedDrafts, (viewedScript ?? detail?.script)?.scenes ?? []),
@@ -554,6 +570,21 @@ export function ScriptEditor({
 
   return (
     <>
+      {detail.blocking ? (
+        <div className="-mt-2 flex flex-wrap items-center justify-end gap-3">
+          <p className="text-xs text-muted">{t('openBlockingHint')}</p>
+          <Link
+            href={`/create/script/${episodeId}/blocking`}
+            className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 text-sm font-medium text-text transition-colors hover:border-border-strong hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-focus"
+          >
+            <IconVideo className="size-4" />
+            {t('openBlocking')}
+            {detail.blocking.stale ? (
+              <span className="size-1.5 rounded-full bg-amber" aria-label={t('blockingStale')} />
+            ) : null}
+          </Link>
+        </div>
+      ) : null}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,1.3fr)]">
         <div className={`flex min-h-[50vh] flex-col ${WORKSPACE_HEIGHT}`}>
           <ScriptChatPanel

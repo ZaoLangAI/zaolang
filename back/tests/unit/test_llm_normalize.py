@@ -50,7 +50,9 @@ def test_extract_json_skips_decoy_objects_when_keys_are_required() -> None:
         "prompt": "黄昏海边的女孩",
         "detail_level": "sparse",
     }
-    assert extract_json('{"answer":"$your_answer"}', required_keys=("prompt", "detail_level")) is None
+    assert (
+        extract_json('{"answer":"$your_answer"}', required_keys=("prompt", "detail_level")) is None
+    )
 
 
 def test_braces_inside_strings_do_not_break_extraction() -> None:

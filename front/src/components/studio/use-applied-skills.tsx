@@ -10,6 +10,7 @@ import { IconClose } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/toast';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
+import { useIsomorphicLayoutEffect } from '@/lib/motion';
 import type { CreationSkillDetail, CreationSkillSummary, Operation, Page } from '@/lib/api/types';
 import { isSkillMentionable } from '@/lib/skill-mention';
 import { useResource } from '@/lib/use-resource';
@@ -80,10 +81,11 @@ export function useAppliedSkills({
   const [appliedSkillIds, setAppliedSkillIds] = useState<string[]>([]);
   const [pendingUnlockSkill, setPendingUnlockSkill] = useState<CreationSkillSummary | null>(null);
   const onApplyParamsRef = useRef(onApplyParams);
-  // Assigned in an effect, not during render — `react-hooks/refs`.
-  useEffect(() => {
+  // Synced after commit rather than assigned during render (refs must not be
+  // written while rendering) — same pattern as `use-overlay-transition.ts`.
+  useIsomorphicLayoutEffect(() => {
     onApplyParamsRef.current = onApplyParams;
-  }, [onApplyParams]);
+  });
   const seededSkillIdRef = useRef<string | null>(null);
 
   const applyUnlockedSkill = async (skill: CreationSkillSummary) => {

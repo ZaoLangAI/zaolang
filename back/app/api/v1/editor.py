@@ -71,6 +71,7 @@ from app.models import (
     Asset,
     CutRevision,
     DeliveryVariant,
+    DramaEpisode,
     EditorExport,
     EditPlan,
     EpisodeCut,
@@ -207,7 +208,9 @@ def episode_response(  # type: ignore[no-untyped-def]
     )
 
 
-def _episode_payloads(session: DbSession, episodes: list) -> list[DramaEpisodeResponse]:  # type: ignore[no-untyped-def]
+def _episode_payloads(
+    session: DbSession, episodes: list[DramaEpisode]
+) -> list[DramaEpisodeResponse]:
     ids = [item.id for item in episodes]
     turned = editor_service.episodes_with_script_turns(session, episode_ids=ids)
     sources = editor_service.episodes_with_preview_source(session, episode_ids=ids)
@@ -550,10 +553,7 @@ def list_collaboration_invites(
     rows = collaborators.list_my_invites(session, user_id=user.id)
     series_by_id = {
         series.id: series
-        for series in (
-            session.get(Series, row.series_id)
-            for row in rows
-        )
+        for series in (session.get(Series, row.series_id) for row in rows)
         if series is not None
     }
     inviter_profiles = collaborators.profiles_by_user_id(
@@ -713,9 +713,7 @@ def create_content_link(
 def list_content_links(
     episode_id: str, user: CurrentUser, session: DbSession
 ) -> list[EpisodeContentLinkResponse]:
-    links = editor_service.list_content_links(
-        session, user_id=user.id, episode_id=episode_id
-    )
+    links = editor_service.list_content_links(session, user_id=user.id, episode_id=episode_id)
     # Heal upserts missing draft links; persist so the next read stays filled.
     session.commit()
     return [content_link_response(item) for item in links]
@@ -787,6 +785,7 @@ def create_cut_from_job(
     if analysis_id:
         _enqueue_media_analysis(analysis_id)
     return _cut_response(session, cut)
+
 
 @router.post(
     "/drama-episodes/{episode_id}/cuts",
@@ -969,7 +968,9 @@ def apply_revision(
     "/episode-cuts/{cut_id}/revisions",
     response_model=list[CutRevisionSummaryResponse],
 )
-def list_revisions(cut_id: str, user: CurrentUser, session: DbSession) -> list[CutRevisionSummaryResponse]:
+def list_revisions(
+    cut_id: str, user: CurrentUser, session: DbSession
+) -> list[CutRevisionSummaryResponse]:
     cut = editor_service._owned_cut(session, user_id=user.id, cut_id=cut_id)
     revisions = editor_service.list_revisions(session, user_id=user.id, cut_id=cut_id)
     return [

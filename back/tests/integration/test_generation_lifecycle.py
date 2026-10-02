@@ -343,6 +343,188 @@ def test_a_failing_route_is_retried_before_giving_up(db: Session, funded: User) 
     assert [a.attempt_number for a in attempts] == [1, 2]
 
 
+def test_every_character_view_gets_its_own_route_budget(
+    db: Session, funded: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A three-view character job whose first try on *every* view fails must
+    still finish: each view is its own generation with its own
+    `route_score` budget, while `attempt_number` (which names the output
+    object key) keeps counting across the whole job so no view's output
+    overwrites another's."""
+    from tests import fake_providers
+
+    calls = {"n": 0}
+
+    def flaky(original):
+        def submit(self, request):
+            calls["n"] += 1
+            if calls["n"] % 2 == 1:
+                return fake_providers.GenerationResult(
+                    succeeded=False,
+                    failure_code="PROVIDER_TEMPORARY_FAILURE",
+                    metadata={"provider": self.name, "simulated": True},
+                )
+            return original(self, request)
+
+        return submit
+
+    for cls in (fake_providers.FakeOpenWorkflowProvider, fake_providers.FakePaidApiProvider):
+        monkeypatch.setattr(cls, "submit", flaky(cls.submit))
+
+    from app.domain.workflow_templates import service as workflow_templates_service
+
+    workflow_templates_service.ensure_default_templates(db)
+    job = jobs_service.submit(
+        db,
+        user_id=funded.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={
+            "prompt": "一位神秘的女侦探",
+            "aspect_ratio": "16:9",
+            "asset_kind": "character",
+            "character_views": ["front", "side", "back"],
+            "auto_attach_asset": False,
+        },
+        idempotency_key=new_id("idk"),
+    ).job
+
+    outcome = pipeline.run_generation_pipeline(db, job.id)
+
+    assert outcome.status == JobStatus.SUCCEEDED
+    db.refresh(job)
+    assert len(job.output_asset_ids_json or []) == 3
+    attempts = list(
+        db.scalars(
+            select(ProviderAttempt)
+            .where(ProviderAttempt.job_id == job.id)
+            .order_by(ProviderAttempt.created_at)
+        )
+    )
+    numbers = [a.attempt_number for a in attempts]
+    assert numbers == [1, 2, 3, 4, 5, 6]
+    object_keys = {
+        db.get(Asset, asset_id).object_key for asset_id in job.output_asset_ids_json or []
+    }
+    assert len(object_keys) == 3
+
+
+def test_labelled_references_reach_the_provider_with_a_legend(db: Session, funded: User) -> None:
+    """A job that pulls a character's sheet and a scene's master plate names
+    each image in the prompt, in the order the provider receives them; the
+    GENERATING event keeps the un-prefixed `base_prompt` for fast retry."""
+    from app.domain.characters import service as characters_service
+    from app.domain.scenes import service as scenes_service
+
+    def _image() -> Asset:
+        asset = Asset(
+            owner_user_id=funded.id,
+            object_key=f"test/{funded.id}/{new_id('obj')}.png",
+            media_type=MediaType.IMAGE,
+            mime_type="image/png",
+            size_bytes=1024,
+            checksum_sha256="b" * 64,
+            role=AssetRole.GENERATION_OUTPUT,
+        )
+        db.add(asset)
+        db.flush()
+        return asset
+
+    character = characters_service.create_character(
+        db,
+        user_id=funded.id,
+        name="林夏",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    sheet = _image()
+    characters_service.append_reference_asset(
+        db, user_id=funded.id, character_id=character.id, asset_id=sheet.id, view="front"
+    )
+    scene = scenes_service.create_scene(
+        db, user_id=funded.id, name="客厅", description=None, reference_asset_ids=[]
+    )
+    plate = _image()
+    scenes_service.append_reference_asset(
+        db, user_id=funded.id, scene_id=scene.id, asset_id=plate.id
+    )
+
+    job = jobs_service.submit(
+        db,
+        user_id=funded.id,
+        operation=Operation.IMAGE_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={
+            "prompt": "林夏站在客厅窗前",
+            "aspect_ratio": "16:9",
+            "character_ids": [character.id],
+            "scene_ids": [scene.id],
+        },
+        idempotency_key=new_id("idk"),
+    ).job
+    assert job.request_json["reference_labels"] == [
+        {"asset_id": sheet.id, "label": "角色「林夏」·设定图"},
+        {"asset_id": plate.id, "label": "场景「客厅」·主图"},
+    ]
+
+    pipeline.run_generation_pipeline(db, job.id)
+
+    event = db.scalar(
+        select(JobEvent).where(JobEvent.job_id == job.id, JobEvent.event_type == "generating")
+    )
+    assert event is not None
+    prompt = event.payload_json["prompt"]
+    assert prompt.startswith("参考图说明：图1 是角色「林夏」·设定图；图2 是场景「客厅」·主图")
+    assert not event.payload_json["base_prompt"].startswith("参考图说明")
+    assert prompt.endswith(event.payload_json["base_prompt"])
+
+
+def test_a_scene_variant_set_generates_one_labelled_image_per_variant(
+    db: Session, funded: User
+) -> None:
+    """Three variants → three passes of one image each on any single-output
+    model, all filed on the scene under their own labels, charged in full."""
+    from app.domain.scenes import service as scenes_service
+    from app.domain.workflow_templates import service as workflow_templates_service
+
+    workflow_templates_service.ensure_default_templates(db)
+    scene = scenes_service.create_scene(
+        db, user_id=funded.id, name="客厅", description=None, reference_asset_ids=[]
+    )
+    job = jobs_service.submit(
+        db,
+        user_id=funded.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={
+            "prompt": "老式客厅",
+            "aspect_ratio": "16:9",
+            "asset_kind": "scene",
+            "target_scene_id": scene.id,
+            "scene_variants": [
+                {"lighting": "day"},
+                {"lighting": "dusk"},
+                {"lighting": "night_interior"},
+            ],
+        },
+        idempotency_key=new_id("idk"),
+    ).job
+    unit = jobs_service.quote_for(
+        db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD
+    ).credits
+    assert job.reserved_credits == unit * 3
+
+    outcome = pipeline.run_generation_pipeline(db, job.id)
+
+    assert outcome.status == JobStatus.SUCCEEDED
+    db.refresh(job)
+    assert len(job.output_asset_ids_json or []) == 3
+    assert job.actual_credits == unit * 3
+    entries = scenes_service.get_scene(db, user_id=funded.id, scene_id=scene.id).reference_assets
+    assert [entry["label"] for entry in entries] == ["白天", "黄昏", "夜·室内"]
+
+
 def _park_awaiting_input(db: Session, job: GenerationJob) -> None:
     from app.domain.jobs import input_requests
 
@@ -1220,9 +1402,7 @@ def _enable_video_analysis(session: Session, actor: User) -> None:
     from app.platform_config import service as config_service
     from app.platform_config.schemas import FeatureFlags
 
-    value = config_service.get_typed(session, "feature_flags", FeatureFlags).model_dump(
-        mode="json"
-    )
+    value = config_service.get_typed(session, "feature_flags", FeatureFlags).model_dump(mode="json")
     value["video_analysis_enabled"] = True
     config_service.set_value(session, "feature_flags", value, actor_user_id=actor.id, note="test")
 
@@ -1307,9 +1487,7 @@ def test_video_analysis_settles_into_structured_analysis_and_the_operation_filte
     assert result.job.analysis_result_json is not None
     assert result.job.analysis_result_json["composed_prompt"]
 
-    body = client.get(
-        f"/v1/generation-jobs/{result.job.id}", headers=auth_header(funded)
-    ).json()
+    body = client.get(f"/v1/generation-jobs/{result.job.id}", headers=auth_header(funded)).json()
     assert body["analysis"]["composed_prompt"] == result.job.analysis_result_json["composed_prompt"]
     assert body["analysis"]["shots"][0]["camera_movement"]
     assert body["output_asset_id"] is None

@@ -6,10 +6,8 @@ import { NavigationFadeWatcher } from '@/components/layout/navigation-fade-watch
 import { ThemeProvider } from '@/components/theme/theme-provider';
 import { ToastProvider } from '@/components/ui/toast';
 import { usePathname } from '@/i18n/navigation';
-import { api } from '@/lib/api/client';
 import type { ThemePreference } from '@/lib/theme';
-
-const ADMIN_PATH = /(?:^|\/)admin(?:\/|$)/;
+import { syncThemePreference } from '@/lib/theme-sync';
 
 export function AppProviders({
   children,
@@ -23,16 +21,9 @@ export function AppProviders({
   const pathname = usePathname();
 
   // Signed-out users keep the choice in a cookie; signed-in users also get it
-  // stored on the account so it follows them to another device. A failed write
-  // is not worth interrupting the user over. Console routes must not touch the
-  // consumer preferences API — that 401 would redeem `/v1/auth/refresh`.
+  // stored on the account so it follows them to another device.
   const persistTheme = useCallback(
-    (theme: ThemePreference) => {
-      if (ADMIN_PATH.test(pathname)) return;
-      void api
-        .patch('/v1/auth/me/preferences', { theme }, { anonymous: true })
-        .catch(() => undefined);
-    },
+    (theme: ThemePreference) => syncThemePreference(theme, pathname),
     [pathname],
   );
 

@@ -204,7 +204,11 @@ def _resolve_asr_endpoint(session: Session) -> tuple[str, str, int] | None:
     """
     config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
     for endpoint in config.endpoints.values():
-        if endpoint.enabled and endpoint.kind == "media" and "audio_generation" in endpoint.capabilities:
+        if (
+            endpoint.enabled
+            and endpoint.kind == "media"
+            and "audio_generation" in endpoint.capabilities
+        ):
             return endpoint.base_url, endpoint.api_key, endpoint.timeout_ms
     return None
 

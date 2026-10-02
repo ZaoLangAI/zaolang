@@ -35,6 +35,7 @@ from app.agents import intent_router
 from app.domain.costs import service as costs_service
 from app.models import Asset, ProviderStat
 from app.models.enums import MediaGenerationKind, MediaType, Operation
+from app.providers import media_breaker
 from app.providers.base import ProviderCapability, adapt_resolution_tier
 from app.providers.media_endpoints import dynamic_capabilities
 
@@ -136,7 +137,8 @@ def route(
     Forwarded to `select_provider` as context only.
 
     `forced_model` is a deliberate, narrow exception to this module's own
-    "choice is the LLM's" rule (see `zaolang-agent-gateway` invariant #1):
+    "choice is the LLM's" rule (see the `zaolang-agent-gateway` skill on
+    routing and on `forced_model`):
     when a caller (`GenerationParams.forced_model`) names a model by its
     exact `ProviderCapability.model_or_workflow`, the hard filter still runs
     unchanged, but the winner among what survives is picked deterministically
@@ -183,6 +185,14 @@ def route(
         if name in excluded:
             candidate.eligible = False
             candidate.filter_reason = "previously_failed_this_job"
+            candidates.append(candidate)
+            continue
+        if media_breaker.is_open(name):
+            # Cross-job breaker (`app.providers.media_breaker`): this route is
+            # failing for everyone right now. A hard filter like the rest of
+            # this loop — never a score, and never shown to the selector.
+            candidate.eligible = False
+            candidate.filter_reason = "provider_circuit_open"
             candidates.append(candidate)
             continue
 
@@ -251,8 +261,8 @@ def route(
         agent_id=selector_agent_id,
     )
     selected_name = outcome.data.get("selected_provider")
-    winner = next((c for c in eligible if c.provider == selected_name), None)
-    if outcome.degraded or winner is None:
+    llm_winner = next((c for c in eligible if c.provider == selected_name), None)
+    if outcome.degraded or llm_winner is None:
         return RoutingDecision(
             selected=None,
             candidates=candidates,
@@ -266,7 +276,7 @@ def route(
         f"llm_selected:{rationale}" if isinstance(rationale, str) and rationale else "llm_selected"
     )
     return RoutingDecision(
-        selected=winner,
+        selected=llm_winner,
         candidates=candidates,
         reason=reason,
         catalog=catalog,
@@ -274,9 +284,7 @@ def route(
     )
 
 
-def _request_has_video_source(
-    session: Session, operation: str, params: Mapping[str, Any]
-) -> bool:
+def _request_has_video_source(session: Session, operation: str, params: Mapping[str, Any]) -> bool:
     """Whether this request already carries a video the edit-class models can use.
 
     `video_to_video` is itself the "has a source clip" operation (submit
@@ -319,6 +327,16 @@ def _request_constraint_failure(
     if capability.aspect_ratios is not None and aspect_ratio not in capability.aspect_ratios:
         return "aspect_ratio_not_supported"
     video_options = params.get("video_options")
+    if isinstance(video_options, Mapping) and video_options.get("reference_video_role") == (
+        "motion_guide"
+    ):
+        # A 白膜 blockout clip is guidance, not the output: it must reach a
+        # reference-to-video model, never an edit model that would restyle
+        # the grey mannequins themselves.
+        if capability.generation_kind == MediaGenerationKind.EDIT:
+            return "edit_model_not_for_motion_guide"
+        if not capability.accepts_video_reference:
+            return "video_reference_not_supported"
     if isinstance(video_options, Mapping):
         raw_resolution = video_options.get("resolution")
         reference_mode = str(video_options.get("reference_mode") or "input_references")
@@ -462,6 +480,7 @@ def record_attempt_outcome(
     latency_ms: int,
     cost_minor: int,
     cost_micro_usd: int = 0,
+    failure_code: str | None = None,
 ) -> None:
     """Feeds real outcomes back into the statistics the router reads.
 
@@ -488,3 +507,6 @@ def record_attempt_outcome(
     stat.total_cost_minor += cost_minor
     stat.total_cost_micro_usd += cost_micro_usd
     session.flush()
+    # The same outcome feeds the cross-job breaker, which (unlike the slow
+    # `success_rate` above) takes a route out of rotation within seconds.
+    media_breaker.record_outcome(provider, success=succeeded, failure_code=failure_code)

@@ -1,8 +1,13 @@
-"""OpenTelemetry setup.
+"""OpenTelemetry setup, driven by `Settings.otel_exporter`.
 
-Instrumentation is always installed; only the exporter is configurable. That
-way spans exist in every environment and turning on a collector is a config
-change rather than a code change.
+* `none` installs nothing: no tracer provider, no FastAPI instrumentation, so
+  `get_tracer` hands out OpenTelemetry's no-op tracer.
+* `otlp` with `otel_endpoint` set exports spans to that collector.
+* Otherwise (`console`, or `otlp` without an endpoint) spans go to stdout,
+  except under `app_env` test/ci, where they are recorded but not exported.
+
+Every mode but `none` installs the same provider and instrumentation, so
+turning on a collector is a config change rather than a code change.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 三页首次启动引导（`roadmap.md` M4）。文案来自 `iosOnboarding` 命名空间——iOS 专属界面，
+/// 三页首次启动引导（`zaolang-ios-client` skill 路线图「M4 首次引导」里程碑）。文案来自 `iosOnboarding` 命名空间——iOS 专属界面，
 /// 没有对应的 Web 页面，源头仍然是 `front/src/i18n/messages/*.json`，不在客户端单边发明文案
 /// （新增时先把 key 加进三语消息文件，再补进 `gen-strings.py` 的命名空间列表）。
 struct OnboardingView: View {

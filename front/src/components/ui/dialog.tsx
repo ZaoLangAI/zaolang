@@ -91,22 +91,38 @@ export function Dialog({
     });
   }, [render, reduced]);
 
-  useEffect(() => {
+  // The opener is captured in the commit where `open` flips — one commit
+  // before `useOverlayTransition` mounts the panel — so an `autoFocus` control
+  // inside the panel can't be mistaken for it. When the dialog mounts already
+  // open there is no earlier commit, and focus may already sit inside the
+  // panel; that is never somewhere to return to.
+  useIsomorphicLayoutEffect(() => {
     if (!open) return;
+    const active = document.activeElement as HTMLElement | null;
+    if (!panelRef.current?.contains(active)) restoreTo.current = active;
+  }, [open]);
 
-    restoreTo.current = document.activeElement as HTMLElement | null;
+  // Keyed on `open && render` rather than `open`: the panel only exists once
+  // `render` has caught up, and focusing a still-null ref would leave focus —
+  // and with it the Tab trap — on the trigger outside the dialog.
+  const active = open && render;
+  useEffect(() => {
+    if (!active) return;
+
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
     // Focus the panel itself, not its first control: reading the title before
-    // landing in a text field is what makes the dialog comprehensible.
-    panelRef.current?.focus();
+    // landing in a text field is what makes the dialog comprehensible. An
+    // `autoFocus` field that already claimed focus on mount keeps it.
+    const panel = panelRef.current;
+    if (panel && !panel.contains(document.activeElement)) panel.focus();
 
     return () => {
       document.body.style.overflow = previousOverflow;
       restoreTo.current?.focus();
     };
-  }, [open]);
+  }, [active]);
 
   // A document-level listener rather than relying on the panel's own
   // `onKeyDown` bubbling: a focused control that becomes `disabled` mid-dialog

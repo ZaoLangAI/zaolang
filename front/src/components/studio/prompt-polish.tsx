@@ -14,6 +14,7 @@ import { hasMissingRequiredAnswer, type QuestionAnswer } from '@/components/stud
 import { Button } from '@/components/ui/button';
 import { IconSparkle } from '@/components/ui/icons';
 import { ApiError } from '@/lib/api/errors';
+import { useIsomorphicLayoutEffect } from '@/lib/motion';
 import type {
   PromptEnhancePayload,
   PromptEnhanceReferencedSkill,
@@ -32,7 +33,7 @@ export interface PromptPolishContext {
   hasReference?: boolean;
   /** Only meaningful for an image job — routes the polish to that kind's
    * dedicated agent (`character`/`scene`/`cover`); omitted or `general`
-   * behaves like before. `ShortformStudio` never sets this. */
+   * behaves like before. */
   assetKind?: PromptEnhancePayload['asset_kind'];
   /** The video-side equivalent of `assetKind` — routes the polish to that
    * kind's dedicated agent (`character_action`/`transition_video`/
@@ -41,6 +42,12 @@ export interface PromptPolishContext {
   videoAssetKind?: PromptEnhancePayload['video_asset_kind'];
   /** Clip studio: polish the prompt and these colour blocks together. */
   scriptSegment?: PromptEnhanceScriptSegment;
+  /** Image studio expression / scene presets — the coach polishes around
+   * them instead of re-deciding light, damage, era or expressions. */
+  assetPresets?: Pick<
+    PromptEnhancePayload,
+    'character_expressions' | 'scene_lighting' | 'scene_weather' | 'scene_state' | 'scene_period'
+  >;
 }
 
 /**
@@ -126,10 +133,11 @@ export function PromptPolish({
   }
 
   const onPendingChangeRef = useRef(onPendingChange);
-  // Assigned in an effect, not during render — `react-hooks/refs`.
-  useEffect(() => {
+  // Synced after commit rather than assigned during render (refs must not be
+  // written while rendering) — same pattern as `use-overlay-transition.ts`.
+  useIsomorphicLayoutEffect(() => {
     onPendingChangeRef.current = onPendingChange;
-  }, [onPendingChange]);
+  });
   // A parent that locked submit on `pending` must unlock if this unmounts
   // mid-stream (navigating away, swapping studios) — otherwise the button
   // stays stuck. The in-flight `request()` also reports true/false itself.
@@ -180,6 +188,7 @@ export function PromptPolish({
             video_asset_kind: context?.videoAssetKind,
             script_segment: extra?.scriptSegment ?? context?.scriptSegment,
             question_answers: extra?.questionAnswers,
+            ...context?.assetPresets,
           };
           let result: PromptEnhanceResult | null = null;
           for await (const frame of streamPost(endpoint, body)) {

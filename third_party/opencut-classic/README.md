@@ -1,3 +1,12 @@
+> **ZaoLang vendoring note** — trimmed copy of
+> [OpenCut-app/opencut-classic](https://github.com/OpenCut-app/opencut-classic)
+> at commit `cf5e79e919144200294fb9fed22a222592a0aeea` (MIT, see `LICENSE`).
+> Only the Rust workspace needed to rebuild `front/public/wasm/opencut/`
+> (`wasm-pack build rust/wasm --target web`) is kept; the upstream Next.js web
+> app, the Tauri desktop app and their JS tooling were removed because nothing
+> in ZaoLang builds or ships them. Read the full tree at the pinned commit
+> upstream if you need the original editor UI for reference.
+
 # OpenCut (Legacy)
 
 This is the original OpenCut codebase. It's archived and no longer maintained.

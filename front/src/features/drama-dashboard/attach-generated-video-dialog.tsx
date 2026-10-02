@@ -38,13 +38,13 @@ export function AttachGeneratedVideoDialog({
   const tStates = useTranslations('states');
 
   const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(open);
   const [attachingId, setAttachingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset on each open, adjusted during render rather than in the fetch
-  // effect (same pattern as `command-palette.tsx`).
-  const [wasOpen, setWasOpen] = useState(false);
+  // Reset for the next open during render rather than in an effect (same
+  // "adjust state during render" pattern as `promote-job-dialog.tsx`).
+  const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open) {
@@ -55,13 +55,21 @@ export function AttachGeneratedVideoDialog({
 
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     void api
       .get<Page<Draft>>('/v1/drafts')
-      .then((page) => setDrafts(page.items))
-      .catch((caught) => {
-        setError(isApiError(caught) ? caught.message : tStates('errorHint'));
+      .then((page) => {
+        if (!cancelled) setDrafts(page.items);
       })
-      .finally(() => setLoading(false));
+      .catch((caught) => {
+        if (!cancelled) setError(isApiError(caught) ? caught.message : tStates('errorHint'));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [open, tStates]);
 
   const candidates = useMemo(

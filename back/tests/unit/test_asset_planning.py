@@ -170,9 +170,7 @@ def test_asset_planning_carries_prior_view_description_for_consistency(
     assert "银色短发、黑色风衣" in ctx.prompt
 
 
-@pytest.mark.parametrize(
-    "view", [CharacterViewAngle.SIDE.value, CharacterViewAngle.BACK.value]
-)
+@pytest.mark.parametrize("view", [CharacterViewAngle.SIDE.value, CharacterViewAngle.BACK.value])
 def test_asset_planning_overrides_the_prompt_for_a_side_or_back_completion_pass(
     db: Session, author: User, view: str
 ) -> None:
@@ -188,7 +186,8 @@ def test_asset_planning_overrides_the_prompt_for_a_side_or_back_completion_pass(
     final prompt in a real job's `job_events`, ambiguous about which single
     angle it wanted)."""
     other_view = (
-        CharacterViewAngle.BACK.value if view == CharacterViewAngle.SIDE.value
+        CharacterViewAngle.BACK.value
+        if view == CharacterViewAngle.SIDE.value
         else CharacterViewAngle.SIDE.value
     )
     ctx = _ctx(
@@ -203,9 +202,7 @@ def test_asset_planning_overrides_the_prompt_for_a_side_or_back_completion_pass(
     assert _CHARACTER_COMPLETION_FIXED_PROMPTS[other_view] not in ctx.prompt
 
 
-@pytest.mark.parametrize(
-    "view", [CharacterViewAngle.SIDE.value, CharacterViewAngle.BACK.value]
-)
+@pytest.mark.parametrize("view", [CharacterViewAngle.SIDE.value, CharacterViewAngle.BACK.value])
 def test_asset_planning_seeds_the_anti_collage_negative_for_a_completion_pass(
     db: Session, author: User, view: str
 ) -> None:
@@ -250,17 +247,55 @@ def test_asset_planning_resets_prompt_and_negative_prompt_between_loop_passes(
     ctx.state["_current_character_view"] = CharacterViewAngle.BACK.value
     execute_asset_planning(ctx, AssetPlanningConfig())
     assert ctx.prompt.startswith(_CHARACTER_COMPLETION_FIXED_PROMPTS[CharacterViewAngle.BACK.value])
-    assert (
-        _CHARACTER_COMPLETION_FIXED_PROMPTS[CharacterViewAngle.SIDE.value] not in ctx.prompt
-    )
+    assert _CHARACTER_COMPLETION_FIXED_PROMPTS[CharacterViewAngle.SIDE.value] not in ctx.prompt
     back_negative = ctx.params["negative_prompt"]
     assert "五官被头发遮挡" not in back_negative
     assert "露出正面五官" in back_negative
 
 
-def test_asset_planning_appends_the_sheet_suffix_on_a_front_pass(
+def test_asset_planning_gives_each_later_view_a_fresh_route_budget(
     db: Session, author: User
 ) -> None:
+    """The second view must not inherit the first view's spent
+    `route_attempts`, its excluded providers or its stale `failure_code` —
+    but `attempt_seq` (which names output object keys) keeps counting."""
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "character_views": [CharacterViewAngle.FRONT.value, CharacterViewAngle.SIDE.value],
+        },
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    # The front view needed a retry before it succeeded.
+    ctx.state.update(
+        route_attempts=2,
+        attempt_seq=2,
+        tried_providers={"provider_a"},
+        failure_code="PROVIDER_TEMPORARY_FAILURE",
+        asset_id=_asset(db, author).id,
+    )
+    execute_asset_output_advance(ctx, AssetOutputAdvanceConfig())
+
+    execute_asset_planning(ctx, AssetPlanningConfig())
+
+    assert ctx.state["route_attempts"] == 0
+    assert ctx.state["tried_providers"] == set()
+    assert "failure_code" not in ctx.state
+    assert ctx.state["attempt_seq"] == 2
+
+
+def test_asset_planning_leaves_the_first_pass_routing_state_alone(
+    db: Session, author: User
+) -> None:
+    ctx = _ctx(db, author, params={"asset_kind": ImageAssetKind.SCENE.value})
+    ctx.state["tried_providers"] = {"provider_a"}
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    assert ctx.state["tried_providers"] == {"provider_a"}
+
+
+def test_asset_planning_appends_the_sheet_suffix_on_a_front_pass(db: Session, author: User) -> None:
     """The `front` pass — including a plain single-view job with no
     `character_views` at all — keeps the caller's identity prompt and
     appends the sheet-layout suffix. Only a side/back completion pass
@@ -277,7 +312,9 @@ def test_asset_planning_appends_the_sheet_suffix_on_a_front_pass(
     execute_asset_planning(ctx, AssetPlanningConfig())
     assert ctx.prompt.startswith("一位神秘的女侦探")
     assert _CHARACTER_SHEET_LAYOUT_SUFFIX in ctx.prompt
-    assert _CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT not in (ctx.params.get("negative_prompt") or "")
+    assert _CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT not in (
+        ctx.params.get("negative_prompt") or ""
+    )
 
 
 def test_asset_plan_prompt_locks_character_visual_medium() -> None:
@@ -964,3 +1001,221 @@ def test_progress_is_unchanged_for_a_single_view_character_job(db: Session, auth
     events = sm.events_since(db, ctx.job.id, 0)
     assert len(events) == 1
     assert events[0].progress == 16
+
+
+# ---- labelled write-back (outfits, expressions, scene variants) ----------
+
+
+def test_asset_output_link_files_an_outfit_sheet_under_its_label(db: Session, author: User) -> None:
+    character = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林夏",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    daily = _asset(db, author)
+    characters_service.append_reference_asset(
+        db, user_id=author.id, character_id=character.id, asset_id=daily.id, view="front"
+    )
+    wedding = _asset(db, author)
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "target_character_id": character.id,
+            "character_outfit_label": "婚礼",
+        },
+    )
+    ctx.state["asset_id"] = wedding.id
+    execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    entries = characters_service.get_character(
+        db, user_id=author.id, character_id=character.id
+    ).reference_assets
+    by_id = {entry["asset_id"]: entry for entry in entries}
+    assert by_id[daily.id]["label"] is None
+    assert by_id[wedding.id]["view"] == "front"
+    assert by_id[wedding.id]["label"] == "婚礼"
+
+
+def test_asset_output_link_files_an_expression_sheet_as_a_labelled_extra(
+    db: Session, author: User
+) -> None:
+    character = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林夏",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    front = _asset(db, author)
+    characters_service.append_reference_asset(
+        db, user_id=author.id, character_id=character.id, asset_id=front.id, view="front"
+    )
+    sheet = _asset(db, author)
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "target_character_id": character.id,
+            "character_expressions": ["smirk", "restrained"],
+        },
+    )
+    ctx.state["asset_id"] = sheet.id
+    execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    by_id = {
+        entry["asset_id"]: entry
+        for entry in characters_service.get_character(
+            db, user_id=author.id, character_id=character.id
+        ).reference_assets
+    }
+    assert front.id in by_id
+    assert by_id[sheet.id]["view"] == CharacterViewAngle.GENERAL.value
+    assert by_id[sheet.id]["label"] == "表情·冷笑/隐忍"
+
+
+def test_asset_output_link_labels_a_scene_variant_with_its_presets(
+    db: Session, author: User
+) -> None:
+    scene = scenes_service.create_scene(
+        db, user_id=author.id, name="客厅", description=None, reference_asset_ids=[]
+    )
+    asset = _asset(db, author)
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "asset_kind": ImageAssetKind.SCENE.value,
+            "target_scene_id": scene.id,
+            "scene_lighting": "night_interior",
+            "scene_state": "damage_medium",
+        },
+    )
+    ctx.state["asset_id"] = asset.id
+    execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    entries = scenes_service.get_scene(db, user_id=author.id, scene_id=scene.id).reference_assets
+    assert entries[-1]["label"] == "夜·室内 / 战损·中"
+
+
+def test_asset_output_link_keeps_attaching_after_one_output_fails(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    character = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林夏",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    good = _asset(db, author)
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "target_character_id": character.id,
+        },
+    )
+    ctx.state["asset_outputs"] = [
+        {"asset_id": "ast_missing", "view": "front"},
+        {"asset_id": good.id, "view": "side"},
+    ]
+    execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    ids = characters_service.get_character(
+        db, user_id=author.id, character_id=character.id
+    ).reference_asset_ids
+    assert ids == [good.id]
+
+
+# ---- builder-driven passes ---------------------------------------------------
+
+
+def test_asset_planning_builds_an_expression_grid_and_drops_sheet_suggestions(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = planner.plan_asset
+
+    def sheet_happy_planner(*args, **kwargs):
+        outcome = real(*args, **kwargs)
+        assert kwargs["asset_pass"] == "character_expressions"
+        outcome.data["prompt_enhancements"] = ["左侧全身三视图", "五官一致"]
+        return outcome
+
+    monkeypatch.setattr(planner, "plan_asset", sheet_happy_planner)
+    ctx = _ctx(
+        db,
+        author,
+        prompt="林夏",
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "character_views": [CharacterViewAngle.FRONT.value],
+            "character_expressions": ["smile", "anger"],
+            "reference_asset_ids": ["ast_sheet"],
+        },
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+
+    assert _CHARACTER_SHEET_LAYOUT_SUFFIX not in ctx.prompt
+    assert "三视图" not in ctx.prompt
+    assert "五官一致" in ctx.prompt
+    assert "表情合集图" in ctx.prompt
+
+
+def test_asset_planning_prefixes_a_scene_variant_only_with_a_reference(
+    db: Session, author: User
+) -> None:
+    with_ref = _ctx(
+        db,
+        author,
+        prompt="老式客厅",
+        params={
+            "asset_kind": ImageAssetKind.SCENE.value,
+            "scene_lighting": "dusk",
+            "reference_asset_ids": ["ast_master"],
+        },
+    )
+    execute_asset_planning(with_ref, AssetPlanningConfig())
+    assert with_ref.prompt.startswith("以参考图1为基准")
+    assert "黄昏" in with_ref.prompt
+
+    without_ref = _ctx(
+        db,
+        author,
+        prompt="老式客厅",
+        params={"asset_kind": ImageAssetKind.SCENE.value, "scene_lighting": "dusk"},
+    )
+    execute_asset_planning(without_ref, AssetPlanningConfig())
+    assert not without_ref.prompt.startswith("以参考图1为基准")
+    assert "黄昏" in without_ref.prompt
+
+
+def test_a_scene_variant_set_runs_one_pass_per_variant(db: Session, author: User) -> None:
+    ctx = _ctx(
+        db,
+        author,
+        prompt="老式客厅",
+        params={
+            "asset_kind": ImageAssetKind.SCENE.value,
+            "scene_variants": [{"lighting": "day"}, {"state": "damage_heavy"}],
+        },
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    assert "白天" in ctx.prompt and "重度战损" not in ctx.prompt
+    ctx.state["asset_id"] = _asset(db, author).id
+    assert execute_asset_output_advance(ctx, AssetOutputAdvanceConfig()).port == "next"
+
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    assert "重度战损" in ctx.prompt and "白天：" not in ctx.prompt
+    ctx.state["asset_id"] = _asset(db, author).id
+    assert execute_asset_output_advance(ctx, AssetOutputAdvanceConfig()).port == "done"
+
+    assert [entry["label"] for entry in ctx.state["asset_outputs"]] == ["白天", "战损·重"]

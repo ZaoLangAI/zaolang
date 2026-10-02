@@ -42,7 +42,7 @@ _TERMINAL_STATUSES = _TERMINAL_FAILURE_STATUSES | _SUCCESS_STATUSES
 
 _REFERENCE_URL_TTL_SECONDS = 900
 _MAX_PROMPT_CHARS = 7000
-_MAX_REFERENCE_IMAGES = 9
+MAX_REFERENCE_IMAGES = 9
 _MAX_REFERENCE_VIDEOS = 3
 _MAX_REFERENCE_AUDIOS = 3
 _MAX_REFERENCE_FILES = 12
@@ -115,7 +115,9 @@ def _content_items_from_references(request: GenerationRequest) -> list[dict[str,
     return items
 
 
-def _validate_generation_request(model: str, request: GenerationRequest) -> VideoModelProfile | None:
+def _validate_generation_request(
+    model: str, request: GenerationRequest
+) -> VideoModelProfile | None:
     profile = video_model_profile(model)
     if profile is None:
         return None
@@ -131,7 +133,9 @@ def _validate_generation_request(model: str, request: GenerationRequest) -> Vide
     return profile
 
 
-def build_generation_body(request: GenerationRequest, *, model: str = MINIMAX_H3_MODEL) -> dict[str, Any]:
+def build_generation_body(
+    request: GenerationRequest, *, model: str = MINIMAX_H3_MODEL
+) -> dict[str, Any]:
     """Official MiniMax V2 create body: `content[]` plus duration/resolution/ratio.
 
     Text-only (t2va): `ratio` is required and cannot be `adaptive` — a
@@ -157,8 +161,8 @@ def build_generation_body(request: GenerationRequest, *, model: str = MINIMAX_H3
     image_count = sum(1 for item in media_items if item.get("type") == "image_url")
     video_count = sum(1 for item in media_items if item.get("type") == "video_url")
     audio_count = sum(1 for item in media_items if item.get("type") == "audio_url")
-    if image_count > _MAX_REFERENCE_IMAGES:
-        raise ValueError(f"{model} accepts at most {_MAX_REFERENCE_IMAGES} reference images")
+    if image_count > MAX_REFERENCE_IMAGES:
+        raise ValueError(f"{model} accepts at most {MAX_REFERENCE_IMAGES} reference images")
     if video_count > _MAX_REFERENCE_VIDEOS:
         raise ValueError(f"{model} accepts at most {_MAX_REFERENCE_VIDEOS} reference videos")
     if audio_count > _MAX_REFERENCE_AUDIOS:
@@ -377,7 +381,9 @@ class MinimaxV2MediaProvider(GenerationProvider):
                 download.raise_for_status()
                 video_bytes = download.content or None
         except httpx.HTTPError as exc:
-            logger.warning("minimax_v2 video download failed for task %s: %s", external_task_id, exc)
+            logger.warning(
+                "minimax_v2 video download failed for task %s: %s", external_task_id, exc
+            )
             return GenerationResult(
                 succeeded=False,
                 pending=True,

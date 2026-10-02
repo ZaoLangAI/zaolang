@@ -11,8 +11,9 @@ import { ApiError } from '@/lib/api/errors';
 import type { CreationSkillDetail } from '@/lib/api/types';
 import { useResource } from '@/lib/use-resource';
 
-import { confirmCanvasAgentRun, startCanvasWorkflowRun, type CanvasAgentRun } from './agent-api';
+import { startCanvasWorkflowRun, type CanvasAgentRun } from './agent-api';
 import type { CanvasFlowNode } from './graph-convert';
+import { useConfirmCanvasAgentRun } from './use-canvas-agent';
 
 /**
  * A skill card's panel — and, when that skill declares variables, the form
@@ -84,6 +85,7 @@ export function WorkflowPanel({ node, canvasId }: { node: CanvasFlowNode; canvas
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unlocking, setUnlocking] = useState(false);
+  const confirmRun = useConfirmCanvasAgentRun();
 
   const missingRequired = variables.some((variable) => {
     if (!variable.required) return false;
@@ -197,7 +199,7 @@ export function WorkflowPanel({ node, canvasId }: { node: CanvasFlowNode; canvas
                 <Button
                   size="sm"
                   disabled={busy}
-                  onClick={() => void call(() => confirmCanvasAgentRun(run.id))}
+                  onClick={() => void call(() => confirmRun(run.id))}
                 >
                   {t('agent.confirm')}
                 </Button>

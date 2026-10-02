@@ -98,9 +98,7 @@ def test_publish_recheck_ignores_a_later_price_hike(
     assert _ledger_count(db, remixer.id, LedgerEntryType.ACCESS_OUT) == 1
 
 
-def test_paid_snapshot_uses_zaolang_paid_remix(
-    db: Session, author: User, remixer: User
-) -> None:
+def test_paid_snapshot_uses_zaolang_paid_remix(db: Session, author: User, remixer: User) -> None:
     _fund(db, remixer, 100)
     work, version = make_work(db, author, title="付费原作", access_credits=10)
     grant = access_service.unlock_work(db, buyer_user_id=remixer.id, work_id=work.id)
@@ -191,16 +189,16 @@ def test_paid_skill_is_visible_but_locked_until_unlocked(
         skill_library.assert_unlocked_for_use(db, skill, remixer.id)
 
 
-def _ledger_count(
-    db: Session, user_id: str, entry_type: LedgerEntryType | None = None
-) -> int:
+def _ledger_count(db: Session, user_id: str, entry_type: LedgerEntryType | None = None) -> int:
     from app.models import CreditAccount
 
     account = db.scalar(select(CreditAccount).where(CreditAccount.user_id == user_id))
     if account is None:
         return 0
-    stmt = select(func.count()).select_from(CreditLedgerEntry).where(
-        CreditLedgerEntry.account_id == account.id
+    stmt = (
+        select(func.count())
+        .select_from(CreditLedgerEntry)
+        .where(CreditLedgerEntry.account_id == account.id)
     )
     if entry_type is not None:
         stmt = stmt.where(CreditLedgerEntry.type == entry_type)

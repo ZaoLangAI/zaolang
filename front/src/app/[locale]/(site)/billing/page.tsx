@@ -4,6 +4,7 @@ import { SignInPrompt } from '@/components/auth/sign-in-prompt';
 import { CreditPackages } from '@/components/billing/credit-packages';
 import { LedgerTable } from '@/components/billing/ledger-table';
 import { RedeemCodeForm } from '@/components/billing/redeem-code-form';
+import { SpendLimitForm } from '@/components/billing/spend-limit-form';
 import { BackLink } from '@/components/ui/back-link';
 import { PageHeading, StatTile } from '@/components/ui/primitives';
 import type { Locale } from '@/i18n/routing';
@@ -52,6 +53,7 @@ export default async function BillingPage() {
       </p>
 
       <RedeemCodeForm />
+      <SpendLimitForm />
       <CreditPackages packages={packages?.items ?? []} region={me.region as Region} />
       <LedgerTable entries={ledger?.items ?? []} />
     </div>

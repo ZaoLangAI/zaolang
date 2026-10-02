@@ -72,9 +72,6 @@ test.describe('generation studio (signed in)', () => {
     // colours mid-transition and report a false contrast violation.
     await page.waitForTimeout(300);
     await expectNoAxeViolations(page, info, 'generation-studio-style-gallery');
-    // Axe's own DOM probing can leave focus outside the dialog, and Escape
-    // only reaches the panel's own key handler while it holds focus.
-    await dialog.focus();
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'hidden' });
 

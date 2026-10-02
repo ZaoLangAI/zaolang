@@ -40,6 +40,7 @@ from app.models.enums import (
     SystemLogLevel,
     SystemLogSource,
 )
+from app.providers import media_breaker
 from app.providers.base import GenerationRequest, GenerationResult
 from app.realtime import publisher
 from app.workers.pipeline import resolve_graph
@@ -134,6 +135,7 @@ def _advance(session: Session, task: AsyncProviderTask) -> None:
         latency_ms=result.latency_ms,
         cost_minor=result.cost_minor,
         cost_micro_usd=_attempt_cost_micro_usd(session, task, capability, request, job.operation),
+        failure_code=None if result.succeeded else result.failure_code,
     )
 
     if not result.succeeded or result.object_key is None:
@@ -258,6 +260,11 @@ def _give_up_on_dead_upstream(
         details={"async_task_id": task.id, "poll_count": task.poll_count},
     )
     _close_attempt(session, task, ProviderAttemptStatus.FAILED, None)
+    # No terminal answer means no `record_attempt_outcome` call; a route that
+    # silently stops answering must still count against the cross-job breaker.
+    media_breaker.record_outcome(
+        task.capability_name, success=False, failure_code="PROVIDER_TIMEOUT"
+    )
     _resume_failed(session, job, task, code="PROVIDER_TIMEOUT")
 
 
@@ -407,6 +414,11 @@ def _context(session: Session, job: GenerationJob, task: AsyncProviderTask) -> W
     checkpoint = dict(task.state_checkpoint_json or {})
     ctx.state["attempt_number"] = int(checkpoint.get("attempt_number") or 1)
     ctx.state["route_attempts"] = int(checkpoint.get("route_attempts") or 1)
+    # Checkpoints written before `attempt_seq` existed had one job-wide
+    # `route_attempts` counter, which is exactly the sequence number.
+    ctx.state["attempt_seq"] = int(
+        checkpoint.get("attempt_seq") or checkpoint.get("route_attempts") or 1
+    )
     ctx.state["tried_providers"] = set(checkpoint.get("tried_providers") or ())
     ctx.state["intent_hint"] = dict(checkpoint.get("intent_hint") or {})
     return ctx

@@ -119,14 +119,10 @@ def adapt_resolution_tier(
     if not requested:
         return None
     if available is None:
-        return AdaptedResolution(
-            studio_tier=requested, vendor_literal=requested, kind="exact"
-        )
+        return AdaptedResolution(studio_tier=requested, vendor_literal=requested, kind="exact")
     exact = resolve_resolution_tier(requested, available)
     if exact is not None:
-        return AdaptedResolution(
-            studio_tier=requested, vendor_literal=exact, kind="exact"
-        )
+        return AdaptedResolution(studio_tier=requested, vendor_literal=exact, kind="exact")
     try:
         req_idx = STUDIO_RESOLUTION_TIERS.index(requested)
     except ValueError:
@@ -135,15 +131,11 @@ def adapt_resolution_tier(
         for tier in reversed(STUDIO_RESOLUTION_TIERS[:req_idx]):
             literal = resolve_resolution_tier(tier, available)
             if literal is not None:
-                return AdaptedResolution(
-                    studio_tier=tier, vendor_literal=literal, kind="downgrade"
-                )
+                return AdaptedResolution(studio_tier=tier, vendor_literal=literal, kind="downgrade")
     for tier in STUDIO_RESOLUTION_TIERS:
         literal = resolve_resolution_tier(tier, available)
         if literal is not None:
-            return AdaptedResolution(
-                studio_tier=tier, vendor_literal=literal, kind="upgrade"
-            )
+            return AdaptedResolution(studio_tier=tier, vendor_literal=literal, kind="upgrade")
     return None
 
 
@@ -165,6 +157,10 @@ class ProviderReference:
     object_key: str
     media_type: str
     frame_type: str | None = None
+    # Which platform `Asset` this came from — lets the prompt's reference
+    # legend name the exact images the provider receives, in order. `None`
+    # on checkpoints written before the field existed.
+    asset_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -196,6 +192,11 @@ class GenerationRequest:
     # view collides with the first view's already-registered `Asset` row on
     # `uq_assets_object_key`, since both views share the same `job_id`.
     attempt_number: int = 1
+    # How many separate images one call should return (a scene variant
+    # group). Only a capability with `max_outputs_per_call >= output_count`
+    # is ever routed such a request (`router._request_constraint_failure`);
+    # every other adapter can ignore it.
+    output_count: int = 1
 
     def __post_init__(self) -> None:
         # JSON checkpoints turn nested dataclasses back into dictionaries.
@@ -205,6 +206,17 @@ class GenerationRequest:
             item if isinstance(item, ProviderReference) else ProviderReference(**item)
             for item in self.references
         ]
+
+
+@dataclass(slots=True)
+class GeneratedOutput:
+    """One additional image a group-capable call returned, beyond the
+    primary `GenerationResult.object_key`."""
+
+    object_key: str
+    mime_type: str = "image/png"
+    width: int | None = None
+    height: int | None = None
 
 
 @dataclass(slots=True)
@@ -231,6 +243,14 @@ class GenerationResult:
     output_json: dict[str, Any] | None = None
     # Redacted before it reaches ProviderAttempt: no keys, no signed URLs.
     metadata: dict[str, Any] = field(default_factory=dict)
+    # A group call's images after the first (`GenerationRequest.output_count`
+    # > 1), in the order the provider returned them. Empty for every
+    # single-output call, so existing callers never see a difference.
+    extra_outputs: list[GeneratedOutput] = field(default_factory=list)
+
+    @property
+    def delivered_outputs(self) -> int:
+        return (1 if self.object_key else 0) + len(self.extra_outputs)
 
 
 class GenerationProvider(ABC):
@@ -335,6 +355,22 @@ class ProviderCapability:
     # stance `reference_modes`/`aspect_ratios` take elsewhere in this
     # class) — `_request_constraint_failure` only filters when this is set.
     music_styles: frozenset[str] | None = None
+    # Whether this model takes a *video* among its multimodal references
+    # (MiniMax H3 / Seedance 2.5 / wan3.0 "reference-to-video"). Only
+    # consulted for a `reference_video_role="motion_guide"` request — a 白膜
+    # blockout clip must reach a model that reads it as guidance, never one
+    # that silently drops it or (an edit model) restyles it as the output.
+    accepts_video_reference: bool = False
+    # How many generic (non-frame) *image* references this model actually
+    # receives, front-first — adapters truncate `references` from the front
+    # (`keys[:N]`), so the first N are exactly what it sees. `None` = unknown,
+    # which makes the reference legend stay silent rather than name an
+    # image the model may never get (`prompt_builder.reference_legend`).
+    max_image_references: int | None = None
+    # Most separate images one call can return (`GenerationRequest.
+    # output_count`): 1 for every model except a group-capable one
+    # (Seedream's sequential image generation).
+    max_outputs_per_call: int = 1
 
 
 def probe_audio_duration_ms(payload: bytes, mime_type: str) -> int | None:

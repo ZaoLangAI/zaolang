@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.db import session_scope
 from app.domain.credits import service as credits_service
 from app.domain.learning import service as learning_service
+from app.domain.skill_library import catalog as skill_catalog
 from app.domain.skill_library import service as skill_library_service
 from app.models import Profile, User
 from app.models.base import utcnow
@@ -30,7 +31,7 @@ from app.storage import s3
 logger = logging.getLogger(__name__)
 
 STUDIO_EMAIL = "studio@zaolang.dev"
-STUDIO_HANDLE = "zaolang_studio"
+STUDIO_HANDLE = skill_catalog.CATALOG_OWNER_HANDLE
 STUDIO_DISPLAY_NAME = "造浪工作室"
 STUDIO_BIO = "平台精选技能策展账号：短剧创作配方合集。"
 
@@ -73,9 +74,7 @@ def _ensure_studio_owner(session: Session) -> tuple[User, bool]:
     random unusable password — not the local seed password.
     """
     by_email = session.scalar(select(User).where(User.email == STUDIO_EMAIL))
-    by_handle = session.scalar(
-        select(User).join(Profile).where(Profile.handle == STUDIO_HANDLE)
-    )
+    by_handle = session.scalar(select(User).join(Profile).where(Profile.handle == STUDIO_HANDLE))
     if by_email is not None and by_handle is not None and by_email.id != by_handle.id:
         raise RuntimeError(
             f"{STUDIO_EMAIL} 与 handle {STUDIO_HANDLE} 指向两个不同用户，拒绝自动合并。"

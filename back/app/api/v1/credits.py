@@ -6,11 +6,12 @@ import hashlib
 import hmac
 import json
 import time
+from typing import Annotated
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbSession, IdempotencyKey
+from app.api.deps import CurrentUser, DbSession, IdempotencyKey, rate_limited
 from app.api.schemas.common import OkResponse, Page
 from app.api.schemas.jobs import (
     CheckoutConfirmRequest,
@@ -23,12 +24,13 @@ from app.api.schemas.jobs import (
     LedgerEntryResponse,
     RedeemCodeRequest,
     RedeemCodeResponse,
+    SpendLimitRequest,
 )
 from app.config import get_settings
 from app.domain.credits import redemption
 from app.domain.credits import service as credits_service
 from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
-from app.models import CreditPackage, PaymentIntent, WebhookEvent
+from app.models import CreditAccount, CreditPackage, PaymentIntent, WebhookEvent
 from app.models.base import new_id, utcnow
 
 router = APIRouter(tags=["credits"])
@@ -37,15 +39,37 @@ router = APIRouter(tags=["credits"])
 WEBHOOK_TOLERANCE_SECONDS = 300
 
 
-@router.get("/credits/balance", response_model=CreditBalanceResponse)
-def balance(user: CurrentUser, session: DbSession) -> CreditBalanceResponse:
-    account = credits_service.get_or_create_account(session, user.id)
-    session.commit()
+def _balance_response(account: CreditAccount) -> CreditBalanceResponse:
+    period = credits_service.current_spend_period()
     return CreditBalanceResponse(
         available=account.available_balance,
         reserved=account.reserved_balance,
         currency=account.currency,
+        monthly_spend_limit=account.monthly_spend_limit,
+        period=period,
+        period_spent=credits_service.period_spent(account, period),
+        period_remaining=credits_service.remaining_monthly_spend(account),
     )
+
+
+@router.get("/credits/balance", response_model=CreditBalanceResponse)
+def balance(user: CurrentUser, session: DbSession) -> CreditBalanceResponse:
+    account = credits_service.get_or_create_account(session, user.id)
+    session.commit()
+    return _balance_response(account)
+
+
+@router.put("/credits/spend-limit", response_model=CreditBalanceResponse)
+def set_spend_limit(
+    payload: SpendLimitRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> CreditBalanceResponse:
+    """The user's own monthly cap on generation spend (`null` removes it)."""
+    account = credits_service.set_monthly_spend_limit(session, user.id, payload.monthly_spend_limit)
+    session.commit()
+    return _balance_response(account)
 
 
 @router.get("/credits/ledger", response_model=Page[LedgerEntryResponse])

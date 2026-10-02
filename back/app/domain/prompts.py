@@ -1,11 +1,11 @@
-"""Shared prompt-polish logic: one contract, two call sites.
+"""Prompt-polish logic behind the studios' "AI 润色" button.
 
-`ShortformStudio`'s "AI 润色" and `GenerationStudio`'s own polish button both
-want the same thing — diagnose a scene description dimension by dimension,
-then hand back a version scaled to that diagnosis (light touch when it is
-already detailed, a fuller rewrite when it is sparse). Both surfaces show the
-diagnosis and let the author accept, iterate on, or ignore it rather than
-silently overwriting their text.
+Diagnose a scene description dimension by dimension, then hand back a version
+scaled to that diagnosis (light touch when it is already detailed, a fuller
+rewrite when it is sparse). The studio shows the diagnosis and lets the author
+accept, iterate on, or ignore it rather than silently overwriting their text.
+`POST /generation/prompts/enhance` streams the same contract `enhance` returns
+in one piece.
 """
 
 from __future__ import annotations
@@ -29,9 +29,9 @@ ENHANCE_UNAVAILABLE_MESSAGE = "AI 润色暂时不可用，请稍后重试。"
 class PromptContext:
     """What the studio already knows about the job being composed.
 
-    Every field is optional because both studios grew their own controls at
-    different times, and a caller that cannot supply one must still be able
-    to ask for a polish.
+    Every field is optional because each studio only has some of these
+    controls, and a caller that cannot supply one must still be able to ask
+    for a polish.
     """
 
     operation: str = ""
@@ -59,6 +59,10 @@ class PromptContext:
     # `app.agents.copywriter.ENHANCE_SYSTEM_PROMPT_SCENE`), but the field is
     # on the shared context because the wire contract is shared.
     question_answers: dict | None = None
+    # The studio's expression / scene-preset picks
+    # (`character_expressions`, `scene_lighting`/`_weather`/`_state`/`_period`)
+    # — the coach polishes around them instead of re-deciding them.
+    asset_presets: dict | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -148,9 +152,7 @@ def matched_reference_skills(
 
     if operation not in copywriter.VIDEO_OPERATIONS_FOR_ENHANCE:
         return []
-    matched_ids = skill_matcher.select_reference_skills(
-        session, brief=prompt, user_id=user_id
-    )
+    matched_ids = skill_matcher.select_reference_skills(session, brief=prompt, user_id=user_id)
     return skill_library_service.load_reference_skills(session, matched_ids)
 
 
@@ -189,6 +191,7 @@ def enhance(
         question_answers=ctx.question_answers,
         reference_skills=reference_skills,
         user_id=user_id,
+        asset_presets=ctx.asset_presets,
     )
     segment = outcome.data.get("script_segment")
     return PromptEnhancement(

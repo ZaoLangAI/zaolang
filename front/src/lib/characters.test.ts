@@ -7,6 +7,7 @@ import {
   characterImageStudioHref,
   characterSheetAsset,
   characterSheetPrompt,
+  defaultCharacterReferenceIds,
   findCompletionJobFor,
   isCharacterCompletionJob,
 } from './characters';
@@ -144,5 +145,56 @@ describe('findCompletionJobFor', () => {
       created_at: '2026-08-30T00:02:00Z',
     });
     expect(findCompletionJobFor([front, failed, succeeded], front)?.id).toBe('job_ok');
+  });
+});
+
+describe('referenceByView', () => {
+  it('prefers the default look over a named outfit for the same view', () => {
+    const character = {
+      reference_assets: [
+        { asset_id: 'ast_wedding', view: 'front', label: '婚礼', url: 'https://cdn/w.png' },
+        { asset_id: 'ast_daily', view: 'front', label: null, url: 'https://cdn/d.png' },
+      ],
+    } as Character;
+    expect(characterSheetAsset(character)?.asset_id).toBe('ast_daily');
+  });
+
+  it('falls back to a named outfit when it is the only one for that view', () => {
+    const character = {
+      reference_assets: [
+        { asset_id: 'ast_wedding', view: 'front', label: '婚礼', url: 'https://cdn/w.png' },
+      ],
+    } as Character;
+    expect(characterSheetAsset(character)?.asset_id).toBe('ast_wedding');
+  });
+});
+
+describe('defaultCharacterReferenceIds', () => {
+  it('sends the unnamed sheet views in front/side/back order', () => {
+    const character = {
+      reference_assets: [
+        { asset_id: 'back', view: 'back', label: null },
+        { asset_id: 'wedding', view: 'front', label: '婚礼' },
+        { asset_id: 'grid', view: 'general', label: '表情·冷笑' },
+        { asset_id: 'front', view: 'front', label: null },
+      ],
+    } as Character;
+    expect(defaultCharacterReferenceIds(character)).toEqual(['front', 'back']);
+  });
+
+  it('falls back to unlabelled uploads, then to anything', () => {
+    expect(
+      defaultCharacterReferenceIds({
+        reference_assets: [
+          { asset_id: 'a', view: 'general', label: '婚礼' },
+          { asset_id: 'b', view: 'general', label: null },
+        ],
+      } as Character),
+    ).toEqual(['b']);
+    expect(
+      defaultCharacterReferenceIds({
+        reference_assets: [{ asset_id: 'a', view: 'general', label: '婚礼' }],
+      } as Character),
+    ).toEqual(['a']);
   });
 });

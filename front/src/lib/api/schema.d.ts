@@ -799,6 +799,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/generation-jobs/quote:batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Quote Batch
+         * @description A whole batch priced before anything is committed: each line through
+         *     the same `quote_for` a submit uses, summed — plus what the balance and
+         *     the user's own monthly cap still allow.
+         */
+        post: operations["quote_batch_v1_generation_jobs_quote_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/generation-jobs/models": {
         parameters: {
             query?: never;
@@ -1252,6 +1274,180 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/characters/{card_id}/looks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Variant */
+        post: operations["create_character_look"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/characters/{card_id}/looks/{variant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Variant */
+        delete: operations["delete_character_look"];
+        options?: never;
+        head?: never;
+        /** Update Variant */
+        patch: operations["update_character_look"];
+        trace?: never;
+    };
+    "/v1/characters/{card_id}/looks/{variant_id}/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Entry */
+        post: operations["add_character_look_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/characters/{card_id}/entries/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Entry */
+        delete: operations["delete_character_entry"];
+        options?: never;
+        head?: never;
+        /** Update Entry */
+        patch: operations["update_character_entry"];
+        trace?: never;
+    };
+    "/v1/characters/{card_id}/entries/{entry_id}:anchor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Anchor */
+        post: operations["set_character_anchor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/variants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Variant */
+        post: operations["create_scene_variant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/variants/{variant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Variant */
+        delete: operations["delete_scene_variant"];
+        options?: never;
+        head?: never;
+        /** Update Variant */
+        patch: operations["update_scene_variant"];
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/variants/{variant_id}/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Entry */
+        post: operations["add_scene_variant_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/entries/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Entry */
+        delete: operations["delete_scene_entry"];
+        options?: never;
+        head?: never;
+        /** Update Entry */
+        patch: operations["update_scene_entry"];
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/entries/{entry_id}:anchor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Anchor */
+        post: operations["set_scene_anchor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/gateway/status": {
         parameters: {
             query?: never;
@@ -1399,6 +1595,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/assets/{asset_id}/consents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Consents
+         * @description The caller's consent declarations for one of their own assets.
+         */
+        get: operations["list_consents_v1_assets__asset_id__consents_get"];
+        put?: never;
+        /**
+         * Declare Consent
+         * @description Declares that the real person whose voice or likeness `asset_id`
+         *     carries consented to its use as generation input — required before a
+         *     voice-clone sample or a real-person reference can be submitted.
+         */
+        post: operations["declare_consent_v1_assets__asset_id__consents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/asset-consents/{consent_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke Consent
+         * @description Withdraws a consent; the asset can no longer feed a new generation job.
+         */
+        post: operations["revoke_consent_v1_asset_consents__consent_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/credits/balance": {
         parameters: {
             query?: never;
@@ -1409,6 +1651,26 @@ export interface paths {
         /** Balance */
         get: operations["balance_v1_credits_balance_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/credits/spend-limit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Spend Limit
+         * @description The user's own monthly cap on generation spend (`null` removes it).
+         */
+        put: operations["set_spend_limit_v1_credits_spend_limit_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2872,6 +3134,11 @@ export interface paths {
         /**
          * Confirm Canvas Agent Run
          * @description Spend the credits and submit the planned jobs.
+         *
+         *     The conditional transition in `confirm_run` already stops a second confirm
+         *     from reserving credits twice, but it answers that second call with an
+         *     error. A client retrying after a timeout needs the answer the first call
+         *     got instead — the credits *were* spent — so a keyed retry replays it.
          */
         post: operations["confirm_canvas_agent_run_v1_canvas_agent_runs__run_id__confirm_post"];
         delete?: never;
@@ -3075,6 +3342,95 @@ export interface paths {
         put?: never;
         /** Create Turn */
         post: operations["create_turn_v1_scripts__episode_id__turns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}/blocking/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Blocking Turn */
+        post: operations["create_blocking_turn_v1_scripts__episode_id__blocking_turns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}/blocking:rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rebuild Blocking
+         * @description The first build, and the stale banner's "rebuild from the new
+         *     script". Stages from the persisted script; no chat turn is written.
+         */
+        post: operations["rebuild_blocking_v1_scripts__episode_id__blocking_rebuild_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}/blocking": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Blocking */
+        patch: operations["patch_blocking_v1_scripts__episode_id__blocking_patch"];
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}/blocking/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Blocking Settings */
+        patch: operations["update_blocking_settings_v1_scripts__episode_id__blocking_settings_patch"];
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}/blocking/versions/{version_no}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Blocking Version */
+        get: operations["get_blocking_version_v1_scripts__episode_id__blocking_versions__version_no__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6004,6 +6360,77 @@ export interface components {
             /** Lease Token */
             lease_token: string;
         };
+        /** AssetEntryCreateRequest */
+        AssetEntryCreateRequest: {
+            /** Asset Id */
+            asset_id: string;
+            entry_type: components["schemas"]["AssetEntryType"];
+            /** View */
+            view?: string | null;
+            /** Expressions */
+            expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
+            /** Label */
+            label?: string | null;
+        };
+        /**
+         * AssetEntryStatus
+         * @description Candidate vs. approved (定稿). P1 writes everything as `approved`.
+         * @enum {string}
+         */
+        AssetEntryStatus: "candidate" | "approved";
+        /**
+         * AssetEntryType
+         * @description What one `SkillAssetEntry` image is for inside its look/variant.
+         * @enum {string}
+         */
+        AssetEntryType: "identity_portrait" | "character_sheet" | "view" | "expression_sheet" | "pose" | "outfit_detail" | "prop" | "master" | "shot" | "other";
+        /**
+         * AssetEntryUpdateRequest
+         * @description `view: null` is "leave as is"; send `clear_view` to unset it.
+         */
+        AssetEntryUpdateRequest: {
+            /** Variant Id */
+            variant_id?: string | null;
+            entry_type?: components["schemas"]["AssetEntryType"] | null;
+            /** View */
+            view?: string | null;
+            /**
+             * Clear View
+             * @default false
+             */
+            clear_view: boolean;
+            /** Expressions */
+            expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
+            /** Label */
+            label?: string | null;
+            status?: components["schemas"]["AssetEntryStatus"] | null;
+        };
+        /** AssetEntryView */
+        AssetEntryView: {
+            /** Id */
+            id: string;
+            /** Asset Id */
+            asset_id: string;
+            /** Url */
+            url?: string | null;
+            entry_type: components["schemas"]["AssetEntryType"];
+            /** View */
+            view?: string | null;
+            /** Expressions */
+            expressions?: string[];
+            /** Label */
+            label?: string | null;
+            status: components["schemas"]["AssetEntryStatus"];
+            /**
+             * Is Anchor
+             * @default false
+             */
+            is_anchor: boolean;
+            /** Source Job Id */
+            source_job_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+        };
         /** AssetResponse */
         AssetResponse: {
             /** Id */
@@ -6033,6 +6460,53 @@ export interface components {
              * @default false
              */
             ai_generated: boolean;
+            /**
+             * Depicts Real Person
+             * @default false
+             */
+            depicts_real_person: boolean;
+        };
+        /** AssetVariantCreateRequest */
+        AssetVariantCreateRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            presets?: components["schemas"]["VariantPresets"] | null;
+        };
+        /** AssetVariantUpdateRequest */
+        AssetVariantUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            presets?: components["schemas"]["VariantPresets"] | null;
+            /** Sort Order */
+            sort_order?: number | null;
+            /**
+             * Make Default
+             * @default false
+             */
+            make_default: boolean;
+        };
+        /** AssetVariantView */
+        AssetVariantView: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Presets */
+            presets?: {
+                [key: string]: unknown;
+            };
+            /** Is Default */
+            is_default: boolean;
+            /** Sort Order */
+            sort_order: number;
+            /** Entries */
+            entries?: components["schemas"]["AssetEntryView"][];
         };
         /**
          * AsyncProviderTaskView
@@ -6177,6 +6651,66 @@ export interface components {
              */
             kind: "database" | "objects";
         };
+        /**
+         * BatchQuoteItem
+         * @description One line of a batch: `count` identical jobs.
+         */
+        BatchQuoteItem: {
+            operation: components["schemas"]["Operation"];
+            quality_tier: components["schemas"]["QualityTier"];
+            /**
+             * Duration Seconds
+             * @default 0
+             */
+            duration_seconds: number;
+            /** @default general */
+            asset_kind: components["schemas"]["ImageAssetKind"];
+            /** Character Views */
+            character_views?: components["schemas"]["CharacterViewAngle"][] | null;
+            /** Scene Variants */
+            scene_variants?: components["schemas"]["ScenePresetCombo"][] | null;
+            /**
+             * Count
+             * @default 1
+             */
+            count: number;
+        };
+        /** BatchQuoteLine */
+        BatchQuoteLine: {
+            /** Unit Credits */
+            unit_credits: number;
+            /** Count */
+            count: number;
+            /** Credits */
+            credits: number;
+            /** Estimated Seconds */
+            estimated_seconds: number;
+        };
+        /** BatchQuoteRequest */
+        BatchQuoteRequest: {
+            /** Items */
+            items: components["schemas"]["BatchQuoteItem"][];
+        };
+        /**
+         * BatchQuoteResponse
+         * @description A batch priced line by line with the same `quote_for` a submit uses
+         *     — an exact sum, never a range (see the `zaolang-credits-billing` skill on
+         *     batch quotes).
+         */
+        BatchQuoteResponse: {
+            /** Items */
+            items: components["schemas"]["BatchQuoteLine"][];
+            /** Total Credits */
+            total_credits: number;
+            /** Available Credits */
+            available_credits: number;
+            /** Period Remaining */
+            period_remaining?: number | null;
+            /** Within Spend Limit */
+            within_spend_limit: boolean;
+            /** Sufficient */
+            sufficient: boolean;
+        };
         /** BindEditorExportRequest */
         BindEditorExportRequest: {
             /** Export Id */
@@ -6186,6 +6720,299 @@ export interface components {
              * @default false
              */
             confirmed: boolean;
+        };
+        /** BlockingAnchor */
+        BlockingAnchor: {
+            /** Id */
+            id: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** X */
+            x: number;
+            /** Z */
+            z: number;
+        };
+        /** BlockingBeat */
+        BlockingBeat: {
+            /** Cast Id */
+            cast_id: string;
+            /** T0 */
+            t0: number;
+            /** T1 */
+            t1: number;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "stand" | "sit" | "walk" | "run" | "turn" | "point" | "talk" | "wave" | "kneel" | "fall" | "pickup" | "hug" | "fight";
+            to?: components["schemas"]["BlockingMark"] | null;
+            face?: components["schemas"]["BlockingFacing"] | null;
+        };
+        /** BlockingCameraMove */
+        BlockingCameraMove: {
+            /**
+             * Preset
+             * @enum {string}
+             */
+            preset: "static" | "push_in" | "pull_out" | "pan_left" | "pan_right" | "tilt_up" | "tilt_down" | "truck_left" | "truck_right" | "follow" | "orbit_cw" | "orbit_ccw" | "crane_up" | "crane_down" | "handheld";
+            /** Intensity */
+            intensity: number;
+            /**
+             * Ease
+             * @enum {string}
+             */
+            ease: "linear" | "in_out";
+        };
+        /** BlockingCameraOverride */
+        BlockingCameraOverride: {
+            start: components["schemas"]["BlockingCameraPose"];
+            end?: components["schemas"]["BlockingCameraPose"] | null;
+        };
+        /** BlockingCameraPose */
+        BlockingCameraPose: {
+            /** Position */
+            position: number[];
+            /** Target */
+            target: number[];
+            /** Fov */
+            fov: number;
+        };
+        /** BlockingCastMember */
+        BlockingCastMember: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Character Ref Id */
+            character_ref_id?: string | null;
+            /** Color Index */
+            color_index: number;
+            /** Height M */
+            height_m: number;
+        };
+        /** BlockingDocument */
+        BlockingDocument: {
+            /** Version */
+            version: number;
+            /** Script Hash */
+            script_hash: string;
+            /** Target Duration S */
+            target_duration_s: number;
+            /**
+             * Aspect Ratio
+             * @enum {string}
+             */
+            aspect_ratio: "9:16" | "16:9" | "1:1";
+            /** Sets */
+            sets?: components["schemas"]["BlockingSet"][];
+            /** Cast */
+            cast?: components["schemas"]["BlockingCastMember"][];
+            /** Segments */
+            segments?: components["schemas"]["BlockingSegment"][];
+        };
+        /** BlockingFacing */
+        BlockingFacing: {
+            /** Target */
+            target?: string | null;
+            /**
+             * Deg
+             * @default 0
+             */
+            deg: number;
+        };
+        /** BlockingMark */
+        BlockingMark: {
+            /** Anchor */
+            anchor?: string | null;
+            /** X */
+            x: number;
+            /** Z */
+            z: number;
+        };
+        /**
+         * BlockingPatchRequest
+         * @description A manual 白膜 edit — the browser's whole document, re-validated by
+         *     `app.domain.blocking.sanitize.sanitize_blocking(mode="manual")`.
+         */
+        BlockingPatchRequest: {
+            /** Document */
+            document: {
+                [key: string]: unknown;
+            };
+            /** Base Version No */
+            base_version_no: number;
+        };
+        /** BlockingProp */
+        BlockingProp: {
+            /** Id */
+            id: string;
+            /**
+             * Primitive
+             * @enum {string}
+             */
+            primitive: "box" | "plane" | "cylinder" | "sphere" | "cone" | "capsule" | "torus" | "stairs";
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Color Role
+             * @enum {string}
+             */
+            color_role: "wall" | "floor" | "furniture" | "door" | "window" | "vehicle" | "nature" | "accent";
+            /** Position */
+            position: number[];
+            /**
+             * Rotation Y Deg
+             * @default 0
+             */
+            rotation_y_deg: number;
+            /** Scale */
+            scale: number[];
+        };
+        /** BlockingSegment */
+        BlockingSegment: {
+            /** Key */
+            key: string;
+            /** Heading */
+            heading: string;
+            /** Set Id */
+            set_id: string;
+            /** Source Hash */
+            source_hash: string;
+            /** Duration S */
+            duration_s: number;
+            /** Start */
+            start?: components["schemas"]["BlockingStartEntry"][];
+            /** Beats */
+            beats?: components["schemas"]["BlockingBeat"][];
+            /** Shots */
+            shots: components["schemas"]["BlockingShot"][];
+            camera_override?: components["schemas"]["BlockingCameraOverride"] | null;
+        };
+        /** BlockingSet */
+        BlockingSet: {
+            /** Id */
+            id: string;
+            /** Heading */
+            heading: string;
+            /**
+             * Ground
+             * @enum {string}
+             */
+            ground: "floor" | "street" | "grass" | "sand" | "water" | "void";
+            /** Width M */
+            width_m: number;
+            /** Depth M */
+            depth_m: number;
+            /** Props */
+            props?: components["schemas"]["BlockingProp"][];
+            /** Anchors */
+            anchors?: components["schemas"]["BlockingAnchor"][];
+        };
+        /** BlockingSettingsRequest */
+        BlockingSettingsRequest: {
+            /** Target Duration Seconds */
+            target_duration_seconds?: number | null;
+            /** Aspect Ratio */
+            aspect_ratio?: ("9:16" | "16:9" | "1:1") | null;
+            /** Base Version No */
+            base_version_no: number;
+        };
+        /** BlockingShot */
+        BlockingShot: {
+            /**
+             * T0
+             * @default 0
+             */
+            t0: number;
+            /**
+             * Transition
+             * @default cut
+             * @enum {string}
+             */
+            transition: "cut" | "continuous";
+            /**
+             * Size
+             * @enum {string}
+             */
+            size: "extreme_wide" | "wide" | "full" | "medium" | "medium_close" | "close" | "extreme_close";
+            /** Lens Mm */
+            lens_mm: number;
+            /**
+             * Height
+             * @enum {string}
+             */
+            height: "ground" | "low" | "eye" | "high" | "overhead";
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "front" | "left" | "right" | "back" | "ots_left" | "ots_right";
+            /** Subject */
+            subject?: string | null;
+            /** Over */
+            over?: string | null;
+            move: components["schemas"]["BlockingCameraMove"];
+        };
+        /** BlockingStartEntry */
+        BlockingStartEntry: {
+            /** Cast Id */
+            cast_id: string;
+            at: components["schemas"]["BlockingMark"];
+            face: components["schemas"]["BlockingFacing"];
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "stand" | "sit" | "walk" | "run" | "turn" | "point" | "talk" | "wave" | "kneel" | "fall" | "pickup" | "hug" | "fight";
+        };
+        /** BlockingState */
+        BlockingState: {
+            document?: components["schemas"]["BlockingDocument"] | null;
+            /**
+             * Version No
+             * @default 0
+             */
+            version_no: number;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /** Stale Segment Keys */
+            stale_segment_keys?: string[];
+            /** Duration Warning */
+            duration_warning?: string | null;
+            /** Target Duration Seconds */
+            target_duration_seconds?: number | null;
+            /**
+             * Default Target Duration Seconds
+             * @default 0
+             */
+            default_target_duration_seconds: number;
+        };
+        /** BlockingTurnRequest */
+        BlockingTurnRequest: {
+            /** Message */
+            message: string;
+            current_script?: components["schemas"]["ScriptDocument"] | null;
+        };
+        /** BlockingVersionResponse */
+        BlockingVersionResponse: {
+            /** Version No */
+            version_no: number;
+            /** Origin */
+            origin: string;
+            /** Summary */
+            summary: string;
+            /** Turn Id */
+            turn_id?: string | null;
+            document: components["schemas"]["BlockingDocument"];
         };
         /** Body_extract_script_source_v1_scripts_extract_post */
         Body_extract_script_source_v1_scripts_extract_post: {
@@ -6671,6 +7498,22 @@ export interface components {
              */
             portrait_consent: boolean;
         };
+        /**
+         * CharacterRefSelection
+         * @description Which of one character's images a job should use instead of the card's
+         *     default subset: a look (`variant_id` → that look's default subset, e.g.
+         *     the 婚礼 outfit), exact images (`asset_ids`, each one of the card's own),
+         *     or both (the images must then belong to that look). Resolved by
+         *     `image_assets.reference_resolver`.
+         */
+        CharacterRefSelection: {
+            /** Character Id */
+            character_id: string;
+            /** Variant Id */
+            variant_id?: string | null;
+            /** Asset Ids */
+            asset_ids?: string[] | null;
+        };
         /** CharacterReferenceAsset */
         CharacterReferenceAsset: {
             /** Asset Id */
@@ -6731,6 +7574,10 @@ export interface components {
             action_clips?: components["schemas"]["CharacterActionClip"][];
             /** Voice Description */
             voice_description?: string | null;
+            /** Looks */
+            looks?: components["schemas"]["AssetVariantView"][];
+            /** Anchor Entry Id */
+            anchor_entry_id?: string | null;
             /** @default draft */
             status: components["schemas"]["CreationSkillStatus"];
             /** @default private */
@@ -6993,6 +7840,54 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * ConsentDeclareRequest
+         * @description The uploader declares that the real person whose voice or likeness the
+         *     asset carries consented to its use (深度合成管理规定 §14). `evidence_asset_id`
+         *     is an optional `consent_evidence` upload an operator can verify against.
+         */
+        ConsentDeclareRequest: {
+            /**
+             * Consent Type
+             * @enum {string}
+             */
+            consent_type: "voice" | "portrait";
+            /** Subject Reference */
+            subject_reference: string;
+            /** Evidence Asset Id */
+            evidence_asset_id?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+        };
+        /** ConsentResponse */
+        ConsentResponse: {
+            /** Id */
+            id: string;
+            /** Asset Id */
+            asset_id: string;
+            /** Consent Type */
+            consent_type: string;
+            /** Subject Reference */
+            subject_reference: string;
+            /** Status */
+            status: string;
+            /** Has Evidence */
+            has_evidence: boolean;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Revoked At */
+            revoked_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** ConsentRevokeRequest */
+        ConsentRevokeRequest: {
+            /** Reason */
+            reason?: string | null;
+        };
         /** ContentDailyPoint */
         ContentDailyPoint: {
             /**
@@ -7205,6 +8100,10 @@ export interface components {
             };
             /** Reject Reason */
             reject_reason?: string | null;
+            /** Asset Variants */
+            asset_variants?: components["schemas"]["AssetVariantView"][];
+            /** Anchor Asset Id */
+            anchor_asset_id?: string | null;
         };
         /** CreationSkillPricingRequest */
         CreationSkillPricingRequest: {
@@ -7305,6 +8204,20 @@ export interface components {
              * @default CREDIT
              */
             currency: string;
+            /** Monthly Spend Limit */
+            monthly_spend_limit?: number | null;
+            /**
+             * Period
+             * @default
+             */
+            period: string;
+            /**
+             * Period Spent
+             * @default 0
+             */
+            period_spent: number;
+            /** Period Remaining */
+            period_remaining?: number | null;
         };
         /** CreditFlowDailyPoint */
         CreditFlowDailyPoint: {
@@ -8357,6 +9270,11 @@ export interface components {
             default_resolution?: ("480p" | "720p" | "1080p" | "2K") | null;
             /** Voices */
             voices?: string[] | null;
+            /**
+             * Max Outputs Per Call
+             * @default 1
+             */
+            max_outputs_per_call: number;
         };
         /** GenerationParams */
         GenerationParams: {
@@ -8413,6 +9331,28 @@ export interface components {
             video_asset_kind: components["schemas"]["VideoAssetKind"];
             /** Forced Model */
             forced_model?: string | null;
+            /** Character Expressions */
+            character_expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
+            /** Character Outfit Label */
+            character_outfit_label?: string | null;
+            /** Target Variant Id */
+            target_variant_id?: string | null;
+            /** Character Ref Selection */
+            character_ref_selection?: components["schemas"]["CharacterRefSelection"][] | null;
+            /** Scene Ref Selection */
+            scene_ref_selection?: components["schemas"]["SceneRefSelection"][] | null;
+            /** Scene Lighting */
+            scene_lighting?: ("dawn" | "day" | "dusk" | "night_interior" | "night_exterior" | "candle" | "neon" | "overcast") | null;
+            /** Scene Weather */
+            scene_weather?: ("clear" | "rain" | "snow" | "fog" | "sandstorm") | null;
+            /** Scene State */
+            scene_state?: ("intact" | "messy" | "searched" | "damage_light" | "damage_medium" | "damage_heavy" | "ruins" | "festive") | null;
+            /** Scene Period */
+            scene_period?: ("ancient" | "republic" | "1980s" | "1990s" | "contemporary" | "near_future") | null;
+            /** Scene Variants */
+            scene_variants?: components["schemas"]["ScenePresetCombo"][] | null;
+            /** Reference Labels */
+            reference_labels?: components["schemas"]["ReferenceLabel"][] | null;
             /** Extra */
             extra?: {
                 [key: string]: unknown;
@@ -9313,6 +10253,11 @@ export interface components {
             marketplace: boolean;
             /** Canvas Studio */
             canvas_studio: boolean;
+            /**
+             * Blocking Studio
+             * @default false
+             */
+            blocking_studio: boolean;
         };
         /** MeResponse */
         MeResponse: {
@@ -10474,6 +11419,16 @@ export interface components {
             question_answers?: {
                 [key: string]: string | string[];
             };
+            /** Character Expressions */
+            character_expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
+            /** Scene Lighting */
+            scene_lighting?: ("dawn" | "day" | "dusk" | "night_interior" | "night_exterior" | "candle" | "neon" | "overcast") | null;
+            /** Scene Weather */
+            scene_weather?: ("clear" | "rain" | "snow" | "fog" | "sandstorm") | null;
+            /** Scene State */
+            scene_state?: ("intact" | "messy" | "searched" | "damage_light" | "damage_medium" | "damage_heavy" | "ruins" | "festive") | null;
+            /** Scene Period */
+            scene_period?: ("ancient" | "republic" | "1980s" | "1990s" | "contemporary" | "near_future") | null;
         };
         /**
          * PromptSlotView
@@ -10772,6 +11727,8 @@ export interface components {
             asset_kind: components["schemas"]["ImageAssetKind"];
             /** Character Views */
             character_views?: components["schemas"]["CharacterViewAngle"][] | null;
+            /** Scene Variants */
+            scene_variants?: components["schemas"]["ScenePresetCombo"][] | null;
         };
         /** QuoteResponse */
         QuoteResponse: {
@@ -10896,6 +11853,17 @@ export interface components {
             created_at: string;
         };
         /**
+         * ReferenceLabel
+         * @description What one reference image is — written by the server at submit
+         *     (`media.service.label_references`), never trusted from a client.
+         */
+        ReferenceLabel: {
+            /** Asset Id */
+            asset_id: string;
+            /** Label */
+            label: string;
+        };
+        /**
          * Region
          * @enum {string}
          */
@@ -10967,11 +11935,15 @@ export interface components {
             subject_type: string;
             /** Subject Id */
             subject_id: string;
-            /** Reason */
-            reason: string;
+            reason: components["schemas"]["ReportReason"];
             /** Detail */
             detail?: string | null;
         };
+        /**
+         * ReportReason
+         * @enum {string}
+         */
+        ReportReason: "copyright" | "sexual_content" | "violence" | "hate" | "minor_safety" | "fraud" | "other";
         /** ReportResolveRequest */
         ReportResolveRequest: {
             /**
@@ -11121,6 +12093,34 @@ export interface components {
             /** Reference Asset Ids */
             reference_asset_ids?: string[];
         };
+        /**
+         * ScenePresetCombo
+         * @description One image of a scene variant group (`GenerationParams.scene_variants`):
+         *     the preset combination that image should show.
+         */
+        ScenePresetCombo: {
+            /** Lighting */
+            lighting?: ("dawn" | "day" | "dusk" | "night_interior" | "night_exterior" | "candle" | "neon" | "overcast") | null;
+            /** Weather */
+            weather?: ("clear" | "rain" | "snow" | "fog" | "sandstorm") | null;
+            /** State */
+            state?: ("intact" | "messy" | "searched" | "damage_light" | "damage_medium" | "damage_heavy" | "ruins" | "festive") | null;
+            /** Period */
+            period?: ("ancient" | "republic" | "1980s" | "1990s" | "contemporary" | "near_future") | null;
+        };
+        /**
+         * SceneRefSelection
+         * @description Scene-side twin of `CharacterRefSelection`: a variant (黄昏/战损…),
+         *     exact images, or both.
+         */
+        SceneRefSelection: {
+            /** Scene Id */
+            scene_id: string;
+            /** Variant Id */
+            variant_id?: string | null;
+            /** Asset Ids */
+            asset_ids?: string[] | null;
+        };
         /** SceneReferenceAsset */
         SceneReferenceAsset: {
             /** Asset Id */
@@ -11164,6 +12164,10 @@ export interface components {
             description?: string | null;
             /** Reference Assets */
             reference_assets?: components["schemas"]["SceneReferenceAsset"][];
+            /** Variants */
+            variants?: components["schemas"]["AssetVariantView"][];
+            /** Anchor Entry Id */
+            anchor_entry_id?: string | null;
             /** @default draft */
             status: components["schemas"]["CreationSkillStatus"];
             /** @default private */
@@ -11203,6 +12207,8 @@ export interface components {
             traits: string;
             /** Character Ref Id */
             character_ref_id?: string | null;
+            /** Look Id */
+            look_id?: string | null;
         };
         /** ScriptCharacterLinkUpdate */
         ScriptCharacterLinkUpdate: {
@@ -11210,6 +12216,8 @@ export interface components {
             name: string;
             /** Character Ref Id */
             character_ref_id?: string | null;
+            /** Look Id */
+            look_id?: string | null;
         };
         /**
          * ScriptContentUpdateRequest
@@ -11258,6 +12266,7 @@ export interface components {
             source_referenced_skill_ids?: string[];
             /** Last Error */
             last_error?: string | null;
+            blocking?: components["schemas"]["BlockingState"] | null;
             /**
              * Created At
              * Format: date-time
@@ -11333,6 +12342,8 @@ export interface components {
             blocks: components["schemas"]["ScriptBlock"][];
             /** Ref Id */
             ref_id?: string | null;
+            /** Variant Id */
+            variant_id?: string | null;
         };
         /** ScriptSceneLinkUpdate */
         ScriptSceneLinkUpdate: {
@@ -11340,6 +12351,8 @@ export interface components {
             heading: string;
             /** Ref Id */
             ref_id?: string | null;
+            /** Variant Id */
+            variant_id?: string | null;
         };
         /**
          * ScriptSegment
@@ -11435,6 +12448,11 @@ export interface components {
              * @default
              */
             thinking: string;
+            /**
+             * Origin
+             * @default script
+             */
+            origin: string;
         };
         /** SeedRequest */
         SeedRequest: {
@@ -11678,6 +12696,14 @@ export interface components {
             slot: string;
             /** Asset Kind */
             asset_kind?: ("character" | "scene" | "cover" | "copy") | null;
+        };
+        /**
+         * SpendLimitRequest
+         * @description `null` removes the cap.
+         */
+        SpendLimitRequest: {
+            /** Monthly Spend Limit */
+            monthly_spend_limit?: number | null;
         };
         /** StorageUsageResponse */
         StorageUsageResponse: {
@@ -12027,6 +13053,11 @@ export interface components {
             checksum_sha256: string;
             /** Purpose */
             purpose: string;
+            /**
+             * Depicts Real Person
+             * @default false
+             */
+            depicts_real_person: boolean;
         };
         /** UploadPresignResponse */
         UploadPresignResponse: {
@@ -12120,6 +13151,22 @@ export interface components {
              * @default mp4
              */
             format: string;
+        };
+        /**
+         * VariantPresets
+         * @description Scene variant presets (P0 vocabulary) or a look's `age_stage`.
+         */
+        VariantPresets: {
+            /** Lighting */
+            lighting?: ("dawn" | "day" | "dusk" | "night_interior" | "night_exterior" | "candle" | "neon" | "overcast") | null;
+            /** Weather */
+            weather?: ("clear" | "rain" | "snow" | "fog" | "sandstorm") | null;
+            /** State */
+            state?: ("intact" | "messy" | "searched" | "damage_light" | "damage_medium" | "damage_heavy" | "ruins" | "festive") | null;
+            /** Period */
+            period?: ("ancient" | "republic" | "1980s" | "1990s" | "contemporary" | "near_future") | null;
+            /** Age Stage */
+            age_stage?: string | null;
         };
         /** VendorCatalogView */
         VendorCatalogView: {
@@ -12285,6 +13332,8 @@ export interface components {
             first_frame_asset_id?: string | null;
             /** Last Frame Asset Id */
             last_frame_asset_id?: string | null;
+            /** Reference Video Role */
+            reference_video_role?: "motion_guide" | null;
         };
         /**
          * VideoPricingPayload
@@ -14415,6 +15464,41 @@ export interface operations {
             };
         };
     };
+    quote_batch_v1_generation_jobs_quote_batch_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchQuoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchQuoteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_generation_models_v1_generation_jobs_models_get: {
         parameters: {
             query: {
@@ -15442,6 +16526,504 @@ export interface operations {
             };
         };
     };
+    create_character_look: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetVariantCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetVariantView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_character_look: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                variant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_character_look: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                variant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetVariantUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetVariantView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_character_look_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                variant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetEntryCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_character_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_character_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetEntryUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_character_anchor: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_scene_variant: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetVariantCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetVariantView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_scene_variant: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                variant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_scene_variant: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                variant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetVariantUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetVariantView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_scene_variant_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                variant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetEntryCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_scene_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_scene_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetEntryUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_scene_anchor: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     gateway_status_v1_gateway_status_get: {
         parameters: {
             query?: never;
@@ -15671,6 +17253,113 @@ export interface operations {
             };
         };
     };
+    list_consents_v1_assets__asset_id__consents_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    declare_consent_v1_assets__asset_id__consents_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentDeclareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_consent_v1_asset_consents__consent_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                consent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentRevokeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     balance_v1_credits_balance_get: {
         parameters: {
             query?: never;
@@ -15681,6 +17370,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditBalanceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_spend_limit_v1_credits_spend_limit_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpendLimitRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -19019,6 +20743,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "Idempotency-Key"?: string | null;
             };
             path: {
                 run_id: string;
@@ -19483,6 +21208,186 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_blocking_turn_v1_scripts__episode_id__blocking_turns_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlockingTurnRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rebuild_blocking_v1_scripts__episode_id__blocking_rebuild_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_blocking_v1_scripts__episode_id__blocking_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlockingPatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlockingState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_blocking_settings_v1_scripts__episode_id__blocking_settings_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlockingSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlockingState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_blocking_version_v1_scripts__episode_id__blocking_versions__version_no__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+                version_no: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlockingVersionResponse"];
                 };
             };
             /** @description Validation Error */

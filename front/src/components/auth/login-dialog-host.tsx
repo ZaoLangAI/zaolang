@@ -18,8 +18,8 @@ export function LoginDialogHost() {
   const { loginPrompt } = useSession();
   const [ready, setReady] = useState(false);
 
-  // Latched during render rather than in an effect: it only reacts to
-  // session state, and an effect would mount the dialog one paint late.
+  // Latch during render: once the dialog has been asked for, keep it mounted
+  // so its close animation and form state survive later toggles.
   if (loginPrompt.open && !ready) setReady(true);
 
   if (!ready) return null;

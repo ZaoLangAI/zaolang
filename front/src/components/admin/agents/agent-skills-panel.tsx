@@ -1,7 +1,7 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useAdminSession } from '@/components/admin/admin-session-provider';
 import { AgentDebugChatDialog } from '@/components/admin/agents/agent-debug-chat-dialog';
@@ -509,7 +509,10 @@ export function AgentSkillEditorDialog({
   // generic) prompt, and clicking the already-selected option never fires
   // `onChange`.
   const [templateKey, setTemplateKey] = useState('');
-  const appliedTemplateRef = useRef(false);
+  // Once a template has filled the form, later skill reloads must not
+  // clobber it — that is how a character agent ended up showing the generic
+  // enhance draft after 「从模板填充」.
+  const [templateApplied, setTemplateApplied] = useState(false);
   const [availableTools, setAvailableTools] = useState<string[]>([]);
   const [debuggingDraft, setDebuggingDraft] = useState(false);
 
@@ -562,7 +565,7 @@ export function AgentSkillEditorDialog({
     if (!key) return;
     const template = slotTemplates.find((item) => item.key === key);
     if (!template?.prompt_template) return;
-    appliedTemplateRef.current = true;
+    setTemplateApplied(true);
     setPromptTemplate(template.prompt_template);
     setToolGrants(template.tool_grants ?? []);
   };
@@ -575,14 +578,6 @@ export function AgentSkillEditorDialog({
         })
         .then((page) => {
           setVersions(page.items);
-          // A late skill fetch must not clobber a template the operator just
-          // picked — that is how a character agent ended up showing the
-          // generic enhance draft after 「从模板填充」.
-          if (!appliedTemplateRef.current) {
-            const active = page.items.find((version) => version.is_active);
-            setPromptTemplate(active?.prompt_template ?? '');
-            setToolGrants(active?.tool_grants ?? []);
-          }
           setLoadFailed(false);
         })
         .catch(() => setLoadFailed(true)),
@@ -592,29 +587,39 @@ export function AgentSkillEditorDialog({
   useEffect(() => {
     void load();
   }, [load]);
+  // Both form fills below are adjusted during render rather than set from an
+  // effect: every fetch that lands (initial, slot switch, publish, rollback)
+  // yields a new `versions` array, which reseeds the form from the active
+  // version unless a template already filled it.
+  const activeVersion = versions?.find((version) => version.is_active) ?? null;
+  const [seededVersions, setSeededVersions] = useState<AgentSkill[] | null>(null);
+  if (versions !== seededVersions) {
+    setSeededVersions(versions);
+    if (versions && !templateApplied) {
+      setPromptTemplate(activeVersion?.prompt_template ?? '');
+      setToolGrants(activeVersion?.tool_grants ?? []);
+    }
+  }
 
-  useEffect(() => {
-    if (appliedTemplateRef.current || versions === null) return;
-    const published = versions.find((version) => version.is_active)?.prompt_template ?? '';
-    if (published.trim()) return;
-    const fallbackKey =
-      recommendedTemplateKey &&
-      slotTemplates.some((template) => template.key === recommendedTemplateKey)
-        ? recommendedTemplateKey
-        : (slotTemplates[0]?.key ?? '');
-    if (!fallbackKey) return;
-    const template = slotTemplates.find((item) => item.key === fallbackKey);
-    if (!template?.prompt_template) return;
-    appliedTemplateRef.current = true;
-    // A one-time, `appliedTemplateRef`-guarded fill once both the versions
-    // and the templates fetch have landed — not a render-loop setState. It
-    // can't move into render: `load()`'s async callback shares that ref to
-    // avoid clobbering an operator's pick, and refs can't be read in render.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+  // Nothing published yet: start from the recommended (or first) template
+  // for this slot as soon as both the versions and the templates are in.
+  const fallbackKey =
+    recommendedTemplateKey &&
+    slotTemplates.some((template) => template.key === recommendedTemplateKey)
+      ? recommendedTemplateKey
+      : (slotTemplates[0]?.key ?? '');
+  const fallbackTemplate = slotTemplates.find((item) => item.key === fallbackKey);
+  if (
+    !templateApplied &&
+    versions !== null &&
+    !(activeVersion?.prompt_template ?? '').trim() &&
+    fallbackTemplate?.prompt_template
+  ) {
+    setTemplateApplied(true);
     setTemplateKey(fallbackKey);
-    setPromptTemplate(template.prompt_template);
-    setToolGrants(template.tool_grants ?? []);
-  }, [versions, slotTemplates, recommendedTemplateKey]);
+    setPromptTemplate(fallbackTemplate.prompt_template);
+    setToolGrants(fallbackTemplate.tool_grants ?? []);
+  }
 
   const publish = async () => {
     setBusy(true);

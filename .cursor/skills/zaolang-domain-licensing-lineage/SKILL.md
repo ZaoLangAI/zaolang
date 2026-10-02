@@ -1,52 +1,50 @@
 ---
 name: zaolang-domain-licensing-lineage
-description: Visibility and remix authorization, license snapshots, the LineageEdge graph and tombstones, and the eight-step publish transaction. Use when changing visibility rules, remix authorisation, licence snapshots, lineage edges, tombstones, draft publishing, or the royalty/notification side effects of publishing.
-disable-model-invocation: true
+description: Who may view/remix a work — visibility, remix authorization, paid unlocks (AccessGrant), license snapshots, LineageEdge and tombstones — plus the draft → work publish transaction and trash/purge. Use when changing domain/licensing, access, lineage or publishing, drafts/works routes, or marketplace unlock UI.
 ---
 
-# Licensing, Lineage & the Publish Transaction
+# Licensing, Access, Lineage & Publish
 
-## Scope
-
-Answers three questions, and only here: who can view this work, who can remix it, and where a remix sits in the lineage graph. Publishing is the **single transaction** that turns a draft into a work, with eight steps in a strict order.
+**Scope**: view/remix rules, unlocks, license snapshots, lineage edges, publish, work lifecycle.
+Not here → `zaolang-lineage-graph` (graph UI, diff panel), `zaolang-credits-billing` (`access_transfer`, royalties ledger), `zaolang-discovery-search` (index), `zaolang-data-model` (draft version pointers).
 
 ## Key Paths
 
-| File | Contents |
-| --- | --- |
-| `back/app/domain/licensing/service.py` | `can_view` / `can_remix` / `assert_viewable` / `assert_remixable` / `assert_source_still_remixable` / `capture_license_snapshot` / `LICENSE_PERMISSIONS` |
-| `back/app/domain/access/service.py` | credit unlocks for works/skills: `unlock` quotes the price, calls `credits.service.access_transfer` (buyer → seller minus platform fee, idempotency key `access:{buyer}:{subject_type}:{subject_id}`) and then inserts the `AccessGrant` that `can_remix` later checks |
-| `back/app/domain/lineage/service.py` | `create_edge` / `ancestors` / `descendants` / `build_tree` / `ancestor_author_ids` / `is_referenced_by_descendants` |
-| `back/app/domain/publishing/service.py` | `create_draft` / `request_publish` (HTTP accept) / `publish` (eight steps, worker) / `finalize_draft_publish` / `change_visibility` / `tombstone` / `hide` / `restore` (admin, `HIDDEN`) / `trash` / `untrash` / `purge` (owner recycle bin, `TRASHED`). Also the pre-publish draft surface this module owns: `title_from_prompt` (first non-empty prompt line, capped to `Draft.title`'s 200 chars — `create_draft` uses it when the author named nothing, so a card has a caption instead of falling back to a section heading), `list_unpublished_work_drafts` (what `GET /v1/drafts` returns — see invariant #11), and `apply_draft_version` / `hide_draft_version` (the version-history pointer pair, see `zaolang-generation-jobs` and `zaolang-data-model` invariant #12) |
-| `back/app/models/enums.py` | `Visibility` (incl. `allows_remix`), `LifecycleStatus`, `LicenseType` |
-| `back/app/api/v1/works.py`, `drafts.py` | public entry points |
-| `back/tests/unit/test_licensing_invariants.py`, `test_lineage_invariants.py` | invariant tests |
+| Path | What |
+|---|---|
+| `back/app/domain/licensing/service.py` | `can_view`, `can_remix`, `remix_block_reason`, `assert_remixable`, `assert_source_still_remixable`, `resolve_license_type`, `capture_license_snapshot`, `LICENSE_PERMISSIONS` |
+| `back/app/domain/access/service.py` | `unlock_work` / `unlock_skill` → `_unlock`; `viewer_unlocked_work` (+ `_batch` for list pages); `normalize_access_credits` (marketplace flag + max price); `quote_unlock` (fee bps) |
+| `back/app/domain/lineage/service.py` | `create_edge`, `ancestors`, `descendants`, `descendant_count` (recursive CTE), `build_tree`, `ancestor_author_ids`; `MAX_TRAVERSAL_DEPTH = 24` |
+| `back/app/domain/publishing/service.py` | `create_draft`, `request_publish`, `finalize_draft_publish` (worker body), `publish`, `change_visibility`, `tombstone`, `hide`/`restore`, `trash`/`untrash`/`purge`, `list_unpublished_work_drafts` |
+| `back/app/api/v1/works.py`, `back/app/api/v1/drafts.py` | Works (detail, lineage, diff, unlock, visibility, trash/purge) and drafts (create, list, publish, versions); skill unlock lives in `back/app/api/v1/skills.py` |
+| `front/src/components/marketplace/` | `RemixUnlockGate` (shown on `remix_block_reason === 'needs_unlock'`), `UnlockDialog` (POST unlock with idempotency key), `AccessPriceField` |
+| `front/src/components/publish/publish-form.tsx` | Publish form (pre-selects `public_remixable`) |
 
 ## Invariants
 
-1. **Default visibility is `PUBLIC_VIEW_ONLY`.** Only `PUBLIC_REMIXABLE` allows others to remix (`Visibility.allows_remix`); an author is never restricted on their own work.
-2. **The license snapshot freezes at draft creation.** `LicenseSnapshot` records the terms, original-author attribution, and `captured_at` in effect at that moment; if the upstream work's license or visibility later changes, **existing remixes are unaffected** — a visibility change only applies going forward.
-3. **Every remix entry point must call `assert_remixable`**, not just hide the button on the frontend. Hitting the API directly against a `public_view_only` work must raise `LicenseNotRemixable` (409). A remixable-but-unpurchased paid work raises `AccessRequired` (402). `can_remix` is true for the author themself, or for `PUBLIC_REMIXABLE` combined with either a zero price or an existing grant. That same `assert_remixable` is also the authorization to treat the source version's `primary_output` as a generation reference (`media_service.licensed_remix_source_output_id`). Re-checking at publish time only calls `assert_source_still_remixable` (visibility), and never re-charges the authorization fee. A snapshot with `access_credits > 0` uses `zaolang_paid_remix`, recording the price and grant id at that time.
-4. **Tombstoning keeps the node.** `tombstone` only sets `lifecycle_status` to `LifecycleStatus.TOMBSTONE` (`"tombstone"`, the terminal state) — it never deletes the row. A tombstoned work can't be viewed directly, but **remains visible as a placeholder node in the lineage graph** — otherwise a downstream work's provenance would vanish. Deleting a user is anonymisation rather than deletion, for the same reason: `compliance.service.anonymise_user` sets `TOMBSTONE` + `PRIVATE` directly on every owned work. `LineageProtected` (`LINEAGE_PROTECTED`, 409) exists in `domain/errors.py` as the reserved code for "refused because descendants still reference this", but nothing raises it today — `purge` instead downgrades a referenced trashed work to a tombstone rather than refusing.
-5. **`LineageEdge` points at a version, not a work**, and freezes `parent_author_snapshot` and `license_snapshot_id`. If the author later renames themself, old edges still show the attribution as it was at the time.
-6. **The eight publish steps run in a fixed order**: ① re-verify the source is still remixable ② pre-publish safety review ③ create `Work` + the first `WorkVersion` ④ move assets to the readable area + apply tags ⑤ create the `LineageEdge` and increment `remix_count` ⑥ write the search index ⑦ settle royalty payback ⑧ notify ancestor authors. Safety review must precede creating `Work`; the lineage edge must precede notification and royalty settlement. HTTP `POST /v1/drafts/{id}/publish` only accepts the intent (`request_publish`): `_assert_source_still_remixable` and keyword blocks run synchronously there too (so a no-longer-remixable source or an obvious refusal is a 409/422 at accept time and never occupies a queue slot), then the draft is marked `publish_status=pending` and `run_draft_publish` is enqueued on `quality_check`. The eight steps still run in one worker transaction in that same order — never create `Work` first and review later. A `NEEDS_REVIEW` verdict from step ② does **not** block: the work still goes live and `moderation_queue.enqueue_for_review(stage=PRE_PUBLISH)` gives a reviewer a row to act on; only a `REJECTED` verdict aborts.
-7. **A draft can publish exactly once** (`draft.published_work_id` non-null **or** `publish_status=pending` raises `Conflict`; the same `Idempotency-Key` replays 202). A `rejected` draft may be edited and submitted again. Can't publish without a generation result, and can't publish without the rights-confirmation checkbox.
-8. **`WorkVersion` is immutable**: changing title/description means opening a new version, never UPDATE-ing an old one — `immutable_created_at` is the marker for this semantic.
-9. **`HIDDEN` and `TRASHED` are non-terminal and distinct from `TOMBSTONE`.** `hide` (admin, reason required) and `trash` (owner recycle bin) both drop a work out of `_visible_works()` but are reversible via `restore` / `untrash`; `change_visibility` refuses on `TRASHED`/`TOMBSTONE`, and `purge` of a trashed work that descendants still reference becomes a tombstone instead of a delete. Don't collapse these into a boolean.
-10. **The web publish form and the model disagree on the default on purpose.** `Work.visibility` defaults to `PUBLIC_VIEW_ONLY` (invariant 1) so any path that forgets to pass a value is safe; `front/src/components/publish/publish-form.tsx` pre-selects `public_remixable` (with `access_credits` only editable in that mode) because the product wants remixing to be the norm. Changing either side changes what "default" means to real users — check both.
-11. **`GET /v1/drafts` is owner-scoped *and* claim-scoped.** `list_unpublished_work_drafts` returns the caller's own unpublished drafts newest-first, and drops two classes of row in SQL rather than in Python: one whose thumbnail `Asset` belongs to someone else (so a leaked `output_asset_id` can never surface another account's image), and one bound — via `params.link_episode_id` **or** an `EpisodeContentLink` row — to a series the caller neither owns nor holds an *active* `SeriesCollaborator` seat on. A `removed`/`declined` seat does not count, which is what drops a left collaboration's jump-outs off 「最近生成记录」 while leaving the owner's own rail intact. `GET /drafts/{id}` is deliberately unchanged — this is a listing rule, not an authorization rule.
+1. Model default is `PUBLIC_VIEW_ONLY`; only `PUBLIC_REMIXABLE` allows remix (`Visibility.allows_remix`). The web form pre-selects remixable on purpose — check both when changing "default".
+2. `can_view`: owner or staff, else not `PRIVATE` and `ACTIVE`. Consumer routes never derive `viewer_is_staff` from a consumer session's roles (`_load_visible`, `version_diff`); staff read via `/v1/admin`.
+3. `can_remix`: `ACTIVE` and (owner, or remixable and price 0 or has `AccessGrant`). Every remix entry calls `assert_remixable`: view-only → `LicenseNotRemixable` (409), unpaid → `AccessRequired` (402).
+4. `_unlock` charges via `credits_service.access_transfer` with key `access:{buyer}:{subject_type}:{subject_id}`, then inserts the `AccessGrant`; a replayed/raced unlock returns the existing grant. Owner or free → no grant, no ledger row. Prices are ints; non-zero needs `marketplace_enabled`; non-remixable forces price 0 (`publish`, `change_visibility`).
+5. `create_draft` asserts remixability and captures a `LicenseSnapshot` once (`zaolang_paid_remix` when priced, with `access_grant_id`). `change_visibility` is forward-only: existing remixes keep their snapshot; snapshots are never backfilled.
+6. Publish re-check uses `assert_source_still_remixable` (visibility only) — never re-charges.
+7. `LineageEdge` points at a `WorkVersion`, freezes the parent author and license snapshot, materialises `depth`. `child_work_version_id` is unique → one parent per version (a forest, not a general DAG).
+8. `tombstone` sets `TOMBSTONE` + `PRIVATE` and keeps the row so lineage survives. `HIDDEN` (admin/moderation) and `TRASHED` (owner) are reversible and distinct. `purge` hard-deletes unless `_is_referenced` (edge, draft, snapshot or job points at a version) → tombstone. `LineageProtected` is defined but never raised.
+9. `request_publish` (HTTP 202) runs synchronously: pending/has-output/`rights_confirmed` checks, source re-check, keyword block; then `publish_status=pending` + `publish_params_json` and `run_draft_publish` on `quality_check` (enqueue failure → `revert_publish_request`). `finalize_draft_publish` is idempotent: already published → re-notify only; not pending → no-op; `DomainError` → `rejected` (may resubmit). A draft publishes once.
+10. `publish` order (one worker transaction): ① source re-check ② safety review (`REJECTED` aborts, `NEEDS_REVIEW` publishes + enqueues review) ③ `Work` + first `WorkVersion` ④ `publish_asset` + tags ⑤ edge + `remix_count` ⑥ `index_version` ⑦ royalties ⑧ notify ancestors. Best-effort side effects go last.
+11. `WorkVersion` is immutable; today only `publish` creates one (v1). Never UPDATE a version — add one.
+12. `GET /v1/drafts` (`list_unpublished_work_drafts`) is owner-scoped and drops, in SQL, drafts with another user's thumbnail or bound to a series the caller no longer owns or collaborates on (active seat).
 
-## Extension Points
+## Recipes
 
-- **Add a visibility value**: add it to `Visibility` + a branch for `allows_remix` + a `resolve_license_type` mapping + the `publish-form.tsx` frontend + trilingual copy. Also update search's `_visible_works()` filter condition.
-- **Add a license type**: add it to `LicenseType` + a permission entry in `LICENSE_PERMISSIONS`. **Existing snapshots are never backfilled** — a snapshot is history.
-- **Add a step to publish**: insert it into the appropriate point in `publish`, remembering it all runs in one transaction — an external call failure (object storage, notifications) rolls back the whole publish, so "best-effort" side effects (royalties, notifications) go last and must be self-tolerant of failure.
-- **Change lineage traversal**: `build_tree` has a `max_depth` (default 6), and `ancestors` / `descendants` both cap depth — don't remove the cap. Cycles shouldn't occur, but a long chain alone can blow up the response body.
+**Add a visibility**: `Visibility` + `allows_remix` + `resolve_license_type` + `_visible_works` + publish form + copy.
+
+**Add a license type**: `LicenseType` + `LICENSE_PERMISSIONS`.
+
+**Add a publish step**: insert in `publish` at the right index; an exception rolls back the whole publish, so tolerant side effects go last.
 
 ## Verify
 
 ```bash
-cd back && conda run -n zaolang pytest tests/unit/test_licensing_invariants.py tests/unit/test_lineage_invariants.py tests/unit/test_access_marketplace.py tests/integration/test_publish_flow.py tests/integration/test_access_marketplace.py -v
+cd back && conda run -n zaolang pytest tests/unit/test_licensing_invariants.py tests/unit/test_lineage_invariants.py tests/unit/test_access_marketplace.py tests/integration/test_publish_flow.py tests/integration/test_access_marketplace.py tests/integration/test_drafts.py tests/integration/test_lineage_visibility.py tests/integration/test_consumer_admin_role_visibility.py tests/concurrency/test_access_races.py -v
 ```
-
-Manual path: `make seed` creates the `linhai` / `mizuki` accounts but **no works** (see `seed.py`'s docstring), so first publish two works as `linhai` — one `public_view_only`, one `public_remixable` (optionally with `access_credits > 0`) — or use `tests/factories.make_work(visibility=...)` in an integration test. Then as `mizuki`, request a remix of the `public_view_only` work — must 409; remix the `public_remixable` one successfully — the new node should appear in the source's lineage graph. An unpurchased paid example returns 402.

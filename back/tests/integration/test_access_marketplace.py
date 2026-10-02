@@ -110,9 +110,7 @@ def test_paid_work_hides_params_until_unlocked(
     assert first.json()["license"]["license_type"] == "zaolang_paid_remix"
 
 
-def test_author_sees_own_paid_params(
-    client: TestClient, db: Session, author: User
-) -> None:
+def test_author_sees_own_paid_params(client: TestClient, db: Session, author: User) -> None:
     work, _ = make_work(db, author, access_credits=10)
     db.commit()
 
@@ -162,9 +160,7 @@ def test_paid_skill_hides_params_until_unlocked(
     assert detail["params"] == {}
     assert detail["viewer_unlocked"] is False
 
-    apply_locked = client.post(
-        f"/v1/skills/{skill.id}/apply", headers=auth_header(remixer)
-    )
+    apply_locked = client.post(f"/v1/skills/{skill.id}/apply", headers=auth_header(remixer))
     assert apply_locked.status_code == 402, apply_locked.text
     assert apply_locked.json()["error"]["code"] == "ACCESS_REQUIRED"
 
@@ -230,9 +226,7 @@ def test_insufficient_credits_do_not_write_a_grant(
     )
 
 
-def test_self_unlock_writes_no_ledger(
-    client: TestClient, db: Session, author: User
-) -> None:
+def test_self_unlock_writes_no_ledger(client: TestClient, db: Session, author: User) -> None:
     work, _ = make_work(db, author, access_credits=10)
     db.commit()
 

@@ -9,6 +9,17 @@ from typing import Any, Literal
 from pydantic import Field, ValidationError, model_validator
 
 from app.api.schemas.common import ApiModel
+from app.domain.image_assets.vocabulary import (
+    MAX_CHARACTER_EXPRESSIONS,
+    MAX_OUTFIT_LABEL_LEN,
+    MAX_SCENE_VARIANTS,
+    MIN_SCENE_VARIANTS,
+    CharacterExpression,
+    SceneLighting,
+    ScenePeriod,
+    SceneState,
+    SceneWeather,
+)
 from app.models.enums import (
     CHARACTER_JOB_VIEWS,
     CharacterViewAngle,
@@ -19,6 +30,7 @@ from app.models.enums import (
     NotificationType,
     Operation,
     QualityTier,
+    ReportReason,
     VideoAssetKind,
 )
 from app.platform_config.schemas import MAX_GENERATION_DURATION_SECONDS
@@ -121,6 +133,12 @@ class VideoGenerationOptions(ApiModel):
     reference_mode: Literal["input_references", "frame_images"] = "input_references"
     first_frame_asset_id: str | None = Field(default=None, max_length=40)
     last_frame_asset_id: str | None = Field(default=None, max_length=40)
+    # `motion_guide`: the one video among `reference_asset_ids` is a 白膜
+    # blockout render — camera, blocking and timing to follow, not footage
+    # to reproduce. Routes only to reference-to-video models and prepends a
+    # fixed directive (`app.domain.media.reference_roles`). `None` keeps a
+    # video reference's ordinary meaning.
+    reference_video_role: Literal["motion_guide"] | None = None
 
 
 def apply_sandbox_generation_defaults(
@@ -205,6 +223,13 @@ def validate_generation_params(
                 raise ValueError("首尾帧模式必须使用 image_to_video 操作。")
         elif video_options.first_frame_asset_id or video_options.last_frame_asset_id:
             raise ValueError("普通参考素材模式不能传入首帧或尾帧。")
+        if video_options.reference_video_role == "motion_guide":
+            if video_options.reference_mode != "input_references":
+                raise ValueError("白膜参考视频不能与首尾帧同时使用。")
+            if operation != Operation.TEXT_TO_VIDEO:
+                raise ValueError("白膜参考视频仅适用于 text_to_video。")
+            if not references:
+                raise ValueError("白膜参考视频模式必须提供参考视频。")
     has_frame_input = bool(video_options and video_options.first_frame_asset_id)
     if operation == Operation.IMAGE_TO_VIDEO and not references and not has_frame_input:
         raise ValueError("图生视频必须提供参考图。")
@@ -219,7 +244,9 @@ def validate_generation_params(
         if len(references) > AUDIO_CLONE_MAX_REFERENCES:
             raise ValueError("音频生成最多只能提供 1 段声音克隆参考音频。")
         voice = extras.get("voice")
-        has_valid_voice = isinstance(voice, str) and 0 < len(voice.strip()) <= AUDIO_VOICE_MAX_LENGTH
+        has_valid_voice = (
+            isinstance(voice, str) and 0 < len(voice.strip()) <= AUDIO_VOICE_MAX_LENGTH
+        )
         # A clone reference stands in for a named voice — the reference audio
         # itself carries the identity, so `voice` becomes optional once one
         # is attached (some clone models still take an optional style/voice
@@ -240,9 +267,7 @@ def validate_generation_params(
             audio_style == "sfx"
             and duration_seconds
             and not (
-                MUSIC_SFX_MIN_DURATION_SECONDS
-                <= duration_seconds
-                <= MUSIC_SFX_MAX_DURATION_SECONDS
+                MUSIC_SFX_MIN_DURATION_SECONDS <= duration_seconds <= MUSIC_SFX_MAX_DURATION_SECONDS
             )
         ):
             raise ValueError(
@@ -312,6 +337,70 @@ def _parsed_video_asset_kind(raw: Any) -> VideoAssetKind | None:
 
 def _parsed_forced_model(raw: Any) -> str | None:
     return raw if isinstance(raw, str) and raw else None
+
+
+class CharacterRefSelection(ApiModel):
+    """Which of one character's images a job should use instead of the card's
+    default subset: a look (`variant_id` → that look's default subset, e.g.
+    the 婚礼 outfit), exact images (`asset_ids`, each one of the card's own),
+    or both (the images must then belong to that look). Resolved by
+    `image_assets.reference_resolver`."""
+
+    character_id: str = Field(max_length=40)
+    variant_id: str | None = Field(default=None, max_length=40)
+    asset_ids: list[str] | None = Field(default=None, min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def _names_a_look_or_images(self) -> CharacterRefSelection:
+        if not self.variant_id and not self.asset_ids:
+            raise ValueError("请选择造型或具体参考图。")
+        return self
+
+
+class SceneRefSelection(ApiModel):
+    """Scene-side twin of `CharacterRefSelection`: a variant (黄昏/战损…),
+    exact images, or both."""
+
+    scene_id: str = Field(max_length=40)
+    variant_id: str | None = Field(default=None, max_length=40)
+    asset_ids: list[str] | None = Field(default=None, min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def _names_a_variant_or_images(self) -> SceneRefSelection:
+        if not self.variant_id and not self.asset_ids:
+            raise ValueError("请选择变体或具体参考图。")
+        return self
+
+
+class ScenePresetCombo(ApiModel):
+    """One image of a scene variant group (`GenerationParams.scene_variants`):
+    the preset combination that image should show."""
+
+    lighting: SceneLighting | None = None
+    weather: SceneWeather | None = None
+    state: SceneState | None = None
+    period: ScenePeriod | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one_axis(self) -> ScenePresetCombo:
+        if not (self.lighting or self.weather or self.state or self.period):
+            raise ValueError("每个场景变体至少要设置光照/天气/状态/时期中的一项。")
+        return self
+
+
+class ReferenceLabel(ApiModel):
+    """What one reference image is — written by the server at submit
+    (`media.service.label_references`), never trusted from a client."""
+
+    asset_id: str = Field(max_length=40)
+    label: str = Field(max_length=60)
+
+
+def _check_selection(picked: list[str], allowed: list[str], *, field: str, noun: str) -> None:
+    if len(set(picked)) != len(picked):
+        raise ValueError(f"{field} 中同一{noun}只能出现一次。")
+    if any(item not in allowed for item in picked):
+        raise ValueError(f"{field} 中的{noun}必须同时被选中。")
 
 
 class GenerationParams(ApiModel):
@@ -412,7 +501,86 @@ class GenerationParams(ApiModel):
     # (see `validate_generation_params`); `None` (the default) is today's
     # unchanged intent-router-driven behavior.
     forced_model: str | None = Field(default=None, max_length=200)
+    # `asset_kind=character` only: produce ONE composite image showing the
+    # same character with each of these expressions (a grid, or a single
+    # close-up for one) instead of the character sheet — see
+    # `app.domain.image_assets.prompt_builder`. Needs the character's own
+    # sheet as reference image 1 (rejected at submit otherwise).
+    character_expressions: list[CharacterExpression] | None = Field(
+        default=None, min_length=1, max_length=MAX_CHARACTER_EXPRESSIONS
+    )
+    # `asset_kind=character` only: names the outfit this sheet shows
+    # (日常/婚礼/战甲…). Written into the reference entry's `label`, which
+    # is part of the replace-key — a 婚礼 sheet never replaces the 日常 one.
+    character_outfit_label: str | None = Field(
+        default=None, min_length=1, max_length=MAX_OUTFIT_LABEL_LEN
+    )
+    # `asset_kind=character|scene`: the look / scene variant of the target
+    # card this job's output is filed under (`asset_output_link`). Unset →
+    # the outfit label / the scene presets' variant / the default.
+    target_variant_id: str | None = Field(default=None, max_length=40)
+    # Per-character pick of which reference images to send (see
+    # `CharacterRefSelection`); characters not listed use their default
+    # subset. Every `character_id` must also be in `character_ids`.
+    character_ref_selection: list[CharacterRefSelection] | None = Field(default=None, max_length=4)
+    # Per-scene pick of which reference images to send; same rules as
+    # `character_ref_selection` against `scene_ids`.
+    scene_ref_selection: list[SceneRefSelection] | None = Field(default=None, max_length=4)
+    # `asset_kind=scene` only: one preset per axis for a single scene image.
+    scene_lighting: SceneLighting | None = None
+    scene_weather: SceneWeather | None = None
+    scene_state: SceneState | None = None
+    scene_period: ScenePeriod | None = None
+    # `asset_kind=scene` only: a variant *group* — one image per entry from a
+    # single provider call (models with group output only). Mutually
+    # exclusive with the single-image `scene_*` presets above.
+    scene_variants: list[ScenePresetCombo] | None = Field(
+        default=None, min_length=MIN_SCENE_VARIANTS, max_length=MAX_SCENE_VARIANTS
+    )
+    # Server-written at submit: what each reference image is, for the
+    # prompt's "参考图说明" legend. Any client-sent value is discarded.
+    reference_labels: list[ReferenceLabel] | None = Field(default=None, max_length=9)
     extra: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _asset_presets_scoped_to_their_kind(self) -> GenerationParams:
+        is_character = self.asset_kind == ImageAssetKind.CHARACTER
+        is_scene = self.asset_kind == ImageAssetKind.SCENE
+        if not is_character and (self.character_expressions or self.character_outfit_label):
+            raise ValueError("表情与造型名称仅适用于 asset_kind=character。")
+        if self.character_expressions and self.character_outfit_label:
+            raise ValueError("表情合集图不能同时指定造型名称。")
+        if self.target_variant_id and not (is_character or is_scene):
+            raise ValueError("target_variant_id 仅适用于 asset_kind=character/scene。")
+        if self.target_variant_id and self.character_outfit_label:
+            raise ValueError("目标造型与造型名称只能指定一个。")
+        if self.target_variant_id and self.scene_variants:
+            raise ValueError("场景变体组会按预设各自归档，不能再指定目标变体。")
+        if self.character_expressions and self.character_views not in (
+            None,
+            [CharacterViewAngle.FRONT],
+        ):
+            raise ValueError("表情合集图不能与侧面/背面视角同时生成。")
+        has_scene_preset = bool(
+            self.scene_lighting or self.scene_weather or self.scene_state or self.scene_period
+        )
+        if not is_scene and (has_scene_preset or self.scene_variants):
+            raise ValueError("场景光照/天气/状态/时期仅适用于 asset_kind=scene。")
+        if has_scene_preset and self.scene_variants:
+            raise ValueError("单张场景预设与场景变体组不能同时使用。")
+        _check_selection(
+            [entry.character_id for entry in self.character_ref_selection or []],
+            self.character_ids,
+            field="character_ref_selection",
+            noun="角色",
+        )
+        _check_selection(
+            [entry.scene_id for entry in self.scene_ref_selection or []],
+            self.scene_ids,
+            field="scene_ref_selection",
+            noun="场景",
+        )
+        return self
 
     @model_validator(mode="after")
     def _character_views_scoped_to_character_kind(self) -> GenerationParams:
@@ -443,6 +611,10 @@ class QuoteRequest(ApiModel):
     # 侧面/背面" completion job cost more than one image (see `pricing.quote`).
     asset_kind: ImageAssetKind = ImageAssetKind.GENERAL
     character_views: list[CharacterViewAngle] | None = Field(default=None, max_length=3)
+    # A scene variant group prices one image per entry.
+    scene_variants: list[ScenePresetCombo] | None = Field(
+        default=None, min_length=MIN_SCENE_VARIANTS, max_length=MAX_SCENE_VARIANTS
+    )
 
 
 class QuoteResponse(ApiModel):
@@ -450,6 +622,37 @@ class QuoteResponse(ApiModel):
     estimated_seconds: int
     breakdown: dict[str, int]
     available_credits: int
+    sufficient: bool
+
+
+class BatchQuoteItem(QuoteRequest):
+    """One line of a batch: `count` identical jobs."""
+
+    count: int = Field(default=1, ge=1, le=500)
+
+
+class BatchQuoteRequest(ApiModel):
+    items: list[BatchQuoteItem] = Field(min_length=1, max_length=50)
+
+
+class BatchQuoteLine(ApiModel):
+    unit_credits: int
+    count: int
+    credits: int
+    estimated_seconds: int
+
+
+class BatchQuoteResponse(ApiModel):
+    """A batch priced line by line with the same `quote_for` a submit uses
+    — an exact sum, never a range (see the `zaolang-credits-billing` skill on
+    batch quotes)."""
+
+    items: list[BatchQuoteLine]
+    total_credits: int
+    available_credits: int
+    # What the user's own monthly cap still allows; null = no cap.
+    period_remaining: int | None = None
+    within_spend_limit: bool
     sufficient: bool
 
 
@@ -481,6 +684,9 @@ class GenerationModelOption(ApiModel):
     resolutions: list[Literal["480p", "720p", "1080p", "2K"]] | None = None
     default_resolution: Literal["480p", "720p", "1080p", "2K"] | None = None
     voices: list[str] | None = None
+    # Separate images one call can return — >1 only for a model that can
+    # serve a scene variant group (`GenerationParams.scene_variants`).
+    max_outputs_per_call: int = 1
 
 
 class GenerationModelListResponse(ApiModel):
@@ -600,8 +806,9 @@ class JobEventResponse(ApiModel):
     message: str
     internal_code: str | None = None
     created_at: dt.datetime
-    # Which graph node actually wrote this event (see `zaolang-generation-jobs`
-    # invariant #13). Already carried by the admin stream; exposed here too so
+    # Which graph node actually wrote this event (see the
+    # `zaolang-generation-jobs` skill on `JobEvent.node_id`). Already carried
+    # by the admin stream; exposed here too so
     # a multi-view `CHARACTER` job's client can tell an `asset_planning` re-entry
     # (one per produced view) apart from every other `planning`-type event,
     # without matching on `message` text.
@@ -721,6 +928,10 @@ class UploadPresignRequest(ApiModel):
             r"|editor_export|caption|font|voice_sample)$"
         )
     )
+    # The uploader's own declaration that an image/video shows a real person —
+    # such a reference then needs a portrait consent (`POST
+    # /v1/assets/{asset_id}/consents`) before a generation job may use it.
+    depicts_real_person: bool = False
 
 
 class UploadPresignResponse(ApiModel):
@@ -754,6 +965,7 @@ class AssetResponse(ApiModel):
     moderation_status: str
     is_prototype: bool = False
     ai_generated: bool = False
+    depicts_real_person: bool = False
 
 
 class ProvenanceResponse(ApiModel):
@@ -769,10 +981,48 @@ class ProvenanceResponse(ApiModel):
     signed: bool = False
 
 
+class ConsentDeclareRequest(ApiModel):
+    """The uploader declares that the real person whose voice or likeness the
+    asset carries consented to its use (深度合成管理规定 §14). `evidence_asset_id`
+    is an optional `consent_evidence` upload an operator can verify against."""
+
+    consent_type: Literal["voice", "portrait"]
+    subject_reference: str = Field(min_length=1, max_length=255)
+    evidence_asset_id: str | None = None
+    expires_at: dt.datetime | None = None
+
+
+class ConsentRevokeRequest(ApiModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class ConsentResponse(ApiModel):
+    id: str
+    asset_id: str
+    consent_type: str
+    subject_reference: str
+    status: str
+    has_evidence: bool
+    expires_at: dt.datetime | None = None
+    revoked_at: dt.datetime | None = None
+    created_at: dt.datetime
+
+
 class CreditBalanceResponse(ApiModel):
     available: int
     reserved: int
     currency: str = "CREDIT"
+    # The user's own cap on generation spend per UTC month; null = no cap.
+    monthly_spend_limit: int | None = None
+    period: str = ""
+    period_spent: int = 0
+    period_remaining: int | None = None
+
+
+class SpendLimitRequest(ApiModel):
+    """`null` removes the cap."""
+
+    monthly_spend_limit: int | None = Field(default=None, ge=1, le=100_000_000)
 
 
 class LedgerEntryResponse(ApiModel):
@@ -850,5 +1100,5 @@ class NotificationResponse(ApiModel):
 class ReportCreateRequest(ApiModel):
     subject_type: str = Field(pattern=r"^(work|asset|user|comment)$")
     subject_id: str
-    reason: str
+    reason: ReportReason
     detail: str | None = Field(default=None, max_length=2000)

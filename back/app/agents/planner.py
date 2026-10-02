@@ -260,6 +260,18 @@ ASSET_PLAN_SYSTEM_PROMPT = f"""你是造浪平台的图片资产规划器，
   改为补世界观制式（技术等级、材质语言、重力与大气状态）。用户没写视觉媒介时必须补上
   「真人写实影视短剧实拍质感」，已写动漫/二次元则原样保留。negative_prompt_suggestions
   必须排除年代穿帮的现代物件与对立媒介（插画/3D 渲染/游戏截图/概念设定图）
+- asset_pass 说明这一张具体是什么，优先级高于 character_view 的设定图规则：
+  character_sheet = 角色设定图（按上面的设定图版式）；
+  character_expressions = 表情合集图（source_params.character_expressions 列出各格表情）：
+  只出同一人物的头肩特写宫格，禁止补三视图/设定图/色板/全身像，
+  prompt_enhancements 只补充保持五官、发型、服装在各格一致的描述；
+  scene = 单张场景图（场景变体组逐张生成，source_params.current_scene_variant 是当前这一张的变体，
+  其光照/天气/状态/时期已写入 scene_lighting 等字段）
+- 当 source_params 带有 scene_lighting/scene_weather/scene_state/scene_period
+  时，这些预设已经写进了 intent，是硬性要求：prompt_enhancements 不得改写光照、天气、
+  破损程度或年代，也不得引入与 scene_period 不同的年代器物；只补充与预设一致的细节
+- 当 source_params.character_outfit_label 存在时，intent 描述的是该造型的服装，
+  prompt_enhancements 不得改变人物五官与发型，只补充服装面料与配饰细节
 - subject_name 是这个角色/场景适合作为库内条目名称的简短命名（4-12 个字），
   没有更具体的名字时可以用一个概括性的称呼（例如"神秘女侦探"），但不要留空
 - negative_prompt_suggestions 给出会破坏该用途可用性的反面描述
@@ -283,6 +295,7 @@ def plan_asset(
     intent: str,
     asset_kind: str,
     character_view: str | None = None,
+    asset_pass: str | None = None,
     target_character_id: str | None = None,
     target_scene_id: str | None = None,
     source_params: dict[str, Any] | None = None,
@@ -297,12 +310,16 @@ def plan_asset(
     `character_view` only matters when `asset_kind == "character"`: which of
     `front`/`side`/`back` this particular call's output is for, one call per
     entry in `GenerationParams.character_views` for a multi-view completion
-    job (see `_CHARACTER_VIEW_BRIEF`).
+    job (see `_CHARACTER_VIEW_BRIEF`). `asset_pass` is
+    `prompt_builder.AssetPass` — what this pass actually produces (a sheet,
+    a composite expression image, a scene variant group…); the builder has
+    already composed its fixed text, the plan only adds to it.
     """
     payload = {
         "intent": intent,
         "asset_kind": asset_kind,
         "character_view": character_view,
+        "asset_pass": asset_pass,
         "target_character_id": target_character_id,
         "target_scene_id": target_scene_id,
         "source_params": source_params or {},

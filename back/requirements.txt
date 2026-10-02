@@ -12,8 +12,8 @@ celery==5.6.3
 boto3==1.43.62
 cos-python-sdk-v5==1.9.44
 argon2-cffi==25.1.0
-pyjwt==2.13.0
-cryptography==46.0.7
+pyjwt==2.15.1
+cryptography==50.0.1
 python-multipart==0.0.32
 httpx==0.28.1
 openai==2.52.0

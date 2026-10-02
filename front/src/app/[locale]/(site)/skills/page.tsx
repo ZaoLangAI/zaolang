@@ -69,7 +69,6 @@ export default async function SkillLibraryPage({
       access: activeAccess,
       limit: 48,
     },
-    revalidate: 60,
   });
   const skills = page?.items ?? [];
 

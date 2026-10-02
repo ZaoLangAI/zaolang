@@ -96,9 +96,7 @@ def presign_put(object_key: str, *, content_type: str, expires_in: int) -> str:
 
 
 def presign_get(object_key: str, *, expires_in: int, download_name: str | None = None) -> str:
-    return get_backend().presign_get(
-        object_key, expires_in=expires_in, download_name=download_name
-    )
+    return get_backend().presign_get(object_key, expires_in=expires_in, download_name=download_name)
 
 
 def put_object(object_key: str, payload: bytes, *, content_type: str | None = None) -> None:

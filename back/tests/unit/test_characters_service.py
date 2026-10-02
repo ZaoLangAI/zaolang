@@ -22,9 +22,10 @@ from sqlalchemy.orm import Session
 
 from app.domain.characters import service as characters_service
 from app.domain.errors import NotFound, ValidationFailed
-from app.models import Asset, User
+from app.domain.skill_library import service as skill_library_service
+from app.models import Asset, CreationSkill, User
 from app.models.base import new_id
-from app.models.enums import CharacterViewAngle, MediaType
+from app.models.enums import CharacterViewAngle, MediaType, ModerationStatus
 from tests.conftest import make_user
 
 
@@ -92,9 +93,7 @@ def test_create_rejects_a_duplicate_name_for_the_same_owner(db: Session, author:
     assert caught.value.details["fields"]["name"] == "角色名称已存在"
 
 
-def test_update_rejects_renaming_onto_another_characters_name(
-    db: Session, author: User
-) -> None:
+def test_update_rejects_renaming_onto_another_characters_name(db: Session, author: User) -> None:
     characters_service.create_character(
         db,
         user_id=author.id,
@@ -152,9 +151,7 @@ def test_two_owners_may_share_a_character_name(db: Session, author: User) -> Non
         voice_description=None,
     )
     assert mine.id != theirs.id
-    found = characters_service.find_owned_character_by_name(
-        db, user_id=author.id, name=" 林彻 "
-    )
+    found = characters_service.find_owned_character_by_name(db, user_id=author.id, name=" 林彻 ")
     assert found is not None
     assert found.id == mine.id
     assert (
@@ -177,8 +174,8 @@ def test_a_character_is_scoped_to_its_owner(db: Session, author: User) -> None:
         characters_service.get_character(db, user_id=author.id, character_id=character.id)
 
 
-def test_create_rejects_more_than_four_reference_assets(db: Session, author: User) -> None:
-    assets = [_asset(db, author) for _ in range(5)]
+def test_create_rejects_more_than_the_reference_cap(db: Session, author: User) -> None:
+    assets = [_asset(db, author) for _ in range(characters_service.MAX_REFERENCE_ASSETS + 1)]
     with pytest.raises(ValidationFailed):
         characters_service.create_character(
             db,
@@ -376,6 +373,12 @@ def test_editing_a_published_character_withdraws_it_to_draft(db: Session, author
     reloaded = characters_service.get_character(db, user_id=author.id, character_id=character.id)
     assert reloaded.status == "draft"
     assert reloaded.visibility == "private"
+    # The review request goes with it — no open queue item left for a
+    # reviewer to approve into a 409.
+    queue_item = skill_library_service._queue_item_for(db, db.get(CreationSkill, character.id))
+    assert queue_item is not None
+    assert queue_item.status == ModerationStatus.REJECTED
+    assert queue_item.reason_code == "withdrawn_by_owner"
 
 
 # ---- Publish / withdraw -----------------------------------------------------
@@ -482,3 +485,145 @@ def test_apply_character_refs_rejects_someone_elses_character(db: Session, autho
     params: dict[str, object] = {"character_ids": [character.id]}
     with pytest.raises(NotFound):
         characters_service.apply_character_refs(db, user_id=author.id, params=params)
+
+
+# ---- Outfits, default subset and per-job selection ------------------------
+
+
+def _character_with(db: Session, author: User, name: str = "林夏"):
+    return characters_service.create_character(
+        db,
+        user_id=author.id,
+        name=name,
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+
+
+def _attach(db: Session, author: User, character_id: str, *, view: str, label: str | None = None):
+    asset = _asset(db, author)
+    characters_service.append_reference_asset(
+        db,
+        user_id=author.id,
+        character_id=character_id,
+        asset_id=asset.id,
+        view=view,
+        label=label,
+    )
+    return asset
+
+
+def test_a_named_outfit_sheet_does_not_replace_the_default_one(db: Session, author: User) -> None:
+    character = _character_with(db, author)
+    daily = _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value)
+    wedding = _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value, label="婚礼")
+    wedding_again = _attach(
+        db, author, character.id, view=CharacterViewAngle.FRONT.value, label=" 婚礼 "
+    )
+
+    ids = characters_service.get_character(
+        db, user_id=author.id, character_id=character.id
+    ).reference_asset_ids
+    assert daily.id in ids
+    assert wedding.id not in ids
+    assert wedding_again.id in ids
+
+
+def test_a_full_look_refuses_more_images_instead_of_evicting(db: Session, author: User) -> None:
+    character = _character_with(db, author)
+    front = _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value)
+    outfit = _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value, label="战甲")
+    for i in range(characters_service.MAX_REFERENCE_ASSETS - 1):
+        _attach(db, author, character.id, view=CharacterViewAngle.GENERAL.value, label=f"表情{i}")
+
+    with pytest.raises(ValidationFailed):
+        _attach(db, author, character.id, view=CharacterViewAngle.GENERAL.value, label="表情溢出")
+
+    ids = characters_service.get_character(
+        db, user_id=author.id, character_id=character.id
+    ).reference_asset_ids
+    assert front.id in ids and outfit.id in ids
+    assert len(ids) == characters_service.MAX_REFERENCE_ASSETS + 1
+
+
+def test_default_subset_is_the_unnamed_sheet_in_view_order(db: Session, author: User) -> None:
+    character = _character_with(db, author)
+    back = _attach(db, author, character.id, view=CharacterViewAngle.BACK.value)
+    _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value, label="婚礼")
+    _attach(db, author, character.id, view=CharacterViewAngle.GENERAL.value, label="表情·冷笑")
+    front = _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value)
+
+    view = characters_service.get_character(db, user_id=author.id, character_id=character.id)
+    assert characters_service.default_reference_asset_ids(view) == [front.id, back.id]
+
+
+def test_default_subset_falls_back_to_unlabelled_uploads(db: Session, author: User) -> None:
+    character = _character_with(db, author)
+    first = _attach(db, author, character.id, view=CharacterViewAngle.GENERAL.value)
+    _attach(db, author, character.id, view=CharacterViewAngle.GENERAL.value, label="婚礼")
+    view = characters_service.get_character(db, user_id=author.id, character_id=character.id)
+    assert characters_service.default_reference_asset_ids(view) == [first.id]
+
+
+def test_apply_character_refs_uses_only_the_default_subset(db: Session, author: User) -> None:
+    character = _character_with(db, author)
+    front = _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value)
+    _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value, label="婚礼")
+
+    params: dict[str, object] = {"character_ids": [character.id]}
+    characters_service.apply_character_refs(db, user_id=author.id, params=params)
+    assert params["reference_asset_ids"] == [front.id]
+
+
+def test_apply_character_refs_honours_the_callers_selection(db: Session, author: User) -> None:
+    character = _character_with(db, author)
+    _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value)
+    wedding = _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value, label="婚礼")
+
+    params: dict[str, object] = {
+        "character_ids": [character.id],
+        "character_ref_selection": [{"character_id": character.id, "asset_ids": [wedding.id]}],
+    }
+    characters_service.apply_character_refs(db, user_id=author.id, params=params)
+    assert params["reference_asset_ids"] == [wedding.id]
+
+
+def test_apply_character_refs_rejects_a_selection_outside_the_character(
+    db: Session, author: User
+) -> None:
+    character = _character_with(db, author)
+    _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value)
+    stranger = _asset(db, author)
+
+    params: dict[str, object] = {
+        "character_ids": [character.id],
+        "character_ref_selection": [{"character_id": character.id, "asset_ids": [stranger.id]}],
+    }
+    with pytest.raises(ValidationFailed):
+        characters_service.apply_character_refs(db, user_id=author.id, params=params)
+
+
+def test_a_content_edit_keeps_each_known_entrys_view_and_label(db: Session, author: User) -> None:
+    character = _character_with(db, author)
+    front = _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value)
+    wedding = _attach(db, author, character.id, view=CharacterViewAngle.FRONT.value, label="婚礼")
+    upload = _asset(db, author)
+
+    characters_service.update_character(
+        db,
+        user_id=author.id,
+        character_id=character.id,
+        name="林夏夏",
+        reference_asset_ids=[wedding.id, front.id, upload.id],
+    )
+    entries = characters_service.get_character(
+        db, user_id=author.id, character_id=character.id
+    ).reference_assets
+    # Looks order the projection now: the default look's anchor first, the
+    # new upload in the default look, then the 婚礼 look.
+    assert [(e["asset_id"], e["view"], e["label"]) for e in entries] == [
+        (front.id, "front", None),
+        (upload.id, "general", None),
+        (wedding.id, "front", "婚礼"),
+    ]

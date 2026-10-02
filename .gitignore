@@ -6,6 +6,11 @@
 *.key
 !**/*.key.example
 
+# Real prod host/IP/SSH details for the single remote box — local-only,
+# never published. Keep working locally; do not re-track or rename around
+# this rule.
+.cursor/skills/zaolang-remote-deploy/
+
 # --- python ---
 __pycache__/
 *.py[cod]
@@ -58,12 +63,9 @@ celerybeat-schedule.db
 back/celerybeat-schedule.db
 
 # --- vendored OpenCut classic build artefacts ---
-third_party/opencut-classic/node_modules/
 third_party/opencut-classic/**/target/
 third_party/opencut-classic/rust/wasm/pkg/
 third_party/opencut-classic/rust/wasm/pkg-web/
-third_party/opencut-classic/.next/
-third_party/opencut-classic/apps/**/.next/
 
 # --- os / editor ---
 .DS_Store

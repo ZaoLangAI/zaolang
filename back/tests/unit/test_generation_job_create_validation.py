@@ -365,7 +365,11 @@ def test_every_other_operation_still_requires_a_non_empty_prompt() -> None:
 
 def test_video_to_video_requires_a_reference_unless_a_licensed_source_is_attached() -> None:
     with pytest.raises(ValidationError, match="必须提供参考视频"):
-        _request(Operation.VIDEO_TO_VIDEO, duration_seconds=8, video_options={"reference_mode": "input_references"})
+        _request(
+            Operation.VIDEO_TO_VIDEO,
+            duration_seconds=8,
+            video_options={"reference_mode": "input_references"},
+        )
 
     uploaded = _request(
         Operation.VIDEO_TO_VIDEO,
@@ -405,9 +409,7 @@ def test_forced_model_is_accepted_for_image_and_video_creation() -> None:
     image_request = _request(Operation.TEXT_TO_IMAGE, forced_model="doubao-seedream-5-0-pro")
     assert image_request.params.forced_model == "doubao-seedream-5-0-pro"
 
-    video_request = _request(
-        Operation.TEXT_TO_VIDEO, duration_seconds=5, forced_model="minimax-h3"
-    )
+    video_request = _request(Operation.TEXT_TO_VIDEO, duration_seconds=5, forced_model="minimax-h3")
     assert video_request.params.forced_model == "minimax-h3"
 
 
@@ -417,9 +419,7 @@ def test_forced_model_is_accepted_for_audio_generation() -> None:
     model_catalog.voices_for_model`) is what actually needs to know which
     model was picked, hence this operation joining the `forced_model`
     scope alongside image/video."""
-    request = _request(
-        Operation.AUDIO_GENERATION, extra={"voice": "nova"}, forced_model="tts-1"
-    )
+    request = _request(Operation.AUDIO_GENERATION, extra={"voice": "nova"}, forced_model="tts-1")
     assert request.params.forced_model == "tts-1"
 
 
@@ -428,9 +428,7 @@ def test_forced_model_is_rejected_outside_image_video_or_audio_creation() -> Non
         GenerationJobCreateRequest(
             operation=Operation.VIDEO_ANALYSIS,
             quality_tier=QualityTier.STANDARD,
-            params=GenerationParams(
-                reference_asset_ids=["asset-video"], forced_model="some-model"
-            ),
+            params=GenerationParams(reference_asset_ids=["asset-video"], forced_model="some-model"),
         )
 
 
@@ -445,3 +443,89 @@ def test_generation_prompt_accepts_4096_and_rejects_4097() -> None:
 
     with pytest.raises(ValidationError):
         GenerationParams(prompt="测" * 4097)
+
+
+# ---- character/scene presets (`_asset_presets_scoped_to_their_kind`) ----
+
+
+def test_character_expressions_are_accepted_on_a_character_job() -> None:
+    params = GenerationParams(
+        prompt="林夏",
+        asset_kind=ImageAssetKind.CHARACTER,
+        character_expressions=["smile", "smirk", "breakdown"],
+    )
+    assert params.character_expressions == ["smile", "smirk", "breakdown"]
+    assert params.character_views == [CharacterViewAngle.FRONT]
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"asset_kind": ImageAssetKind.SCENE, "character_expressions": ["smile"]},
+        {"asset_kind": ImageAssetKind.GENERAL, "character_outfit_label": "婚礼"},
+        {
+            "asset_kind": ImageAssetKind.CHARACTER,
+            "character_expressions": ["smile"],
+            "character_outfit_label": "婚礼",
+        },
+        {
+            "asset_kind": ImageAssetKind.CHARACTER,
+            "character_expressions": ["smile"],
+            "character_views": ["side", "back"],
+        },
+        {"asset_kind": ImageAssetKind.CHARACTER, "character_expressions": ["grumpy"]},
+        {"asset_kind": ImageAssetKind.CHARACTER, "character_expressions": ["smile"] * 10},
+        {"asset_kind": ImageAssetKind.CHARACTER, "scene_lighting": "dusk"},
+        {"asset_kind": ImageAssetKind.SCENE, "scene_lighting": "noon"},
+        {
+            "asset_kind": ImageAssetKind.SCENE,
+            "scene_lighting": "dusk",
+            "scene_variants": [{"lighting": "day"}, {"lighting": "dusk"}],
+        },
+        {"asset_kind": ImageAssetKind.SCENE, "scene_variants": [{"lighting": "day"}]},
+        {"asset_kind": ImageAssetKind.SCENE, "scene_variants": [{"lighting": "day"}, {}]},
+        {
+            "asset_kind": ImageAssetKind.SCENE,
+            "scene_variants": [{"lighting": "day"}] * 5,
+        },
+        {
+            "character_ids": ["chr_a"],
+            "character_ref_selection": [{"character_id": "chr_b", "asset_ids": ["ast_1"]}],
+        },
+        {
+            "character_ids": ["chr_a"],
+            "character_ref_selection": [{"character_id": "chr_a", "asset_ids": []}],
+        },
+    ],
+)
+def test_presets_outside_their_asset_kind_are_rejected(overrides: dict) -> None:
+    with pytest.raises(ValidationError):
+        GenerationParams(prompt="测试", **overrides)
+
+
+def test_scene_presets_and_variant_groups_are_accepted_on_a_scene_job() -> None:
+    single = GenerationParams(
+        prompt="客厅",
+        asset_kind=ImageAssetKind.SCENE,
+        scene_lighting="night_interior",
+        scene_weather="rain",
+        scene_state="damage_medium",
+        scene_period="republic",
+    )
+    assert single.scene_period == "republic"
+    group = GenerationParams(
+        prompt="客厅",
+        asset_kind=ImageAssetKind.SCENE,
+        scene_variants=[{"lighting": "day"}, {"lighting": "dusk", "weather": "rain"}],
+    )
+    assert group.scene_variants is not None and len(group.scene_variants) == 2
+
+
+def test_character_ref_selection_must_name_a_selected_character() -> None:
+    params = GenerationParams(
+        prompt="测试",
+        character_ids=["chr_a"],
+        character_ref_selection=[{"character_id": "chr_a", "asset_ids": ["ast_1", "ast_2"]}],
+    )
+    assert params.character_ref_selection is not None
+    assert params.character_ref_selection[0].asset_ids == ["ast_1", "ast_2"]

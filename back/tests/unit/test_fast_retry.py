@@ -10,6 +10,7 @@ the end-to-end wiring (the actual `/retry` call skipping real nodes).
 
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.jobs import fast_retry
@@ -190,3 +191,23 @@ def test_no_resolved_prompt_event_yields_no_seed(db: Session, author: User) -> N
     retry = _retry_job(original_id=original.id, request_json=original.request_json)
 
     assert fast_retry.build_seed(db, retry) is None
+
+
+def test_the_seed_never_carries_a_reference_legend(db: Session, author: User) -> None:
+    original = _original_job(db, author, failure_code="PROVIDER_TEMPORARY_FAILURE")
+    event = db.scalar(select(JobEvent).where(JobEvent.job_id == original.id))
+    assert event is not None
+    event.payload_json = {
+        "prompt": (
+            "参考图说明：图1 是角色「林夏」设定图；图2 是参考图。"
+            "请按以上对应关系使用各参考图。\n雨夜"
+        ),
+        "negative_prompt": "低质量",
+    }
+    db.flush()
+    retry = _retry_job(original_id=original.id, request_json=original.request_json)
+
+    seed = fast_retry.build_seed(db, retry)
+
+    assert seed is not None
+    assert seed.prompt == "雨夜"

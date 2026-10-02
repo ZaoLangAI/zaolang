@@ -49,6 +49,8 @@ export function characterImageStudioHref(input: {
   name: string;
   appearance?: string | null;
   returnTo?: string;
+  /** File the sheet under this look (`target_variant_id`). */
+  variantId?: string;
 }): string {
   const params = new URLSearchParams({
     mode: 'image_creation',
@@ -58,6 +60,7 @@ export function characterImageStudioHref(input: {
     subjectNameHint: input.name.trim().slice(0, 60),
     returnTo: input.returnTo ?? CHARACTER_LIBRARY_RETURN_TO,
   });
+  if (input.variantId) params.set('targetVariantId', input.variantId);
   return `/create/new?${params.toString()}`;
 }
 
@@ -75,7 +78,10 @@ export function referenceByView(
   character: Character,
   view: 'front' | 'side' | 'back',
 ): CharacterReferenceAsset | undefined {
-  return character.reference_assets?.find((asset) => asset.view === view);
+  // The default (unnamed) look first: a labelled entry is another outfit's
+  // sheet, kept alongside it (`characters.service.append_reference_asset`).
+  const matches = character.reference_assets?.filter((asset) => asset.view === view) ?? [];
+  return matches.find((asset) => !asset.label?.trim()) ?? matches[0];
 }
 
 /**
@@ -174,4 +180,23 @@ export function findCompletionJobFor(
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
   return completions[completions.length - 1] ?? null;
+}
+
+const SHEET_VIEWS = ['front', 'side', 'back'] as const;
+
+/**
+ * What a job sends for this character when nothing was picked — mirrors the
+ * backend's `characters.service.default_reference_asset_ids`: the default
+ * look's unlabelled front/side/back, else the oldest unlabelled entries,
+ * else the oldest entries; at most three. Named outfits and expression
+ * sheets only go in when picked (`character_ref_selection`).
+ */
+export function defaultCharacterReferenceIds(character: Character): string[] {
+  const entries = (character.reference_assets ?? []).filter((asset) => asset.asset_id);
+  const sheet = SHEET_VIEWS.flatMap((view) =>
+    entries.filter((asset) => asset.view === view && !asset.label?.trim()),
+  );
+  const unlabelled = entries.filter((asset) => !asset.label?.trim());
+  const pool = sheet.length ? sheet : unlabelled.length ? unlabelled : entries;
+  return pool.slice(0, 3).map((asset) => asset.asset_id);
 }

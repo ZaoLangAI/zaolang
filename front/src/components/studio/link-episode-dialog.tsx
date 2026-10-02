@@ -35,54 +35,68 @@ export function LinkEpisodeDialog({
   const [episodes, setEpisodes] = useState<editorApi.DramaEpisode[]>([]);
   const [seriesId, setSeriesId] = useState('');
   const [episodeId, setEpisodeId] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(open);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Resets adjusted during render rather than in the fetch effects (same
-  // pattern as `command-palette.tsx`); the effects only do the fetching.
-  const [wasOpen, setWasOpen] = useState(false);
+  // Reset for the next open during render rather than in an effect (same
+  // "adjust state during render" pattern as `promote-job-dialog.tsx`). The
+  // picked series survives a reopen; its episodes are refetched below.
+  const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open) {
       setError(null);
       setLoading(true);
+      setEpisodes([]);
+      setEpisodeId('');
     }
-  }
-  const episodesSeriesId = open ? seriesId : '';
-  const [lastEpisodesSeriesId, setLastEpisodesSeriesId] = useState('');
-  if (episodesSeriesId !== lastEpisodesSeriesId) {
-    setLastEpisodesSeriesId(episodesSeriesId);
-    setEpisodeId('');
-    if (!episodesSeriesId) setEpisodes([]);
   }
 
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     void editorApi
       .listDramaSeries()
       .then((rows) => {
+        if (cancelled) return;
         setSeries(rows);
         if (rows.length === 1) setSeriesId(rows[0]?.id ?? '');
       })
       .catch((caught) => {
-        setError(isApiError(caught) ? caught.message : tStates('errorHint'));
+        if (!cancelled) setError(isApiError(caught) ? caught.message : tStates('errorHint'));
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [open, tStates]);
 
   useEffect(() => {
-    if (!episodesSeriesId) return;
+    if (!open || !seriesId) return;
+    let cancelled = false;
     void editorApi
       .listEpisodes(episodesSeriesId)
       .then((rows) => {
+        if (cancelled) return;
         setEpisodes(rows);
         if (rows.length === 1) setEpisodeId(rows[0]?.id ?? '');
       })
       .catch((caught) => {
-        setError(isApiError(caught) ? caught.message : tStates('errorHint'));
+        if (!cancelled) setError(isApiError(caught) ? caught.message : tStates('errorHint'));
       });
-  }, [episodesSeriesId, tStates]);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, seriesId, tStates]);
+
+  const pickSeries = (nextSeriesId: string) => {
+    setSeriesId(nextSeriesId);
+    setEpisodes([]);
+    setEpisodeId('');
+  };
 
   const submit = async () => {
     if (!episodeId) return;
@@ -130,7 +144,7 @@ export function LinkEpisodeDialog({
           <Select
             label={t('linkEpisodeSeries')}
             value={seriesId}
-            onChange={(event) => setSeriesId(event.target.value)}
+            onChange={(event) => pickSeries(event.target.value)}
             options={[
               { value: '', label: t('linkEpisodeSeriesPlaceholder') },
               ...series.map((item) => ({ value: item.id, label: item.title })),

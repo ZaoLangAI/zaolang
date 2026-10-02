@@ -45,6 +45,7 @@ from sqlalchemy.orm import Session
 
 from app.agents import copywriter, skill_matcher
 from app.db import session_scope
+from app.domain.asset_variants import service as asset_variants_service
 from app.domain.characters import service as characters_service
 from app.domain.editor import collaborators
 from app.domain.editor import service as editor_service
@@ -766,18 +767,34 @@ def get_turn_snapshot(
 
 
 def delete_script(session: Session, *, user_id: str, episode_id: str) -> None:
-    """Deletes a script the caller owns.
+    """Deletes a script (its `DramaEpisode`) the caller owns or actively
+    co-creates — same access rule as `editor_service.delete_episode`.
 
     A published episode (`canonical_work_id` set) still 422s — that work
     is the public projection. Unpublished `EpisodeCut` rows are torn down
     first via `purge_unpublished_editor_graph` so the `RESTRICT` on
     `episode_cuts.episode_id` does not surface as a raw `IntegrityError`.
-    `EpisodeScriptTurn` rows cascade automatically (`ondelete="CASCADE"`);
-    the owning `Series` is deleted too, but only when no other
-    `DramaEpisode` still references it — `prepare_new_script` always
-    creates a fresh 1:1 `Series`+`DramaEpisode` pair for this flow, but
-    nothing prevents a future episode from being added under the same
-    series later.
+    `EpisodeScriptTurn` rows cascade automatically (`ondelete="CASCADE"`).
+
+    The owning `Series` is never hard-deleted here — that is
+    `editor_service.purge_drama_series`' job, behind the recycle bin. The
+    only series-level side effect is tidying up the shell the standalone
+    `/create/script` flow auto-creates (`prepare_new_script` without a
+    `series_id`): once its last episode is gone, it is moved to the
+    owner's recycle bin (`trash_drama_series`) instead of lingering as an
+    empty card on the dashboard, and the owner can still restore or purge
+    it from there. That happens only when all of these hold:
+
+    - no other `DramaEpisode` still references the series;
+    - the caller is the series owner — a co-creator never gets trash
+      rights (see `zaolang-editor-drama`), so their delete leaves the
+      owner's series alone;
+    - the series is still an uncurated shell, i.e. `target_platforms_json`
+      is empty. The series form (`create_drama_series`/`update_drama_series`)
+      always requires at least one platform, so a non-empty list means it
+      was created on, or since edited through, the `/create/short`
+      dashboard and must stay put, same as after `delete_episode`;
+    - it is not already in the recycle bin.
     """
     _require_script_studio(session, user_id=user_id)
     episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
@@ -789,13 +806,19 @@ def delete_script(session: Session, *, user_id: str, episode_id: str) -> None:
     session.delete(episode)
     session.flush()
 
+    series = session.get(Series, series_id)
+    if (
+        series is None
+        or series.owner_user_id != user_id
+        or series.target_platforms_json
+        or series.status == SeriesStatus.TRASHED
+    ):
+        return
     other_episode_exists = session.scalar(
         select(exists().where(DramaEpisode.series_id == series_id))
     )
     if not other_episode_exists:
-        series = session.get(Series, series_id)
-        if series is not None:
-            session.delete(series)
+        editor_service.trash_drama_series(session, user_id=user_id, series_id=series_id)
 
 
 def update_links(
@@ -803,8 +826,8 @@ def update_links(
     *,
     user_id: str,
     episode_id: str,
-    character_links: list[tuple[str, str | None]],
-    scene_links: list[tuple[str, str | None]],
+    character_links: list[tuple[str, str | None, str | None]],
+    scene_links: list[tuple[str, str | None, str | None]],
 ) -> DramaEpisode:
     """Links a script's characters/scene headings to reusable `Character`/
     `Scene` assets — a structural edit, not a content revision, so it writes
@@ -827,27 +850,31 @@ def update_links(
     if not script:
         raise ValidationFailed("该剧本还没有初稿，请先生成初稿。")
 
-    character_ref_by_name = dict(character_links)
-    for ref_id in character_ref_by_name.values():
+    character_ref_by_name: dict[str, tuple[str | None, str | None]] = {}
+    for name, ref_id, look_id in character_links:
         if ref_id:
-            characters_service.get_character(session, user_id=user_id, character_id=ref_id)
-    scene_ref_by_heading = dict(scene_links)
-    for ref_id in scene_ref_by_heading.values():
+            card = characters_service.get_character(session, user_id=user_id, character_id=ref_id)
+            _require_variant(card.skill, look_id, field="characters.look_id")
+        character_ref_by_name[name] = (ref_id, look_id if ref_id else None)
+    scene_ref_by_heading: dict[str, tuple[str | None, str | None]] = {}
+    for heading, ref_id, variant_id in scene_links:
         if ref_id:
-            scenes_service.get_scene(session, user_id=user_id, scene_id=ref_id)
+            scene_card = scenes_service.get_scene(session, user_id=user_id, scene_id=ref_id)
+            _require_variant(scene_card.skill, variant_id, field="scenes.variant_id")
+        scene_ref_by_heading[heading] = (ref_id, variant_id if ref_id else None)
 
     next_characters = []
     for item in script.get("characters") or []:
         item = dict(item)
         if item.get("name") in character_ref_by_name:
-            item["character_ref_id"] = character_ref_by_name[item["name"]]
+            item["character_ref_id"], item["look_id"] = character_ref_by_name[item["name"]]
         next_characters.append(item)
 
     next_scenes = []
     for scene in script.get("scenes") or []:
         scene = dict(scene)
         if scene.get("heading") in scene_ref_by_heading:
-            scene["ref_id"] = scene_ref_by_heading[scene["heading"]]
+            scene["ref_id"], scene["variant_id"] = scene_ref_by_heading[scene["heading"]]
         next_scenes.append(scene)
 
     # A fresh dict, not a mutated nested one — SQLAlchemy only detects a
@@ -888,3 +915,9 @@ def update_content(
     episode.script_json = sanitized
     session.flush()
     return episode
+
+
+def _require_variant(skill: Any, variant_id: str | None, *, field: str) -> None:
+    """A linked look / scene variant must belong to the linked card."""
+    if variant_id and asset_variants_service.find_variant(skill, variant_id) is None:
+        raise ValidationFailed("所选造型/变体不属于该卡片。", fields={field: "variant_id 无效"})

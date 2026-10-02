@@ -25,9 +25,9 @@ const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'expired']);
 /**
  * The "视频解析" tool's whole studio: submit form + inline progress/result
  * on one tab, the history list on the other — no `/jobs/[jobId]` navigation
- * (see `zaolang-frontend-ui` invariant #16, extended by this feature to
- * cover a text-output job the same way image creation already covers a
- * media one), because a jump away would lose the "补充说明" textarea state
+ * (the `zaolang-frontend-ui` skill's "creation never navigates to
+ * `/jobs/[jobId]`" rule, extended by this feature to cover a text-output job
+ * the same way image creation already covers a media one), because a jump away would lose the "补充说明" textarea state
  * on a submit the user wants to immediately iterate on.
  */
 export function VideoAnalysisStudio() {

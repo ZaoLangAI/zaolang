@@ -21,9 +21,10 @@ from sqlalchemy.orm import Session
 
 from app.domain.errors import NotFound, ValidationFailed
 from app.domain.scenes import service as scenes_service
-from app.models import Asset, User
+from app.domain.skill_library import service as skill_library_service
+from app.models import Asset, CreationSkill, User
 from app.models.base import new_id
-from app.models.enums import MediaType
+from app.models.enums import MediaType, ModerationStatus
 from tests.conftest import make_user
 
 
@@ -141,8 +142,8 @@ def test_a_scene_is_scoped_to_its_owner(db: Session, author: User) -> None:
         scenes_service.get_scene(db, user_id=author.id, scene_id=scene.id)
 
 
-def test_create_rejects_more_than_four_reference_assets(db: Session, author: User) -> None:
-    assets = [_asset(db, author) for _ in range(5)]
+def test_create_rejects_more_than_the_reference_cap(db: Session, author: User) -> None:
+    assets = [_asset(db, author) for _ in range(scenes_service.MAX_REFERENCE_ASSETS + 1)]
     with pytest.raises(ValidationFailed):
         scenes_service.create_scene(
             db,
@@ -232,9 +233,9 @@ def test_remove_reference_asset_survives_a_fresh_reload(db: Session, author: Use
     assert reloaded.reference_assets == []
 
 
-def test_append_reference_asset_replaces_the_same_views_prior_image(
-    db: Session, author: User
-) -> None:
+def test_a_new_establishing_shot_becomes_the_master_plate(db: Session, author: User) -> None:
+    """A variant has one master plate: a newer `establishing` image takes
+    over (and the anchor), the previous master stays on as a shot."""
     scene = scenes_service.create_scene(
         db, user_id=author.id, name="便利店", description=None, reference_asset_ids=[]
     )
@@ -249,7 +250,16 @@ def test_append_reference_asset_replaces_the_same_views_prior_image(
 
     db.expire_all()
     reloaded = scenes_service.get_scene(db, user_id=author.id, scene_id=scene.id)
-    assert reloaded.reference_asset_ids == [first.id, second.id]
+    assert reloaded.reference_asset_ids == [second.id, first.id]
+    assert [entry["view"] for entry in reloaded.reference_assets] == ["establishing", "general"]
+
+    scenes_service.append_reference_asset(
+        db, user_id=author.id, scene_id=scene.id, asset_id=first.id, view="detail"
+    )
+    db.expire_all()
+    reloaded = scenes_service.get_scene(db, user_id=author.id, scene_id=scene.id)
+    assert reloaded.reference_asset_ids == [second.id, first.id]
+    assert [entry["view"] for entry in reloaded.reference_assets] == ["establishing", "detail"]
 
 
 def test_editing_a_published_scene_withdraws_it_to_draft(db: Session, author: User) -> None:
@@ -264,6 +274,12 @@ def test_editing_a_published_scene_withdraws_it_to_draft(db: Session, author: Us
     reloaded = scenes_service.get_scene(db, user_id=author.id, scene_id=scene.id)
     assert reloaded.status == "draft"
     assert reloaded.visibility == "private"
+    # The review request goes with it — no open queue item left for a
+    # reviewer to approve into a 409.
+    queue_item = skill_library_service._queue_item_for(db, db.get(CreationSkill, scene.id))
+    assert queue_item is not None
+    assert queue_item.status == ModerationStatus.REJECTED
+    assert queue_item.reason_code == "withdrawn_by_owner"
 
 
 # ---- Publish / withdraw -----------------------------------------------------
@@ -286,3 +302,67 @@ def test_withdraw_returns_a_published_scene_to_draft(db: Session, author: User) 
     withdrawn = scenes_service.withdraw_scene(db, user_id=author.id, scene_id=scene.id)
     assert withdrawn.status == "draft"
     assert withdrawn.visibility == "private"
+
+
+# ---- Variants: pinned master, default subset and per-job selection --------
+
+
+def _scene(db: Session, author: User):
+    return scenes_service.create_scene(
+        db, user_id=author.id, name="客厅", description=None, reference_asset_ids=[]
+    )
+
+
+def _attach_shot(db: Session, author: User, scene_id: str, *, label: str | None = None):
+    asset = _asset(db, author)
+    scenes_service.append_reference_asset(
+        db, user_id=author.id, scene_id=scene_id, asset_id=asset.id, label=label
+    )
+    return asset
+
+
+def test_a_full_variant_refuses_more_images_and_keeps_the_master(db: Session, author: User) -> None:
+    scene = _scene(db, author)
+    master = _attach_shot(db, author, scene.id)
+    for _ in range(scenes_service.MAX_REFERENCE_ASSETS - 1):
+        _attach_shot(db, author, scene.id)
+    with pytest.raises(ValidationFailed):
+        _attach_shot(db, author, scene.id)
+    ids = scenes_service.get_scene(db, user_id=author.id, scene_id=scene.id).reference_asset_ids
+    assert len(ids) == scenes_service.MAX_REFERENCE_ASSETS
+    assert ids[0] == master.id
+    # Labelled variants have their own room.
+    _attach_shot(db, author, scene.id, label="黄昏")
+
+
+def test_apply_scene_refs_skips_labelled_variants_by_default(db: Session, author: User) -> None:
+    scene = _scene(db, author)
+    master = _attach_shot(db, author, scene.id)
+    _attach_shot(db, author, scene.id, label="黄昏")
+    params: dict[str, object] = {"scene_ids": [scene.id]}
+    scenes_service.apply_scene_refs(db, user_id=author.id, params=params)
+    assert params["reference_asset_ids"] == [master.id]
+
+
+def test_apply_scene_refs_honours_the_callers_selection(db: Session, author: User) -> None:
+    scene = _scene(db, author)
+    _attach_shot(db, author, scene.id)
+    dusk = _attach_shot(db, author, scene.id, label="黄昏")
+    params: dict[str, object] = {
+        "scene_ids": [scene.id],
+        "scene_ref_selection": [{"scene_id": scene.id, "asset_ids": [dusk.id]}],
+    }
+    scenes_service.apply_scene_refs(db, user_id=author.id, params=params)
+    assert params["reference_asset_ids"] == [dusk.id]
+
+
+def test_apply_scene_refs_rejects_a_foreign_selection(db: Session, author: User) -> None:
+    scene = _scene(db, author)
+    _attach_shot(db, author, scene.id)
+    stranger = _asset(db, author)
+    params: dict[str, object] = {
+        "scene_ids": [scene.id],
+        "scene_ref_selection": [{"scene_id": scene.id, "asset_ids": [stranger.id]}],
+    }
+    with pytest.raises(ValidationFailed):
+        scenes_service.apply_scene_refs(db, user_id=author.id, params=params)

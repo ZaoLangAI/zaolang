@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain.credits import service as credits_service
@@ -11,6 +13,7 @@ from app.domain.editor import exports as export_service
 from app.domain.editor import state_machine as editor_sm
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
+from app.domain.notifications import push as notification_push
 from app.models import DeliveryVariant, Notification, User
 from app.models.base import new_id
 from app.models.enums import (
@@ -86,9 +89,7 @@ def test_cancelled_and_expired_jobs_reuse_the_creation_row(db: Session, author: 
     credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
     cancelled = _submit(db, author, prompt="取消")
     sm.transition(db, cancelled.id, JobStatus.CANCELLED)
-    cancel_note = db.scalar(
-        select(Notification).where(Notification.target_id == cancelled.id)
-    )
+    cancel_note = db.scalar(select(Notification).where(Notification.target_id == cancelled.id))
     assert cancel_note is not None
     assert cancel_note.type == NotificationType.JOB_CANCELLED
     assert cancel_note.title_key == "notification.job_cancelled"
@@ -117,9 +118,7 @@ def test_sandbox_jobs_never_write_consumer_notifications(db: Session, author: Us
     assert _job_notes(db, author) == []
 
 
-def test_list_overlays_live_job_status(
-    client: TestClient, db: Session, author: User
-) -> None:
+def test_list_overlays_live_job_status(client: TestClient, db: Session, author: User) -> None:
     credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
     job = _submit(db, author)
     job.status = JobStatus.SUCCEEDED
@@ -205,3 +204,40 @@ def test_following_payload_includes_the_follower_handle(
 
     listed = client.get("/v1/notifications", headers=auth_header(author)).json()["items"][0]
     assert listed["payload"]["follower_handle"] == "remixer"
+
+
+@pytest.mark.parametrize(
+    "target_type",
+    [
+        notification_push.CREATION_TARGET_JOB,
+        notification_push.CREATION_TARGET_EXPORT,
+        notification_push.CREATION_TARGET_SCRIPT,
+        notification_push.CREATION_TARGET_DRAFT,
+    ],
+)
+def test_every_upserted_creation_target_is_unique_in_the_database(
+    db: Session, author: User, target_type: str
+) -> None:
+    """`sync_creation_notification` relies on the partial unique index to turn
+    a racing second insert into an update; a target type it upserts but the
+    index skips would silently grow duplicate rows instead."""
+    target_id = new_id("tgt")
+
+    def row() -> Notification:
+        return Notification(
+            user_id=author.id,
+            type=NotificationType.JOB_PROGRESS,
+            title_key="notification.job_queued",
+            payload_json={},
+            target_type=target_type,
+            target_id=target_id,
+        )
+
+    db.add(row())
+    db.flush()
+
+    nested = db.begin_nested()
+    db.add(row())
+    with pytest.raises(IntegrityError):
+        db.flush()
+    nested.rollback()

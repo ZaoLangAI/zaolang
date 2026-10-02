@@ -6,6 +6,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.asset_variants import service as asset_variants_service
 from app.domain.skill_library import catalog as skill_catalog
 from app.domain.skill_library import service as skill_library_service
 from app.models import Asset, CreationSkill, User
@@ -29,9 +30,7 @@ def test_ensure_catalog_skills_plants_the_whole_catalogue(db: Session, author: U
     db.commit()
 
     assert len(created) == len(skill_catalog.CATALOG)
-    rows = db.scalars(
-        select(CreationSkill).where(CreationSkill.owner_user_id == author.id)
-    ).all()
+    rows = db.scalars(select(CreationSkill).where(CreationSkill.owner_user_id == author.id)).all()
     assert len(rows) == len(skill_catalog.CATALOG)
     for row in rows:
         assert row.status == CreationSkillStatus.PUBLISHED
@@ -49,9 +48,7 @@ def test_ensure_catalog_skills_is_idempotent(db: Session, author: User) -> None:
     db.commit()
 
     assert second_run == []
-    rows = db.scalars(
-        select(CreationSkill).where(CreationSkill.owner_user_id == author.id)
-    ).all()
+    rows = db.scalars(select(CreationSkill).where(CreationSkill.owner_user_id == author.id)).all()
     assert len(rows) == len(skill_catalog.CATALOG)
 
 
@@ -94,9 +91,7 @@ def test_ensure_catalog_skills_backfills_a_cover_for_every_entry(db: Session, au
     skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
     db.commit()
 
-    rows = db.scalars(
-        select(CreationSkill).where(CreationSkill.owner_user_id == author.id)
-    ).all()
+    rows = db.scalars(select(CreationSkill).where(CreationSkill.owner_user_id == author.id)).all()
     assert len(rows) == len(skill_catalog.CATALOG)
     for row in rows:
         item = next(entry for entry in skill_catalog.CATALOG if entry.title == row.title)
@@ -109,9 +104,7 @@ def test_ensure_catalog_skills_backfills_a_cover_for_every_entry(db: Session, au
         assert row.cover_asset_id is not None, f"{row.title} has no cover_asset_id"
 
 
-def test_covers_pending_only_names_entries_that_really_lack_one(
-    db: Session, author: User
-) -> None:
+def test_covers_pending_only_names_entries_that_really_lack_one(db: Session, author: User) -> None:
     """`COVERS_PENDING` is a to-do list, not a mute button: a key stays on it
     only until its JPEG lands, and it may not name an entry that is not in the
     catalogue at all."""
@@ -197,21 +190,15 @@ def test_asset_catalog_entries_are_image_only_recipes() -> None:
             assert "scene" not in params
 
 
-def test_seeded_character_and_scene_assets_get_a_reference_still(
-    db: Session, author: User
-) -> None:
+def test_seeded_character_and_scene_assets_get_a_reference_still(db: Session, author: User) -> None:
     """After `ensure_catalog_skills`, a character/scene recipe's cover is
     also the first `reference_assets` still — the plaza card and a later
     `@` apply share it."""
     skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
     db.commit()
 
-    rows = db.scalars(
-        select(CreationSkill).where(CreationSkill.owner_user_id == author.id)
-    ).all()
-    asset_titles = {
-        item.title for item in skill_catalog.CATALOG if item.key.startswith("asset-")
-    }
+    rows = db.scalars(select(CreationSkill).where(CreationSkill.owner_user_id == author.id)).all()
+    asset_titles = {item.title for item in skill_catalog.CATALOG if item.key.startswith("asset-")}
     seeded = [row for row in rows if row.title in asset_titles]
     assert len(seeded) == 24
     for row in seeded:
@@ -230,6 +217,11 @@ def test_seeded_character_and_scene_assets_get_a_reference_still(
             assert row.category == CreationSkillCategory.COVER_ASSET
             assert "character" not in (row.params_json or {})
             assert "scene" not in (row.params_json or {})
+            continue
+        # The tables are the source; the JSON above is their mirror.
+        anchor = asset_variants_service.anchor(row)
+        assert anchor is not None and anchor.asset_id == row.cover_asset_id, row.title
+        assert anchor.variant.is_default
 
 
 def test_video_only_categories_never_declare_image_operations(db: Session, author: User) -> None:
@@ -428,9 +420,7 @@ def test_format_prompt_suffixes_are_positive_phrasings(db: Session, author: User
 _DRAMA_SUB_PREFIX_COUNTS = {"drama-scene-": 50, "drama-emotion-": 30}
 
 
-def test_the_drama_section_is_split_between_scenes_and_emotions(
-    db: Session, author: User
-) -> None:
+def test_the_drama_section_is_split_between_scenes_and_emotions(db: Session, author: User) -> None:
     """`drama` is the one category `app.agents.skill_matcher` searches, so
     what it contains *is* what plot matching can ever find.
 
@@ -475,9 +465,7 @@ def test_drama_prompt_suffixes_are_positive_phrasings(db: Session, author: User)
         assert not offenders, f"{item.key} uses negative phrasing: {sorted(offenders)}"
 
 
-def test_a_seeded_format_skill_appends_its_rule_to_a_video_job(
-    db: Session, author: User
-) -> None:
+def test_a_seeded_format_skill_appends_its_rule_to_a_video_job(db: Session, author: User) -> None:
     """The `format` category ships through the plain `prompt_suffix` append
     path — no new folding mechanism — so this asserts a rule row behaves
     exactly like a `lens-*` recipe once seeded, only carrying a structural
@@ -542,18 +530,16 @@ def _first_title(prefix: str) -> str:
     over a `frozenset`), so a test can predict which row gets picked without
     hardcoding a Chinese title that would silently go stale on a catalogue
     edit."""
-    return sorted(
-        item.title for item in skill_catalog.CATALOG if item.key.startswith(prefix)
-    )[0]
+    return sorted(item.title for item in skill_catalog.CATALOG if item.key.startswith(prefix))[0]
 
 
 def test_apply_matching_format_skills_picks_one_row_per_weak_dimension(
-    db: Session, author: User
+    db: Session, catalog_owner: User
 ) -> None:
     """`camera` maps onto `fmt-camera-*`; `scene` has no `format` axis at all
     (see the mapping's own docstring) and must not match anything even when
     flagged `missing`."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     prompt, applied = skill_library_service.apply_matching_format_skills(
@@ -572,7 +558,8 @@ def test_apply_matching_format_skills_picks_one_row_per_weak_dimension(
     assert applied[0]["title"] == expected_title
     expected_row = db.scalar(
         select(CreationSkill).where(
-            CreationSkill.owner_user_id == author.id, CreationSkill.title == expected_title
+            CreationSkill.owner_user_id == catalog_owner.id,
+            CreationSkill.title == expected_title,
         )
     )
     assert expected_row is not None
@@ -582,12 +569,12 @@ def test_apply_matching_format_skills_picks_one_row_per_weak_dimension(
 
 
 def test_apply_matching_format_skills_respects_the_dimension_order_and_limit(
-    db: Session, author: User
+    db: Session, catalog_owner: User
 ) -> None:
     """At most `MAX_AUTO_APPLIED_FORMAT_SKILLS`, taken in the diagnosis's own
     dimension order — not every matching dimension gets a row once the cap
     is hit."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     _prompt, applied = skill_library_service.apply_matching_format_skills(
@@ -610,11 +597,11 @@ def test_apply_matching_format_skills_respects_the_dimension_order_and_limit(
 
 
 def test_apply_matching_format_skills_is_a_noop_for_an_image_operation(
-    db: Session, author: User
+    db: Session, catalog_owner: User
 ) -> None:
     """Every seeded `format` row is video-only — an image polish must never
     pick one up even when a (hypothetical) dimension name collides."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     prompt, applied = skill_library_service.apply_matching_format_skills(
@@ -630,10 +617,10 @@ def test_apply_matching_format_skills_is_a_noop_for_an_image_operation(
 
 
 def test_apply_matching_format_skills_never_exceeds_max_length(
-    db: Session, author: User
+    db: Session, catalog_owner: User
 ) -> None:
     """Appending is skipped rather than truncating a rule mid-sentence."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     prompt, applied = skill_library_service.apply_matching_format_skills(
@@ -649,18 +636,19 @@ def test_apply_matching_format_skills_never_exceeds_max_length(
 
 
 def test_apply_matching_format_skills_skips_a_suffix_already_in_the_prompt(
-    db: Session, author: User
+    db: Session, catalog_owner: User
 ) -> None:
     """A rule already spelled out by the author (or a previous round) is not
     appended twice — the picker falls through to the next `fmt-camera-*` row
     for that same dimension instead, since the dimension is still weak."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     first_title = _first_title("fmt-camera-")
     first_row = db.scalar(
         select(CreationSkill).where(
-            CreationSkill.owner_user_id == author.id, CreationSkill.title == first_title
+            CreationSkill.owner_user_id == catalog_owner.id,
+            CreationSkill.title == first_title,
         )
     )
     assert first_row is not None
@@ -682,11 +670,11 @@ def test_apply_matching_format_skills_skips_a_suffix_already_in_the_prompt(
 
 
 def test_apply_matching_format_skills_gives_up_on_a_dimension_once_every_row_is_used(
-    db: Session, author: User
+    db: Session, catalog_owner: User
 ) -> None:
     """Once every `fmt-camera-*` row's suffix is already on the wire, the
     dimension contributes nothing rather than erroring or looping."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     camera_titles = [
@@ -694,7 +682,7 @@ def test_apply_matching_format_skills_gives_up_on_a_dimension_once_every_row_is_
     ]
     camera_rows = db.scalars(
         select(CreationSkill).where(
-            CreationSkill.owner_user_id == author.id,
+            CreationSkill.owner_user_id == catalog_owner.id,
             CreationSkill.title.in_(camera_titles),
         )
     ).all()
@@ -711,3 +699,70 @@ def test_apply_matching_format_skills_gives_up_on_a_dimension_once_every_row_is_
 
     assert applied == []
     assert prompt == f"她推开门，{already_present}"
+
+
+def test_apply_matching_format_skills_ignores_a_users_skill_under_a_catalogue_title(
+    db: Session, author: User, catalog_owner: User
+) -> None:
+    """Auto-apply skips unlock and usage, so it may only pick planted rows. A
+    user's published — and here paid — `format` skill that borrows a
+    catalogue title must neither be applied for free when the catalogue is
+    missing nor shadow the planted row once it is there."""
+    title = _first_title("fmt-camera-")
+    impostor = CreationSkill(
+        owner_user_id=author.id,
+        title=title,
+        category=CreationSkillCategory.FORMAT,
+        params_json={"prompt_suffix": "付费运镜秘籍"},
+        applicable_operations_json=[Operation.TEXT_TO_VIDEO.value],
+        visibility=CreationSkillVisibility.PUBLIC,
+        status=CreationSkillStatus.PUBLISHED,
+        access_credits=50,
+    )
+    db.add(impostor)
+    db.commit()
+    dimensions = [{"key": "camera", "status": "weak", "hint": "x"}]
+
+    prompt, applied = skill_library_service.apply_matching_format_skills(
+        db, operation="text_to_video", dimensions=dimensions, prompt="她推开门", max_length=4096
+    )
+    assert applied == []
+    assert prompt == "她推开门"
+
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
+    db.commit()
+    prompt, applied = skill_library_service.apply_matching_format_skills(
+        db, operation="text_to_video", dimensions=dimensions, prompt="她推开门", max_length=4096
+    )
+    assert [entry["title"] for entry in applied] == [title]
+    assert applied[0]["id"] != impostor.id
+    assert "付费运镜秘籍" not in prompt
+
+
+def test_apply_matching_format_skills_skips_a_planted_row_an_operator_priced(
+    db: Session, catalog_owner: User
+) -> None:
+    """Free is what makes skipping unlock defensible — a planted row that
+    later gets a price drops out of auto-apply."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
+    camera_titles = [
+        item.title for item in skill_catalog.CATALOG if item.key.startswith("fmt-camera-")
+    ]
+    for row in db.scalars(
+        select(CreationSkill).where(
+            CreationSkill.owner_user_id == catalog_owner.id,
+            CreationSkill.title.in_(camera_titles),
+        )
+    ):
+        row.access_credits = 10
+    db.commit()
+
+    _prompt, applied = skill_library_service.apply_matching_format_skills(
+        db,
+        operation="text_to_video",
+        dimensions=[{"key": "camera", "status": "weak", "hint": "x"}],
+        prompt="她推开门",
+        max_length=4096,
+    )
+
+    assert applied == []

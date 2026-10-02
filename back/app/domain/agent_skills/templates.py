@@ -19,6 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.agents import (
+    blocking_director,
     canvas_planner,
     copywriter,
     custom,
@@ -105,7 +106,10 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
     SkillTemplate(
         key="planner-asset-plan",
         label="任务规划 · 图片资产规划",
-        description="为角色设定图/场景图/封面规划提示词；角色 front 是一张多分区设定图，side/back 仍是单视角。",
+        description=(
+            "为角色设定图/场景图/封面规划提示词；"
+            "角色 front 是一张多分区设定图，side/back 仍是单视角。"
+        ),
         category=JUDGMENT,
         prompt_template=planner.ASSET_PLAN_SYSTEM_PROMPT,
         role="planner",
@@ -198,6 +202,24 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
         prompt_template=copywriter.SCRIPT_REVISE_SYSTEM_PROMPT,
         role="copy",
         slot=copywriter.SCRIPT_REVISE_SLOT,
+    ),
+    SkillTemplate(
+        key="copy-blocking-route",
+        label="文案生成 · 白膜调度判定",
+        description="判断白膜工作台的修改意见是否需要同时改剧本，拆成剧本与白膜两条指令。",
+        category=ASSIST,
+        prompt_template=blocking_director.BLOCKING_ROUTE_SYSTEM_PROMPT,
+        role="copy",
+        slot=blocking_director.BLOCKING_ROUTE_SLOT,
+    ),
+    SkillTemplate(
+        key="copy-blocking-derive",
+        label="文案生成 · 白膜预演",
+        description="把分场剧本搭成几何体场景、人偶走位与预设运镜的白膜预演。",
+        category=ASSIST,
+        prompt_template=blocking_director.BLOCKING_DERIVE_SYSTEM_PROMPT,
+        role="copy",
+        slot=blocking_director.BLOCKING_DERIVE_SLOT,
     ),
     SkillTemplate(
         key="intent-router-classify",

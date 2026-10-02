@@ -116,7 +116,8 @@ function tOr(t: ReturnType<typeof useTranslations>, key: string, fallback: strin
  * Agent-bound nodes describe the agent (name · model, or the role default);
  * everything else falls back to a couple of its own non-empty config values,
  * same as the summary this replaced. Never the raw `ap_…` id — that only
- * ever appears in a tooltip (admin-console invariant #10).
+ * ever appears in a tooltip (see the `zaolang-admin-console` skill on
+ * resolved names).
  */
 function summarizeNode(
   spec: NodeTypeView | undefined,

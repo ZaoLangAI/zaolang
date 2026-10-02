@@ -2,7 +2,7 @@ import PhotosUI
 import SwiftUI
 import ZaolangKit
 
-/// 工作台：新建 / 二创一体两态，靠 `StudioMode` 区分（`roadmap.md` D3/D4）。
+/// 工作台：新建 / 二创一体两态，靠 `StudioMode` 区分（`zaolang-ios-client` skill 路线图「D3/D4 工作台形态」）。
 /// 402pt 单列布局：预览/来源在顶，参数分组纵向排列，报价与提交固定在底部安全区之上。
 struct StudioView: View {
     @Environment(AppEnvironment.self) private var environment

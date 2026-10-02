@@ -26,6 +26,7 @@ export function AdminLoginForm({ locale }: { locale: string }) {
       await adminApi.post('/v1/admin/auth/login', { email, password });
       // A full navigation, not a router push: the server layout has to read the
       // newly set console cookie before anything under /admin renders.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- see above
       window.location.assign(`/${locale}/admin`);
     } catch {
       // One message for a wrong password and for a valid account without console

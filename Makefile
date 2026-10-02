@@ -78,6 +78,10 @@ migration: ## 生成迁移，用法 make migration m="add table"
 seed: ## 导入种子数据（可选 make seed ARGS=--reset）
 	cd back && $(CONDA_RUN) python -m app.scripts.seed $(ARGS)
 
+.PHONY: e2e-fixtures
+e2e-fixtures: ## 写入 E2E 专用数据（作品链、付费样例、草稿、失败任务；需先 make seed）
+	cd back && $(CONDA_RUN) python -m app.scripts.e2e_fixtures --manifest ../front/e2e/.fixtures.json
+
 .PHONY: import-assets
 import-assets: ## 导入 assets-pack/manifest.json 描述的真实素材
 	cd back && $(CONDA_RUN) python -m app.scripts.import_assets_pack --manifest ../assets-pack/manifest.json
@@ -174,7 +178,7 @@ messages: ## 校验三语文案键一致且代码引用的键都存在
 .PHONY: lint
 lint: ## 静态检查
 	cd back && $(CONDA_RUN) ruff check . && $(CONDA_RUN) ruff format --check .
-	cd front && $(FNM_ENV) && npm run lint
+	cd front && $(FNM_ENV) && npm run lint && npm run format:check
 
 .PHONY: format
 format: ## 自动格式化
@@ -202,7 +206,7 @@ test-front: ## 前端构建、类型检查与体积回归门禁
 	cd front && $(FNM_ENV) && npm run typecheck && npm run build && npm run check:bundle-size
 
 .PHONY: test-e2e
-test-e2e: ## Playwright 端到端测试
+test-e2e: e2e-fixtures ## Playwright 端到端测试
 	cd front && $(FNM_ENV) && npm run test:e2e
 
 .PHONY: test-a11y
@@ -210,7 +214,7 @@ test-a11y: ## axe 无障碍扫描（深浅两套主题）
 	cd front && $(FNM_ENV) && npm run test:a11y
 
 .PHONY: qa-visual
-qa-visual: ## 深浅两套主题 × 三视口截图
+qa-visual: e2e-fixtures ## 深浅两套主题 × 三视口截图
 	cd front && $(FNM_ENV) && npm run qa:visual
 
 # --- contracts & docs ----------------------------------------------------

@@ -525,9 +525,7 @@ def test_build_music_body_omits_lyrics_by_default() -> None:
 
 
 def test_build_music_body_carries_lyrics_when_not_instrumental() -> None:
-    body = build_music_body(
-        _music_request(extra={"lyrics": "[Verse]\n夏天的风吹过海岸"})
-    )
+    body = build_music_body(_music_request(extra={"lyrics": "[Verse]\n夏天的风吹过海岸"}))
     assert body["lyrics"] == "[Verse]\n夏天的风吹过海岸"
 
 
@@ -603,9 +601,7 @@ def test_sfx_submit_posts_to_the_sfx_app(monkeypatch: pytest.MonkeyPatch) -> Non
         return _FakeResponse(json_body={"request_id": "sfx-req-1"})
 
     monkeypatch.setattr(httpx.Client, "post", fake_post)
-    result = _sfx_provider().submit(
-        _music_request(prompt="玻璃破碎声", duration_seconds=3)
-    )
+    result = _sfx_provider().submit(_music_request(prompt="玻璃破碎声", duration_seconds=3))
 
     assert captured["url"] == "/elevenlabs/sound-effects/v2"
     assert captured["json"] == {"text": "玻璃破碎声", "duration_seconds": 3}

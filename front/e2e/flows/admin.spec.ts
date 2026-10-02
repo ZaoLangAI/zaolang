@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { fixtures } from '../support/fixtures';
 import { ACCOUNTS, SEED_PASSWORD, STATE_FILES, watchForPageErrors } from '../support/session';
 
 /** Consumer refresh must never fire on console routes. */
@@ -17,11 +18,11 @@ function watchConsumerRefresh(page: Page): () => string[] {
  *
  * `make seed` (`back/app/scripts/seed.py`) only creates login accounts and the
  * system-level defaults (agent nodes/profiles, workflow templates, feature
- * flags) now — it no longer plants a wedged job, an overdue reservation, a
- * pending data request, a degraded agent run, or any style-gallery/moderation
- * content. Assertions that depended on that fixture data are skipped below
- * with a note; they need a fixture-creation helper to drive real data through
- * the API before they can come back.
+ * flags). The job screens get their material from `make e2e-fixtures`
+ * (`back/app/scripts/e2e_fixtures.py`), which plants finished jobs and one
+ * failed job with its runtime log. There is still no overdue reservation,
+ * pending data request, degraded agent run or moderation item, so the
+ * assertions on those screens stay limited to the console's own chrome.
  */
 
 test.describe('session boundary', () => {
@@ -140,10 +141,8 @@ test.describe('operations screens', () => {
     expect(refreshCalls(), 'consumer /v1/auth/refresh on the health page').toEqual([]);
   });
 
-  // Skipped: `make seed` no longer creates any `GenerationJob`, so the job
-  // console has nothing to list. Restore once a fixture-creation helper can
-  // drive a real job through the API.
-  test.skip('the job console lists the seeded jobs', async ({ page }) => {
+  test('the job console lists the fixture jobs', async ({ page }) => {
+    fixtures();
     await page.goto('/zh-CN/admin', { waitUntil: 'networkidle' });
     await page.getByRole('link', { name: '任务运维' }).click();
     await expect(page.getByRole('heading', { name: '任务运维', level: 1 })).toBeVisible();
@@ -153,17 +152,13 @@ test.describe('operations screens', () => {
     await expect(page.getByText(/^job_/).first()).toBeVisible();
   });
 
-  // Skipped: relies on the seeded wedged job (and Mizuki's ordinary succeeded
-  // jobs to disambiguate it), neither of which `make seed` creates any more.
-  // Restore once a fixture-creation helper can leave a comparable job behind.
-  test.skip('the wedged job detail surfaces its async task and related logs', async ({ page }) => {
-    // The seeded async provider task is a best-effort demo fixture: a live
-    // `poll_async_provider_tasks` beat tick reaps it (this seed environment has
-    // no real media endpoint, so the capability is always "missing from the
-    // catalogue") within seconds of `make seed` running, well before this test
-    // gets a chance to render it. The section itself is still worth asserting
-    // on, so this augments the real detail response with a synthetic
-    // `async_task` rather than racing the beat scheduler for one.
+  test('the wedged job detail surfaces its async task and related logs', async ({ page }) => {
+    const { failed_job_id: jobId } = fixtures();
+    // The fixture job is planted already failed — the state the poller leaves
+    // a wedged job in — so it does not depend on a beat worker being up. By
+    // then a real `AsyncProviderTask` has been reaped, so this augments the
+    // real detail response with a synthetic `async_task` to keep asserting on
+    // the section that renders one.
     await page.route('**/v1/admin/jobs/job_*', async (route) => {
       if (route.request().method() !== 'GET') {
         await route.continue();
@@ -192,17 +187,15 @@ test.describe('operations screens', () => {
 
     await page.goto('/zh-CN/admin/jobs', { waitUntil: 'networkidle' });
 
-    // Mizuki also owns most of the seed's ordinary succeeded jobs, so this
-    // filters to `failed` first — the wedged job lands there once the beat
-    // gives up on it (`AsyncProviderTask.deadline_at` already elapsed by
-    // seed time) — leaving exactly one Mizuki row to disambiguate on. The
-    // user column shows a name, not the raw `usr_...` id. Status is now a
-    // multiselect dropdown and the filter bar only applies on "搜索".
+    // Filtered the way an operator would chase one down: failed jobs first,
+    // then the row by its id — Mizuki also owns the draft's succeeded job and
+    // whatever the consumer specs submitted. Status is a multiselect dropdown
+    // and the filter bar only applies on "搜索".
     await page.getByRole('button', { name: '状态' }).click();
     await page.getByRole('menuitemcheckbox', { name: '已失败' }).click();
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: '搜索' }).click();
-    const wedgedRow = page.getByRole('row', { name: 'Mizuki' });
+    const wedgedRow = page.getByRole('row').filter({ hasText: jobId });
     await expect(wedgedRow).toBeVisible();
     await wedgedRow.click();
 
@@ -210,10 +203,10 @@ test.describe('operations screens', () => {
     await expect(page.getByText('e2e-mock-task-1')).toBeVisible();
 
     // The related-logs section reads straight from `/v1/admin/logs?job_id=`,
-    // untouched by the mock above, so this is the real seeded runtime-error
-    // signal — present whether or not the beat has already reaped the task.
+    // untouched by the mock above. The fixture writes the same event the
+    // poller's give-up path emits, so this checks the real signal's rendering.
     await expect(page.getByRole('heading', { name: '关联日志' })).toBeVisible();
-    await expect(page.getByText('async_task_deadline_exceeded')).toBeVisible();
+    await expect(page.getByText('async_task_poll_budget_exceeded')).toBeVisible();
   });
 
   test('the credits console renders and its ledger config opens', async ({ page }) => {
@@ -402,8 +395,11 @@ test.describe('operations screens', () => {
     await page.goto('/zh-CN/admin/routing', { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: '沙盒试跑' }).click();
 
+    // Every run adds a history row, so a fixed prompt would match rows left
+    // behind by earlier runs against the same database.
+    const prompt = `历史回放用的猫 ${Date.now()}`;
     const sandbox = page.getByRole('dialog');
-    await sandbox.getByLabel('提示词').fill('历史回放用的猫');
+    await sandbox.getByLabel('提示词').fill(prompt);
     const sandboxRun = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' && response.url().includes('/sandbox-run'),
@@ -417,7 +413,7 @@ test.describe('operations screens', () => {
     await page.getByRole('button', { name: '试跑历史' }).click();
     const history = page.getByRole('complementary', { name: '试跑历史' });
     await expect(history.getByRole('heading', { name: '试跑历史' })).toBeVisible();
-    await expect(history.getByText('历史回放用的猫')).toBeVisible();
+    await expect(history.getByText(prompt)).toBeVisible();
 
     await page.getByRole('button', { name: '关闭试跑历史' }).click();
     await expect(page.getByRole('complementary', { name: '试跑历史' })).toHaveCount(0);
@@ -445,7 +441,7 @@ test.describe('operations screens', () => {
               message: '节点已完成',
               node_id: 'provider_generate',
               created_at: new Date().toISOString(),
-              payload: { prompt: '历史回放用的猫' },
+              payload: { prompt },
             },
           ],
         }),
@@ -454,7 +450,7 @@ test.describe('operations screens', () => {
 
     await page
       .getByRole('complementary', { name: '试跑历史' })
-      .getByRole('button', { name: /历史回放用的猫/ })
+      .getByRole('button', { name: prompt })
       .click();
     const detail = page.getByRole('dialog');
     await expect(detail.getByRole('heading', { name: '试跑详情' })).toBeVisible();
@@ -490,7 +486,7 @@ test.describe('operations screens', () => {
     await expect(dialog.getByRole('button', { name: '发布并生效' })).toBeDisabled();
   });
 
-  test('the models console renders primary/backup lists', async ({ page }) => {
+  test('the models console groups models by kind', async ({ page }) => {
     await page.route('**/v1/admin/llm-providers/*/validate/*', async (route) => {
       await route.fulfill({
         status: 200,
@@ -545,9 +541,12 @@ test.describe('operations screens', () => {
     await page.getByRole('button', { name: '刷新' }).click();
     await refreshed;
 
-    // Flat primary/backup list — taxonomy lives in the create/edit dialog.
-    await expect(page.getByText('主用节点', { exact: true })).toBeVisible();
-    await expect(page.getByText('备用节点', { exact: true })).toBeVisible();
+    // One group per kind; primary/backup is a per-row role inside a group
+    // (primary sorts first), not a separate list.
+    const generalGroup = page.getByRole('heading', { name: '通用模型', level: 3 });
+    const mediaGroup = page.getByRole('heading', { name: '媒体模型', level: 3 });
+    await expect(generalGroup).toBeVisible();
+    await expect(mediaGroup).toBeVisible();
 
     await page.getByRole('button', { name: '新增模型' }).click();
     await expect(page.getByRole('heading', { name: '新增模型' })).toBeVisible();
@@ -565,10 +564,9 @@ test.describe('operations screens', () => {
     await editorDialog.press('Escape');
     await expect(editorDialog).toBeHidden();
 
-    const mediaRow = page
-      .getByText('minimax-h3', { exact: true })
-      .first()
-      .locator('xpath=../../..');
+    // Any media endpoint will do — the probe is mocked above. `make seed` does
+    // not create one, so this needs a media model configured on the database.
+    const mediaRow = mediaGroup.locator('xpath=following-sibling::div[1]/div[1]');
     await mediaRow.getByRole('button', { name: '验证' }).click();
     await expect(page.getByRole('heading', { name: '验证媒体模型' })).toBeVisible();
     await page.getByRole('button', { name: '发送验证请求' }).click();

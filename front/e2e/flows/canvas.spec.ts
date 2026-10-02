@@ -4,16 +4,17 @@ import { STATE_FILES, watchForPageErrors } from '../support/session';
 
 /** Seed rows point at staging object storage that no longer holds the objects.
  *
- * Two symptoms, one cause: Next's image proxy 404s on the expired URLs, and
+ * Two symptoms, one cause: Next's image proxy 404s on the missing objects, and
  * `preview:from-video` 404s from the storage backend when it tries to read a
  * seeded video that is not there. Both are properties of the demo data, not of
  * the canvas, and they would otherwise mask the failures this spec cares about.
  *
- * Matched narrowly — that exact endpoint, that exact status. A 404 anywhere
- * else, or a different status on this one, still fails the test. */
-const isExpiredSeedMedia = (problem: string) =>
-  problem.includes('/_next/image?url=') ||
-  (problem.includes('404: ') && problem.includes('/preview:from-video'));
+ * Matched narrowly — those two endpoints, that exact status. A 404 anywhere
+ * else, or a different status on these, still fails the test: a 403 from the
+ * image proxy is an expired signature, which is a real bug, not seed data. */
+const isMissingSeedMedia = (problem: string) =>
+  problem.startsWith('404: ') &&
+  (problem.includes('/_next/image?url=') || problem.includes('/preview:from-video'));
 
 /**
  * Selects a canvas node.
@@ -66,7 +67,7 @@ test.describe('infinite canvas', () => {
     await page.getByRole('button', { name: '便签' }).click();
     await expect(page.locator('.react-flow__node')).toHaveCount(1);
 
-    await page.getByRole('button', { name: '提示词' }).click();
+    await page.getByRole('button', { name: '提示词', exact: true }).click();
     await expect(page.locator('.react-flow__node')).toHaveCount(2);
 
     // Autosave reports success rather than staying silent.
@@ -75,7 +76,7 @@ test.describe('infinite canvas', () => {
     // The real proof it persisted: a cold reload brings the nodes back.
     await page.reload({ waitUntil: 'load' });
     await expect(page.locator('.react-flow__node')).toHaveCount(2);
-    expect(problems().filter((p) => !isExpiredSeedMedia(p))).toEqual([]);
+    expect(problems().filter((p) => !isMissingSeedMedia(p))).toEqual([]);
 
     // Deleting is reachable too, and also survives a reload. A freshly added
     // node lands at the middle of the viewport, which is the one spot no
@@ -129,7 +130,7 @@ test.describe('infinite canvas', () => {
     // by an earlier visit there is nothing new to write, so no save fires.
     await page.reload({ waitUntil: 'load' });
     await expect(page.locator('.react-flow__node')).toHaveCount(seeded);
-    expect(problems().filter((p) => !isExpiredSeedMedia(p))).toEqual([]);
+    expect(problems().filter((p) => !isMissingSeedMedia(p))).toEqual([]);
   });
 
   test('a node can be named and given content, and it survives a reload', async ({ page }) => {
@@ -197,7 +198,7 @@ test.describe('infinite canvas', () => {
     await page.getByRole('button', { name: '新建画布' }).click();
     await page.waitForURL(/\/canvas\/cnv_/);
 
-    await page.getByRole('button', { name: '提示词' }).click();
+    await page.getByRole('button', { name: '提示词', exact: true }).click();
     await selectNode(page, page.locator('.react-flow__node').first());
 
     // Empty prompt cannot generate.
@@ -254,7 +255,7 @@ test.describe('infinite canvas', () => {
     await expect(page.locator('.react-flow__node').first()).toContainText('参考：雨夜街角');
 
     // Wire it into a prompt card: the edge is what makes it a reference.
-    await page.getByRole('button', { name: '提示词' }).click();
+    await page.getByRole('button', { name: '提示词', exact: true }).click();
     await expect(page.locator('.react-flow__node')).toHaveCount(2);
     const promptNode = page.locator('.react-flow__node').last();
     await selectNode(page, promptNode);
@@ -304,26 +305,34 @@ test.describe('infinite canvas', () => {
     await page.waitForURL(/\/canvas\/cnv_/);
     const canvasUrl = page.url();
 
+    // Let each edit's save land before the next one. Saves are coalesced: an
+    // undo and redo queued behind an in-flight write collapse into "no
+    // change", so no save (and no "已保存" flash) would follow at all.
+    const edit = async (action: () => Promise<void>, nodes: number) => {
+      const saved = page.waitForResponse(
+        (response) =>
+          response.url().includes('/graph-ops') && response.request().method() === 'POST',
+        { timeout: 15_000 },
+      );
+      await action();
+      await expect(page.locator('.react-flow__node')).toHaveCount(nodes);
+      expect((await saved).ok()).toBe(true);
+    };
+
     // Nothing to undo on a fresh board.
     await expect(page.getByRole('button', { name: '撤销' })).toBeDisabled();
 
-    await page.getByRole('button', { name: '便签' }).click();
-    await page.getByRole('button', { name: '提示词' }).click();
-    await expect(page.locator('.react-flow__node')).toHaveCount(2);
+    await edit(() => page.getByRole('button', { name: '便签' }).click(), 1);
+    await edit(() => page.getByRole('button', { name: '提示词', exact: true }).click(), 2);
 
     await selectNode(page, page.locator('.react-flow__node').last());
-    await page.getByRole('button', { name: '删除所选' }).click();
-    await expect(page.locator('.react-flow__node')).toHaveCount(1);
+    await edit(() => page.getByRole('button', { name: '删除所选' }).click(), 1);
 
-    await page.getByRole('button', { name: '撤销' }).click();
-    await expect(page.locator('.react-flow__node')).toHaveCount(2);
-    await page.getByRole('button', { name: '重做' }).click();
-    await expect(page.locator('.react-flow__node')).toHaveCount(1);
+    await edit(() => page.getByRole('button', { name: '撤销' }).click(), 2);
+    await edit(() => page.getByRole('button', { name: '重做' }).click(), 1);
 
     // Undo/redo are real edits, not a local-only view — they persist.
-    await page.getByRole('button', { name: '撤销' }).click();
-    await expect(page.locator('.react-flow__node')).toHaveCount(2);
-    await expect(page.getByText('已保存')).toBeVisible({ timeout: 10_000 });
+    await edit(() => page.getByRole('button', { name: '撤销' }).click(), 2);
     await page.goto(canvasUrl, { waitUntil: 'load' });
     await expect(page.locator('.react-flow__node')).toHaveCount(2);
   });
@@ -399,7 +408,7 @@ test.describe('infinite canvas', () => {
     await page.waitForURL(/\/canvas\/cnv_/);
     const canvasUrl = page.url();
 
-    await page.getByRole('button', { name: '提示词' }).click();
+    await page.getByRole('button', { name: '提示词', exact: true }).click();
     await selectNode(page, page.locator('.react-flow__node').first());
     await page.getByLabel('提示词').fill('一只在屋顶上的猫');
 
@@ -551,7 +560,7 @@ test.describe('infinite canvas', () => {
     await page.goto(canvasUrl, { waitUntil: 'load' });
     await expect(page.locator('.react-flow__node')).toHaveCount(1);
     await expect(page.getByText('已失效')).toHaveCount(0);
-    expect(problems().filter((p) => !isExpiredSeedMedia(p))).toEqual([]);
+    expect(problems().filter((p) => !isMissingSeedMedia(p))).toEqual([]);
   });
 
   test('the canvas is gated by width, not by browser', async ({ page }) => {

@@ -21,12 +21,12 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
-    "@mdxeditor/editor": "^4.2.0",
+    "@mdxeditor/editor": "^4.3.0",
     "@photo-sphere-viewer/core": "^5.15.1",
     "@xyflow/react": "^12.11.2",
     "animejs": "^4.5.0",
     "mediabunny": "1.29.1",
-    "next": "16.2.12",
+    "next": "16.3.6",
     "next-intl": "^4.13.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -45,14 +45,20 @@
     "@types/node": "^22.20.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
+    "@types/three": "^0.185.4",
     "eslint": "^9.39.5",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.3.6",
     "eslint-config-prettier": "^10.1.8",
     "jsdom": "^29.1.1",
     "openapi-typescript": "^7.13.0",
     "prettier": "^3.9.6",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "@redocly/openapi-core": {
+      "js-yaml": "^4.3.2"
+    }
   }
 }

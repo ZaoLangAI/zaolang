@@ -204,9 +204,7 @@ def connect_callback(
     client = _client_for(channel)
     tokens = client.exchange_code(code)
 
-    expires_at = (
-        utcnow() + dt.timedelta(seconds=tokens.expires_in) if tokens.expires_in else None
-    )
+    expires_at = utcnow() + dt.timedelta(seconds=tokens.expires_in) if tokens.expires_in else None
     access_token_encrypted = crypto.encrypt_token(tokens.access_token)
     refresh_token_encrypted = (
         crypto.encrypt_token(tokens.refresh_token) if tokens.refresh_token else None
@@ -257,7 +255,9 @@ def list_linked_accounts(session: Session, *, user_id: str) -> list[PlatformAcco
     )
 
 
-def list_metrics_for_work(session: Session, *, user_id: str, work_id: str) -> list[EpisodeExternalMetric]:
+def list_metrics_for_work(
+    session: Session, *, user_id: str, work_id: str
+) -> list[EpisodeExternalMetric]:
     """Every channel's latest pulled snapshot for one work, ownership-checked.
 
     Read-only — the pull itself only ever happens on `pull_episode_metrics`'s

@@ -16,7 +16,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import exists, or_, select, true
+from sqlalchemy import ColumnElement, exists, or_, select, true
 from sqlalchemy.orm import Session
 
 from app.domain.access import service as access_service
@@ -154,7 +154,7 @@ def _work_library_accessible_series_ids(session: Session, *, user_id: str) -> li
     return list({*owned, *collaborators.collaborator_series_ids(session, user_id=user_id)})
 
 
-def _draft_bound_to_inaccessible_series(accessible_series_ids: list[str]):
+def _draft_bound_to_inaccessible_series(accessible_series_ids: list[str]) -> ColumnElement[bool]:
     """True when the draft is tied to an episode on a series the caller
     neither owns nor actively collaborates on.
 
@@ -164,9 +164,7 @@ def _draft_bound_to_inaccessible_series(accessible_series_ids: list[str]):
     keep the owner's published clip on their work-library rail.
     """
     series_is_inaccessible = (
-        DramaEpisode.series_id.notin_(accessible_series_ids)
-        if accessible_series_ids
-        else true()
+        DramaEpisode.series_id.notin_(accessible_series_ids) if accessible_series_ids else true()
     )
     via_params = exists(
         select(1)
@@ -240,9 +238,7 @@ def _maybe_link_draft_to_episode(session: Session, *, user_id: str, draft: Draft
     )
 
 
-def apply_draft_version(
-    session: Session, *, user_id: str, draft_id: str, job_id: str
-) -> Draft:
+def apply_draft_version(session: Session, *, user_id: str, draft_id: str, job_id: str) -> Draft:
     """Pins a succeeded, still-visible job as the draft's applied version.
 
     Updates `applied_job_id` and `output_asset_id` together so publish and

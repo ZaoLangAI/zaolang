@@ -1,5 +1,5 @@
-"""`app.domain.prompts.enhance`: the dimension-by-dimension diagnosis shared by
-the shortform studio and the generation studio's own polish button."""
+"""`app.domain.prompts.enhance`: the dimension-by-dimension diagnosis behind
+the studios' "AI 润色" button."""
 
 from __future__ import annotations
 
@@ -65,13 +65,13 @@ def test_the_diagnosis_explains_every_dimension_of_the_medium(db: Session, autho
 
 
 def test_a_sparse_video_polish_auto_attaches_format_skills_once_the_catalog_is_seeded(
-    db: Session, author: User
+    db: Session, author: User, catalog_owner: User
 ) -> None:
     """The coach has no tool access to the skill library — see
     `app.domain.skill_library.service.apply_matching_format_skills`'s own
     docstring — so this is the end-to-end path: `enhance()` runs the coach,
     then attaches library rows itself off the diagnosis it just got back."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     result = prompts.enhance(
@@ -90,12 +90,10 @@ def test_a_sparse_video_polish_auto_attaches_format_skills_once_the_catalog_is_s
     # At least one attached rule's own text actually landed on the wire.
     applied_ids = {skill.id for skill in result.applied_format_skills}
     rows = db.scalars(
-        select(CreationSkill).where(CreationSkill.owner_user_id == author.id)
+        select(CreationSkill).where(CreationSkill.owner_user_id == catalog_owner.id)
     ).all()
     assert any(
-        row.params_json["prompt_suffix"] in result.prompt
-        for row in rows
-        if row.id in applied_ids
+        row.params_json["prompt_suffix"] in result.prompt for row in rows if row.id in applied_ids
     )
 
 
@@ -115,11 +113,11 @@ def test_a_video_polish_attaches_nothing_when_the_catalog_is_not_seeded(
 
 
 def test_an_image_polish_never_attaches_a_format_skill_even_when_seeded(
-    db: Session, author: User
+    db: Session, author: User, catalog_owner: User
 ) -> None:
     """Every seeded `format` row is video-only — an image polish must come
     back empty regardless of what the catalog contains."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     result = prompts.enhance(
@@ -132,12 +130,12 @@ def test_an_image_polish_never_attaches_a_format_skill_even_when_seeded(
 
 
 def test_a_video_polish_shows_the_coach_the_scenes_its_story_contains(
-    db: Session, author: User
+    db: Session, author: User, catalog_owner: User
 ) -> None:
     """The second half of the same "the coach has no tool access" story as
     the format-skill test above: `enhance()` matches `drama` rows itself and
     hands them over as reference material."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     result = prompts.enhance(
@@ -159,11 +157,13 @@ def test_a_video_polish_shows_the_coach_the_scenes_its_story_contains(
         assert rows[title].params_json["prompt_suffix"] not in result.prompt
 
 
-def test_an_image_polish_is_never_shown_drama_references(db: Session, author: User) -> None:
+def test_an_image_polish_is_never_shown_drama_references(
+    db: Session, author: User, catalog_owner: User
+) -> None:
     """Every `drama` row is about how a beat plays out over time. Matching
     them for a still would spend a matcher call and several hundred prompt
     tokens on advice a single frame cannot act on."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     result = prompts.enhance(
@@ -409,7 +409,7 @@ def test_general_enhance_and_suggest_route_to_the_copy_request_bucket(
 
 
 def test_the_prompt_context_asset_kind_reaches_the_copy_agent(db: Session, author: User) -> None:
-    """`domain.prompts.enhance` is the layer both studios call through — this
+    """`domain.prompts.enhance` is the domain-level polish contract — this
     confirms `PromptContext.asset_kind` actually reaches `enhance_prompt`
     rather than being dropped along the way."""
     specific = agent_skills_service.create_profile(
@@ -479,9 +479,7 @@ def test_enhance_text_is_usable_requires_enhance_shaped_json() -> None:
         is False
     )
     assert (
-        copywriter._enhance_text_is_usable(
-            'If unsure {"answer":"$your_answer"} then ' + usable
-        )
+        copywriter._enhance_text_is_usable('If unsure {"answer":"$your_answer"} then ' + usable)
         is True
     )
     assert copywriter._enhance_text_is_usable("先分析这段描述缺什么") is False
@@ -1087,3 +1085,76 @@ def test_non_scene_enhance_payload_carries_no_space_skill() -> None:
     )
     assert "scene_skill" not in payload
     assert "space_type_options" not in payload
+
+
+# ---- expression / scene presets ---------------------------------------------
+
+
+def test_restore_expression_prompt_drops_sheet_layout_clauses() -> None:
+    restored = copywriter.restore_expression_prompt(
+        "林夏，短发，白衬衫。左侧全身三视图，右侧色板。神情克制", count=4
+    )
+    assert "三视图" not in restored and "色板" not in restored
+    assert "林夏" in restored and "神情克制" in restored
+    assert restored.endswith(copywriter.EXPRESSION_SHEET_SENTENCE)
+
+
+def test_restore_expression_prompt_uses_a_close_up_for_one_expression() -> None:
+    restored = copywriter.restore_expression_prompt("林夏，短发", count=1)
+    assert restored.endswith(copywriter.EXPRESSION_SINGLE_SENTENCE)
+
+
+def test_enhance_user_prompt_carries_preset_labels() -> None:
+    payload = json.loads(
+        copywriter._enhance_user_prompt(
+            prompt="老式客厅",
+            operation="text_to_image",
+            aspect_ratio="16:9",
+            duration_seconds=None,
+            quality_tier="",
+            style_hint="",
+            has_reference=False,
+            direction="",
+            instruction="",
+            max_length=2000,
+            asset_kind="scene",
+            asset_presets={"scene_lighting": "dusk", "scene_period": "1980s"},
+        )
+    )
+    assert payload["asset_presets"] == {"光照": "黄昏", "时期": "八十年代"}
+    assert "asset_presets_rule" in payload
+
+
+def test_character_polish_with_expressions_keeps_the_grid() -> None:
+    outcome = AgentOutcome(
+        data={"prompt": "林夏。单张角色设定图、左右分栏：左侧全身三视图，右侧色板。"},
+        raw_text="",
+        degraded=False,
+        model="fake",
+        agent_run_id=None,
+    )
+    sanitized = copywriter._sanitize_enhance_outcome(
+        outcome,
+        prompt="林夏",
+        max_length=2000,
+        asset_kind="character",
+        asset_presets={"character_expressions": ["smile", "anger"]},
+    )
+    assert "三视图" not in sanitized.data["prompt"]
+    assert "表情合集" in sanitized.data["prompt"]
+
+
+def test_context_from_collects_the_studio_presets() -> None:
+    from app.api.schemas.shortform import PromptEnhanceRequest
+    from app.api.v1.prompt_enhance import context_from
+
+    ctx = context_from(
+        PromptEnhanceRequest(
+            prompt="老式客厅",
+            asset_kind="scene",
+            scene_lighting="neon",
+            scene_state="searched",
+        )
+    )
+    assert ctx.asset_presets == {"scene_lighting": "neon", "scene_state": "searched"}
+    assert context_from(PromptEnhanceRequest(prompt="林夏")).asset_presets is None

@@ -314,9 +314,10 @@ def _reset(session: Session) -> None:
     """
     tables = ", ".join(model.__tablename__ for model in RESET_TABLES)
     session.execute(text(f"TRUNCATE TABLE {tables} CASCADE"))
-    # Cast rosters stay (they are not in RESET_TABLES). Drama rows share
-    # `series` but their episodes/cuts were just truncated, so the leftover
-    # production shells would reappear on the editor landing as empty ghosts.
+    # `series` is not in RESET_TABLES, but its episodes/cuts were just
+    # truncated, so the leftover shells would reappear on the editor landing
+    # as empty ghosts. Every series is `kind=drama` (nothing writes
+    # `kind=cast` any more).
     session.execute(text("DELETE FROM series WHERE kind = 'drama'"))
     session.flush()
     logger.info("truncated %d tables", len(RESET_TABLES))
@@ -572,14 +573,17 @@ def sync_seeded_copy_agent_prompts(session: Session) -> None:
 
     for bucket, spec in _ENHANCE_ASSET_AGENT_SPECS.items():
         key, _display_name, description, system_prompt = spec
-        profile = agent_skills_service.find_profile(session, "copy", key)
-        if profile is None:
+        asset_profile = agent_skills_service.find_profile(session, "copy", key)
+        if asset_profile is None:
             continue
-        if profile.description in _FACTORY_ENHANCE_DESCRIPTIONS or not profile.description:
-            agent_skills_service.update_profile(session, profile.id, description=description)
+        if (
+            asset_profile.description in _FACTORY_ENHANCE_DESCRIPTIONS
+            or not asset_profile.description
+        ):
+            agent_skills_service.update_profile(session, asset_profile.id, description=description)
         _publish_factory_prompt(
             session,
-            profile=profile,
+            profile=asset_profile,
             slot=copywriter_agent.ENHANCE_SLOT,
             prompt=system_prompt,
             openers=_FACTORY_ENHANCE_OPENERS[bucket],
@@ -644,6 +648,7 @@ def _seed_editor_flags(session: Session) -> None:
         and current.script_studio_enabled
         and current.video_analysis_enabled
         and current.canvas_studio_enabled
+        and current.blocking_studio_enabled
     ):
         return
     value = current.model_dump(mode="json")
@@ -657,6 +662,7 @@ def _seed_editor_flags(session: Session) -> None:
             "script_studio_enabled": True,
             "video_analysis_enabled": True,
             "canvas_studio_enabled": True,
+            "blocking_studio_enabled": True,
         }
     )
     config_service.set_value(

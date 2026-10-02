@@ -179,6 +179,11 @@ def resume_context(
     # `route_score` has `route_attempts=0`. `or 1` would treat that 0 as
     # missing and the next `route_score` increment would skip attempt 1.
     ctx.state["route_attempts"] = int(checkpoint.get("route_attempts") or 0)
+    # Older checkpoints had no `attempt_seq`: their job-wide
+    # `route_attempts` was the sequence number.
+    ctx.state["attempt_seq"] = int(
+        checkpoint.get("attempt_seq") or checkpoint.get("route_attempts") or 0
+    )
     ctx.state["tried_providers"] = set(checkpoint.get("tried_providers") or ())
     ctx.state["intent_hint"] = dict(checkpoint.get("intent_hint") or {})
     return ctx

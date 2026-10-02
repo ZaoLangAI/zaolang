@@ -44,6 +44,17 @@ import { useGenerationModels } from '@/lib/use-generation-models';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
 import { useJobStream } from '@/lib/use-job-stream';
 import { useResource } from '@/lib/use-resource';
+import {
+  CharacterPresetFields,
+  ScenePresetFields,
+  sceneVariantCombos,
+} from '@/components/studio/asset-preset-fields';
+import {
+  type CharacterExpression,
+  hasScenePreset,
+  type ScenePresets,
+  scenePresetParams,
+} from '@/features/image-assets/vocabulary';
 
 type Operation = 'text_to_image' | 'image_to_image';
 /** What a `text_to_image`/`image_to_image` output is *for* — mirrors the
@@ -95,6 +106,8 @@ export function ImageGenerationStudio({
   linkEpisodeId,
   initialSkillId,
   initialReferenceAssetIds,
+  initialScenePresets,
+  initialTargetVariantId,
 }: {
   source?: StudioSource;
   reference?: WorkDetail;
@@ -133,6 +146,10 @@ export function ImageGenerationStudio({
   /** Asset ids to attach as references on arrival (`?referenceAssetIds=`),
    * used by the canvas to turn an edge into a real reference image. */
   initialReferenceAssetIds?: string[];
+  /** Scene lighting/weather a script heading jump-out pre-selects. */
+  initialScenePresets?: ScenePresets;
+  /** Look / scene variant of the target card to file the output under. */
+  initialTargetVariantId?: string;
 }) {
   const t = useTranslations('remixPage');
   const tCredits = useTranslations('credits');
@@ -178,6 +195,18 @@ export function ImageGenerationStudio({
   const [targetCharacterId, setTargetCharacterId] = useState(initialTargetCharacterId ?? '');
   const [targetSceneId, setTargetSceneId] = useState(initialTargetSceneId ?? '');
   const [autoAttachToRoster, setAutoAttachToRoster] = useState(true);
+  // Scene lighting/weather/state/period for a single scene image — see
+  // `features/image-assets/vocabulary.ts`.
+  const [scenePresets, setScenePresets] = useState<ScenePresets>(initialScenePresets ?? {});
+  const [groupAxis, setGroupAxis] = useState<keyof ScenePresets | null>(null);
+  const [groupValues, setGroupValues] = useState<string[]>([]);
+  // A composite expression image (`character_expressions`) or a named outfit
+  // sheet (`character_outfit_label`) — mutually exclusive.
+  const [expressions, setExpressions] = useState<CharacterExpression[]>([]);
+  const [outfitLabel, setOutfitLabel] = useState('');
+  // The target card's look / variant this output is filed under; '' = by
+  // outfit name / scene presets / the default (`target_variant_id`).
+  const [targetVariantId, setTargetVariantId] = useState(initialTargetVariantId ?? '');
 
   // Inline progress/result + version history state. `draftId` is created on
   // the first submit and reused by every later "continue refining" submit,
@@ -277,15 +306,12 @@ export function ImageGenerationStudio({
     lastRememberedDisplayJobRef.current = displayJob;
     setKnownJobsById((current) => ({ ...current, [displayJob.id]: displayJob }));
   }, [displayJob]);
-  // Adjusted during render rather than in an effect (same pattern as the
-  // resumed-job handling above). Keyed on the succeeded job's id so it fires
-  // once per success and never snaps back over a version applied afterwards.
-  const succeededJobId =
-    liveJob?.status === 'succeeded' && liveJob.id === activeJobId ? liveJob.id : null;
-  const [lastSucceededJobId, setLastSucceededJobId] = useState<string | null>(null);
-  if (succeededJobId !== lastSucceededJobId) {
-    setLastSucceededJobId(succeededJobId);
-    if (succeededJobId) setAppliedJobId(succeededJobId);
+  // A job that just succeeded becomes the applied version. Adjusted during
+  // render, once per live snapshot, rather than with a setState in an effect.
+  const [autoAppliedJob, setAutoAppliedJob] = useState<GenerationJob | null>(null);
+  if (liveJob?.status === 'succeeded' && liveJob.id === activeJobId && liveJob !== autoAppliedJob) {
+    setAutoAppliedJob(liveJob);
+    setAppliedJobId(liveJob.id);
   }
 
   // Historical "补全侧面/背面" jobs still merge into the gallery; the
@@ -477,8 +503,39 @@ export function ImageGenerationStudio({
         sceneHeroSeededRef.current = false;
       });
   }, [initialDraft, initialTargetSceneId, scenesResource.data, source, uploads.length]);
+  // A preset (or variant group) on an existing scene is generated *from* its
+  // master plate: attach it as reference 1 so the builder's geometry lock
+  // (`prompt_builder.SCENE_VARIANT_PREFIX`) has something to hold to.
+  const presetHeroSeededFor = useRef<string | null>(null);
+  const wantsSceneMaster =
+    assetKind === 'scene' &&
+    Boolean(targetSceneId) &&
+    (hasScenePreset(scenePresets) || groupAxis !== null);
+  useEffect(() => {
+    if (!wantsSceneMaster || uploads.length > 0 || source) return;
+    if (presetHeroSeededFor.current === targetSceneId) return;
+    const target = (scenesResource.data ?? []).find((scene) => scene.id === targetSceneId);
+    const hero = target ? sceneHeroAsset(target) : undefined;
+    if (!hero?.asset_id) return;
+    presetHeroSeededFor.current = targetSceneId;
+    void api
+      .get<Asset>(`/v1/assets/${hero.asset_id}`)
+      .then((asset) => setUploads((current) => (current.length ? current : [asset])))
+      .catch(() => {
+        presetHeroSeededFor.current = null;
+      });
+  }, [wantsSceneMaster, targetSceneId, scenesResource.data, source, uploads.length]);
   const characters = charactersResource.data ?? [];
   const scenes = scenesResource.data ?? [];
+  const targetLooks = characters.find((c) => c.id === targetCharacterId)?.looks ?? [];
+  const targetSceneVariants = scenes.find((c) => c.id === targetSceneId)?.variants ?? [];
+  // Only ids that belong to the currently picked card are ever sent.
+  const targetLookId = targetLooks.some((look) => look.id === targetVariantId)
+    ? targetVariantId
+    : '';
+  const targetSceneVariantId = targetSceneVariants.some((v) => v.id === targetVariantId)
+    ? targetVariantId
+    : '';
   const isCharacterAssetKind = assetKind === 'character';
 
   const hasImageReference = uploads.some((asset) => asset.media_type === 'image');
@@ -500,7 +557,11 @@ export function ImageGenerationStudio({
     } else if (typeof promptSuffix === 'string' && promptSuffix.trim()) {
       setPrompt((current) => (current.trim() ? `${current}, ${promptSuffix}` : promptSuffix));
     }
-    const referenceId = firstSkillReferenceAssetId(params, detail?.cover_asset_id);
+    const referenceId = firstSkillReferenceAssetId(
+      params,
+      detail?.cover_asset_id,
+      detail?.anchor_asset_id,
+    );
     if (!referenceId) return;
     void api
       .get<Asset>(`/v1/assets/${referenceId}`)
@@ -529,8 +590,19 @@ export function ImageGenerationStudio({
     : 'portrait';
   const aspectOptions = orientation === 'landscape' ? LANDSCAPE_ASPECTS : PORTRAIT_ASPECTS;
 
+  const isScene = assetKind === 'scene';
+  const variantCombos = isScene ? sceneVariantCombos(scenePresets, groupAxis, groupValues) : null;
+  // A group with too few values picked must not quietly submit one image.
+  const groupIncomplete = isScene && groupAxis !== null && !variantCombos;
+
   const { quote, quoteFailed, submitting, error, submit } = useGenerationSubmit(
-    { operation, qualityTier: tier, durationSeconds: 0 },
+    {
+      operation,
+      qualityTier: tier,
+      durationSeconds: 0,
+      assetKind,
+      sceneVariants: variantCombos,
+    },
     {
       label: t('submit'),
       // Stays on the studio page instead of navigating to `/jobs/[jobId]` —
@@ -556,6 +628,7 @@ export function ImageGenerationStudio({
     rightsConfirmed &&
     !submitting &&
     !scenePolishBlocked &&
+    !groupIncomplete &&
     (quote?.sufficient ?? true);
 
   const removeUpload = (assetId: string) => {
@@ -583,6 +656,21 @@ export function ImageGenerationStudio({
       targetSceneId: assetKind === 'scene' ? targetSceneId || null : undefined,
       autoAttachAsset: isCharacterAssetKind ? autoAttachToRoster : undefined,
       subjectNameHint: isCharacterAssetKind || assetKind === 'scene' ? subjectNameHint : undefined,
+      assetPresets: isCharacterAssetKind
+        ? {
+            character_expressions: expressions.length ? expressions : null,
+            character_outfit_label:
+              expressions.length || targetLookId ? null : outfitLabel.trim() || null,
+            target_variant_id: targetLookId || null,
+          }
+        : isScene
+          ? variantCombos
+            ? { scene_variants: variantCombos }
+            : {
+                ...scenePresetParams(scenePresets),
+                target_variant_id: targetSceneVariantId || null,
+              }
+          : undefined,
       linkEpisodeId,
       draftParams: draftReturnParams({
         returnTo,
@@ -649,6 +737,31 @@ export function ImageGenerationStudio({
             <Link href="/create/characters" className="text-[11px] text-muted hover:text-text">
               {t('manageCharactersLink')}
             </Link>
+            {targetLooks.length > 1 ? (
+              <Select
+                label={t('targetLook')}
+                hint={t('targetLookHint')}
+                value={targetLookId}
+                onChange={(event) => setTargetVariantId(event.target.value)}
+                options={[
+                  { value: '', label: t('targetLookAuto') },
+                  ...targetLooks.map((look) => ({ value: look.id, label: look.name })),
+                ]}
+              />
+            ) : null}
+            <CharacterPresetFields
+              expressions={expressions}
+              onExpressionsChange={(next) => {
+                // An expression image is an extra, not the roster's sheet:
+                // default to not writing it back (the user can opt in).
+                if (next.length > 0 && expressions.length === 0) setAutoAttachToRoster(false);
+                if (next.length === 0 && expressions.length > 0) setAutoAttachToRoster(true);
+                setExpressions(next);
+              }}
+              outfitLabel={outfitLabel}
+              onOutfitLabelChange={setOutfitLabel}
+              outfitDisabled={Boolean(targetLookId)}
+            />
           </div>
         ) : null}
 
@@ -666,6 +779,26 @@ export function ImageGenerationStudio({
             <Link href="/create/scenes" className="text-[11px] text-muted hover:text-text">
               {t('manageScenesLink')}
             </Link>
+            {targetSceneVariants.length > 1 && groupAxis === null ? (
+              <Select
+                label={t('targetSceneVariant')}
+                hint={t('targetSceneVariantHint')}
+                value={targetSceneVariantId}
+                onChange={(event) => setTargetVariantId(event.target.value)}
+                options={[
+                  { value: '', label: t('targetSceneVariantAuto') },
+                  ...targetSceneVariants.map((v) => ({ value: v.id, label: v.name })),
+                ]}
+              />
+            ) : null}
+            <ScenePresetFields
+              presets={scenePresets}
+              onPresetsChange={setScenePresets}
+              groupAxis={groupAxis}
+              onGroupAxisChange={setGroupAxis}
+              groupValues={groupValues}
+              onGroupValuesChange={setGroupValues}
+            />
           </div>
         ) : null}
       </div>
@@ -746,6 +879,11 @@ export function ImageGenerationStudio({
         qualityTier: tier,
         hasReference: uploads.length > 0 || Boolean(source),
         assetKind,
+        assetPresets: isCharacterAssetKind
+          ? { character_expressions: expressions.length ? expressions : null }
+          : isScene
+            ? scenePresetParams(scenePresets)
+            : undefined,
       }}
       onPolishAccept={setPrompt}
       closePolishSignal={polishCloseSignal}

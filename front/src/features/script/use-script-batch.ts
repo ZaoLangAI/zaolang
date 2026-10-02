@@ -4,14 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, newIdempotencyKey } from '@/lib/api/client';
 import { ApiError, isApiError } from '@/lib/api/errors';
-import type {
-  Draft,
-  GenerationJob,
-  JobStatus,
-  Operation,
-  QualityTier,
-  Quote,
-} from '@/lib/api/types';
+import type { Draft, GenerationJob, JobStatus, Operation, QualityTier } from '@/lib/api/types';
 import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
 import { FALLBACK_VOICES } from '@/lib/use-generation-models';
 
@@ -19,6 +12,8 @@ import type { ScriptCharacter, ScriptDocument, ScriptScene } from './api';
 import type { PendingAudio, PendingVideo } from './batch-plan';
 import { characterImagePrompt, sceneImagePrompt } from './script-prompts';
 import { type BreakpointVideoBinding } from './script-breakpoint';
+import { type AssetPresetParams, scenePresetParams } from '@/features/image-assets/vocabulary';
+import { parseScenePresets } from '@/features/script/scene-heading';
 
 export type BatchKind = 'characters' | 'scenes' | 'videos' | 'audio';
 export type BatchItemKind = 'character' | 'scene' | 'video' | 'audio';
@@ -82,6 +77,20 @@ export interface BatchQuote {
   totalCredits: number;
   count: number;
   availableCredits: number;
+  /** What the user's own monthly spend cap still allows; null = no cap. */
+  periodRemaining: number | null;
+  withinSpendLimit: boolean;
+  /** Enough balance *and* within the monthly cap. */
+  sufficient: boolean;
+}
+
+/** `POST /v1/generation-jobs/quote:batch` — an exact sum of per-line quotes. */
+interface BatchQuoteResult {
+  items: Array<{ unit_credits: number; count: number; credits: number }>;
+  total_credits: number;
+  available_credits: number;
+  period_remaining: number | null;
+  within_spend_limit: boolean;
   sufficient: boolean;
 }
 
@@ -153,23 +162,27 @@ export function quoteForBatch(
   const operation: Operation =
     kind === 'videos' ? 'text_to_video' : kind === 'audio' ? 'audio_generation' : 'text_to_image';
   return api
-    .post<Quote>('/v1/generation-jobs/quote', {
-      operation,
-      quality_tier: params.qualityTier,
-      duration_seconds: kind === 'videos' ? params.durationSeconds : 0,
-      asset_kind: kind === 'characters' ? 'character' : kind === 'scenes' ? 'scene' : 'general',
-      character_views: kind === 'characters' ? ['front'] : null,
+    .post<BatchQuoteResult>('/v1/generation-jobs/quote:batch', {
+      items: [
+        {
+          operation,
+          quality_tier: params.qualityTier,
+          duration_seconds: kind === 'videos' ? params.durationSeconds : 0,
+          asset_kind: kind === 'characters' ? 'character' : kind === 'scenes' ? 'scene' : 'general',
+          character_views: kind === 'characters' ? ['front'] : null,
+          count: Math.max(1, count),
+        },
+      ],
     })
-    .then((quote) => {
-      const totalCredits = quote.credits * count;
-      return {
-        unitCredits: quote.credits,
-        totalCredits,
-        count,
-        availableCredits: quote.available_credits,
-        sufficient: quote.available_credits >= totalCredits,
-      };
-    });
+    .then((quote) => ({
+      unitCredits: quote.items[0]?.unit_credits ?? 0,
+      totalCredits: quote.total_credits,
+      count,
+      availableCredits: quote.available_credits,
+      periodRemaining: quote.period_remaining,
+      withinSpendLimit: quote.within_spend_limit,
+      sufficient: quote.sufficient,
+    }));
 }
 
 export function inFlightIds(items: Iterable<BatchItemState>, kind: BatchItemKind): Set<string> {
@@ -187,7 +200,7 @@ function isActiveStatus(status: BatchItemStatus): boolean {
   return status === 'queued' || status === 'submitting' || status === 'running';
 }
 
-async function submitJob(input: {
+export async function submitJob(input: {
   operation: Operation;
   qualityTier: QualityTier;
   prompt: string;
@@ -205,10 +218,17 @@ async function submitJob(input: {
     resolution?: '480p' | '720p' | '1080p' | '2K';
     reference_mode: 'input_references' | 'frame_images';
     first_frame_asset_id?: string | null;
+    /** A 白膜 render among `referenceAssetIds` — see
+     * `VideoGenerationOptions.reference_video_role`. */
+    reference_video_role?: 'motion_guide' | null;
   };
+  referenceAssetIds?: string[];
   linkEpisodeId?: string;
   linkBreakpointKey?: string;
   extra?: Record<string, unknown>;
+  /** Preset fields spread into `params` (scene lighting/weather, reference
+   * picks) — see `features/image-assets/vocabulary.ts`. */
+  assetPresets?: AssetPresetParams;
   maxCredits: number;
 }): Promise<GenerationJob> {
   let draftId = input.draftId;
@@ -240,7 +260,7 @@ async function submitJob(input: {
         prompt: input.prompt,
         aspect_ratio: input.aspectRatio,
         duration_seconds: input.durationSeconds,
-        reference_asset_ids: [],
+        reference_asset_ids: input.referenceAssetIds ?? [],
         video_options: input.videoOptions,
         character_ids: input.characterIds ?? [],
         scene_ids: input.sceneIds ?? [],
@@ -254,6 +274,7 @@ async function submitJob(input: {
         subject_name_hint: input.subjectNameHint,
         auto_attach_asset: true,
         forced_model: null,
+        ...input.assetPresets,
         extra: input.extra ?? {},
       },
       max_credits: input.maxCredits,
@@ -262,7 +283,7 @@ async function submitJob(input: {
   );
 }
 
-async function pollJob(jobId: string, signal: AbortSignal): Promise<GenerationJob> {
+export async function pollJob(jobId: string, signal: AbortSignal): Promise<GenerationJob> {
   while (!signal.aborted) {
     const job = await api.get<GenerationJob>(`/v1/generation-jobs/${jobId}`);
     if (TERMINAL.has(job.status)) return job;
@@ -427,6 +448,11 @@ export function useScriptBatch({
           draftTitle: item.label,
           assetKind: isCharacter ? 'character' : 'scene',
           subjectNameHint: item.id.slice(0, 60),
+          // A scene's heading says 日/夜 (and often 雨/雪) — carry it as the
+          // lighting/weather preset so the batch plate matches the script.
+          assetPresets: isCharacter
+            ? undefined
+            : scenePresetParams(parseScenePresets(source as ScriptScene)),
           maxCredits: unitCredits,
         });
         patchItem(item.kind, item.id, {
@@ -470,6 +496,8 @@ export function useScriptBatch({
           draftId: existing?.draftId,
           characterIds: video.characterIds,
           sceneIds: video.sceneId ? [video.sceneId] : [],
+          // The script's linked look / scene variant for this segment.
+          assetPresets: video.selections,
           videoOptions: {
             resolution: params.resolution,
             reference_mode: 'input_references',

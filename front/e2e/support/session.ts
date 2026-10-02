@@ -59,6 +59,11 @@ export async function signIn(page: Page, email: string) {
 const EXPECTED_FAILURES: { pattern: RegExp; status: number }[] = [
   { pattern: /\/v1\/auth\/refresh$/, status: 401 },
   { pattern: /\/v1\/admin\/auth\/me$/, status: 401 },
+  // Page loads open long-lived streams, and a closed one can hold its
+  // `sse_quota` slot for up to 45s, so a serial suite reloading pages as one
+  // user can briefly hit the per-user cap. Both clients back off and reconnect.
+  { pattern: /\/v1\/notifications\/stream$/, status: 429 },
+  { pattern: /\/v1\/canvas-projects\/[^/]+\/events$/, status: 429 },
 ];
 
 /**

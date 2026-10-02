@@ -81,6 +81,9 @@ export function HeroCarousel({
   const [paused, setPaused] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [details, setDetails] = useState<Record<string, WorkDetail>>(initialDetails);
+  // Work ids already fetched or in flight for one slide set. Only touched
+  // from the effect below — refs must not be read or written during render.
+  const requestedRef = useRef<{ slidesKey: string; ids: Set<string> } | null>(null);
 
   const [bookmarkOverrides, setBookmarkOverrides] = useState<Record<string, boolean>>({});
 
@@ -101,7 +104,7 @@ export function HeroCarousel({
   const mountedKey = mountedIds.join('|');
 
   useEffect(() => {
-    if (requestedRef.current.slidesKey !== slidesKey) {
+    if (requestedRef.current?.slidesKey !== slidesKey) {
       requestedRef.current = { slidesKey, ids: new Set(Object.keys(initialDetails)) };
     }
     const requested = requestedRef.current.ids;

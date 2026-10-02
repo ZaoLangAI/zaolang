@@ -889,7 +889,10 @@ def test_provider_generate_folds_the_plan_into_the_effective_prompt(
 @pytest.mark.parametrize(
     "asset_params",
     [
-        {"asset_kind": ImageAssetKind.CHARACTER.value, "character_view": CharacterViewAngle.SIDE.value},
+        {
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "character_view": CharacterViewAngle.SIDE.value,
+        },
         {"video_asset_kind": VideoAssetKind.CHARACTER_ACTION.value},
     ],
     ids=["image_asset_kind", "video_asset_kind"],

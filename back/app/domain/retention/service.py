@@ -13,8 +13,8 @@ from __future__ import annotations
 import datetime as dt
 import logging
 
-from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
+from sqlalchemy import Select, delete, select
+from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from app.models import GenerationJob, IdempotencyRecord, JobEvent, SystemLog, WebhookEvent
 from app.models.base import utcnow
@@ -45,7 +45,9 @@ def purge_idempotency_records(
 ) -> int:
     cutoff = utcnow() - dt.timedelta(days=older_than_days)
     return _delete_in_batches(
-        session, IdempotencyRecord, select(IdempotencyRecord.id).where(IdempotencyRecord.created_at < cutoff)
+        session,
+        IdempotencyRecord.id,
+        select(IdempotencyRecord.id).where(IdempotencyRecord.created_at < cutoff),
     )
 
 
@@ -57,7 +59,7 @@ def purge_webhook_events(
     cutoff = utcnow() - dt.timedelta(days=older_than_days)
     return _delete_in_batches(
         session,
-        WebhookEvent,
+        WebhookEvent.id,
         select(WebhookEvent.id).where(
             WebhookEvent.processed_at.is_not(None), WebhookEvent.processed_at < cutoff
         ),
@@ -71,7 +73,7 @@ def purge_system_logs(session: Session, *, older_than_days: int = SYSTEM_LOG_RET
     purged just because the window it first appeared in is old."""
     cutoff = utcnow() - dt.timedelta(days=older_than_days)
     return _delete_in_batches(
-        session, SystemLog, select(SystemLog.id).where(SystemLog.updated_at < cutoff)
+        session, SystemLog.id, select(SystemLog.id).where(SystemLog.updated_at < cutoff)
     )
 
 
@@ -85,17 +87,21 @@ def purge_job_events(session: Session, *, older_than_days: int = JOB_EVENT_RETEN
         GenerationJob.updated_at < cutoff,
     )
     return _delete_in_batches(
-        session, JobEvent, select(JobEvent.id).where(JobEvent.job_id.in_(terminal_job_ids))
+        session, JobEvent.id, select(JobEvent.id).where(JobEvent.job_id.in_(terminal_job_ids))
     )
 
 
-def _delete_in_batches(session: Session, model: type, id_query) -> int:
+def _delete_in_batches(
+    session: Session, id_column: InstrumentedAttribute[str], id_query: Select[tuple[str]]
+) -> int:
+    """Delete the rows `id_query` selects, `_BATCH_SIZE` at a time, from the
+    table `id_column` belongs to."""
     deleted_total = 0
     while True:
         batch_ids = session.scalars(id_query.limit(_BATCH_SIZE)).all()
         if not batch_ids:
             break
-        session.execute(delete(model).where(model.id.in_(batch_ids)))
+        session.execute(delete(id_column.class_).where(id_column.in_(batch_ids)))
         session.commit()
         deleted_total += len(batch_ids)
         if len(batch_ids) < _BATCH_SIZE:

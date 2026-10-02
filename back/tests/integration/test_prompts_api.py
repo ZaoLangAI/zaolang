@@ -107,11 +107,12 @@ def test_enhance_auto_attaches_format_skills_over_the_wire(
     author: User,
     bound_copy_agent: None,
     monkeypatch: pytest.MonkeyPatch,
+    catalog_owner: User,
 ) -> None:
     """The SSE `complete` frame carries `applied_format_skills` end to end —
     not just `PromptEnhancement`'s in-process shape (see
     `tests/unit/test_prompt_enhance.py`)."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
     _patch_stream_session(monkeypatch, db)
 
@@ -136,6 +137,7 @@ def test_enhance_streams_the_drama_scenes_it_matched_before_it_writes(
     author: User,
     bound_copy_agent: None,
     monkeypatch: pytest.MonkeyPatch,
+    catalog_owner: User,
 ) -> None:
     """Matching runs on the request session before the stream opens, so the
     `matched` frame is the first thing the panel sees — it exists to explain
@@ -143,7 +145,7 @@ def test_enhance_streams_the_drama_scenes_it_matched_before_it_writes(
 
     The same list has to come back on `complete`, because a client that
     reconnects mid-stream never saw the first frame."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
     _patch_stream_session(monkeypatch, db)
 
@@ -361,9 +363,7 @@ def test_scene_enhance_asks_follow_ups_then_stops_once_they_are_answered(
         "operation": "text_to_image",
         "asset_kind": "scene",
     }
-    first = client.post(
-        "/v1/generation/prompts/enhance", json=payload, headers=auth_header(author)
-    )
+    first = client.post("/v1/generation/prompts/enhance", json=payload, headers=auth_header(author))
     assert first.status_code == 200, first.text
     asked = _enhance_complete(first)["questions"]
     assert [question["id"] for question in asked] == ["space_type", "anchor"]

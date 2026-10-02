@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 
 import { StudioSkeleton } from '@/components/studio/studio-skeleton';
 import type { Draft, StyleGalleryEntry, WorkDetail } from '@/lib/api/types';
+import type { ScenePresets } from '@/features/image-assets/vocabulary';
 
 const ImageGenerationStudio = dynamic(
   () =>
@@ -62,6 +63,8 @@ export function CreateStudio({
   continuitySourceAssetId,
   initialSkillId,
   initialReferenceAssetIds,
+  initialScenePresets,
+  initialTargetVariantId,
 }: {
   operation: 'text_to_image' | 'text_to_video' | 'audio_generation' | 'music_generation';
   initialPrompt?: string;
@@ -89,6 +92,10 @@ export function CreateStudio({
   /** Reference images handed over by a deep link — the canvas turns an edge
    * from a picture card into this. */
   initialReferenceAssetIds?: string[];
+  /** Scene lighting/weather from a script heading jump-out. */
+  initialScenePresets?: ScenePresets;
+  /** Look / scene variant the output is filed under (`target_variant_id`). */
+  initialTargetVariantId?: string;
 }) {
   if (operation === 'audio_generation') {
     return <AudioGenerationStudio initialPrompt={initialPrompt} reference={reference} />;
@@ -113,6 +120,8 @@ export function CreateStudio({
         linkEpisodeId={linkEpisodeId}
         initialSkillId={initialSkillId}
         initialReferenceAssetIds={initialReferenceAssetIds}
+        initialScenePresets={initialScenePresets}
+        initialTargetVariantId={initialTargetVariantId}
       />
     );
   }

@@ -1,3 +1,4 @@
+import type { BlockingState } from '@/features/blocking/types';
 import { api } from '@/lib/api/client';
 import { streamPost as streamAgentPost } from '@/lib/sse-post';
 
@@ -15,6 +16,8 @@ export interface ScriptScene {
   /** Links this heading to a reusable `Scene` asset — set only via
    * `updateScriptLinks`, never by a model turn. */
   ref_id: string | null;
+  /** Which variant of that scene (黄昏/战损…); absent = its default. */
+  variant_id?: string | null;
 }
 
 export interface ScriptCharacter {
@@ -23,6 +26,8 @@ export interface ScriptCharacter {
   /** Links this character to a reusable `Character` asset — set only via
    * `updateScriptLinks`, never by a model turn. */
   character_ref_id: string | null;
+  /** Which look of that character (婚礼/战甲…); absent = its default. */
+  look_id?: string | null;
 }
 
 export interface ScriptDocument {
@@ -44,6 +49,9 @@ export interface ScriptTurnSummary {
    * Rendered as a collapsed-by-default disclosure, never inside the
    * right-side script view. */
   thinking: string;
+  /** `script` for a 文案创作 turn, `blocking` for one sent from the 白膜
+   * studio (which may have rewritten the script as well). */
+  origin?: 'script' | 'blocking' | string;
 }
 
 export interface ScriptSummary {
@@ -67,6 +75,8 @@ export interface ScriptDetail {
   source_referenced_skill_ids: string[];
   /** Latest failed-generation excerpt for this episode, if any. */
   last_error: string | null;
+  /** The 白膜 blockout head; `null` while the blocking studio flag is off. */
+  blocking?: BlockingState | null;
   created_at: string;
   updated_at: string;
 }
@@ -123,8 +133,8 @@ export function getTurnSnapshot(episodeId: string, turnId: string) {
 export function updateScriptLinks(
   episodeId: string,
   input: {
-    characters?: { name: string; character_ref_id: string | null }[];
-    scenes?: { heading: string; ref_id: string | null }[];
+    characters?: { name: string; character_ref_id: string | null; look_id?: string | null }[];
+    scenes?: { heading: string; ref_id: string | null; variant_id?: string | null }[];
   },
 ) {
   return api.patch<ScriptDocument>(`/v1/scripts/${episodeId}/links`, {

@@ -16,7 +16,11 @@ from app.agents import skill_matcher
 from app.domain.errors import ProviderTemporaryFailure
 from app.domain.skill_library import service as skill_library_service
 from app.models import CreationSkill, User
-from app.models.enums import CreationSkillCategory
+from app.models.enums import (
+    CreationSkillCategory,
+    CreationSkillStatus,
+    CreationSkillVisibility,
+)
 from tests.llm_catalog import bind_default_agents_to_catalog
 
 _RAIN_FAREWELL = "雨中告别·伞外的那一个"
@@ -28,8 +32,8 @@ def _bind_copy_model(db: Session) -> None:
 
 
 @pytest.fixture
-def seeded(db: Session, author: User) -> None:
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+def seeded(db: Session, catalog_owner: User) -> None:
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
 
@@ -159,3 +163,26 @@ def test_an_empty_catalogue_matches_nothing_without_calling_the_model(db: Sessio
     notice the empty shortlist and skip the call rather than ask a model to
     pick from nothing."""
     assert skill_matcher.select_reference_skills(db, brief="雨中告别") == []
+
+
+def test_a_users_drama_skill_under_a_catalogue_title_is_not_a_candidate(
+    db: Session, author: User, seeded: None
+) -> None:
+    """The shortlist feeds an agent that never charges or counts usage, so a
+    user's paid `drama` skill that borrows a catalogue title must stay out."""
+    impostor = CreationSkill(
+        owner_user_id=author.id,
+        title=_RAIN_FAREWELL,
+        category=CreationSkillCategory.DRAMA,
+        params_json={},
+        visibility=CreationSkillVisibility.PUBLIC,
+        status=CreationSkillStatus.PUBLISHED,
+        access_credits=50,
+    )
+    db.add(impostor)
+    db.commit()
+
+    candidates = skill_library_service.list_drama_candidates(db)
+
+    assert impostor.id not in {skill_id for skill_id, _ in candidates}
+    assert [title for _, title in candidates].count(_RAIN_FAREWELL) == 1

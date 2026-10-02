@@ -96,9 +96,11 @@ def test_state_rejects_channel_mismatch() -> None:
 def test_state_rejects_stale_timestamp() -> None:
     with patch("time.time", return_value=1_000_000.0):
         state = service._sign_state(user_id="user_abc", channel="douyin")
-    with patch("time.time", return_value=1_000_000.0 + service.STATE_TTL_SECONDS + 1):
-        with pytest.raises(PlatformOAuthFailed):
-            service._verify_state(state, expected_channel="douyin")
+    with (
+        patch("time.time", return_value=1_000_000.0 + service.STATE_TTL_SECONDS + 1),
+        pytest.raises(PlatformOAuthFailed),
+    ):
+        service._verify_state(state, expected_channel="douyin")
 
 
 def test_config_status_is_false_by_default() -> None:

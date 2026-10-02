@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
@@ -19,6 +19,7 @@ from app.api.schemas.skill_library import (
 )
 from app.api.schemas.works import AccessGrantView, AccessUnlockResponse, AuthorSummary
 from app.domain.access import service as access_service
+from app.domain.asset_variants import service as asset_variants_service
 from app.domain.errors import ValidationFailed
 from app.domain.skill_library import service as skill_library
 from app.domain.skill_library import variables as skill_variables
@@ -30,6 +31,7 @@ from app.models.enums import (
     CreationSkillVisibility,
     Operation,
 )
+from app.presenters import asset_variants as asset_variant_presenter
 from app.presenters import media_urls
 
 router = APIRouter(tags=["skills"])
@@ -106,6 +108,7 @@ def create_skill(
         if replay is not None:
             return CreationSkillDetail.model_validate(replay.response_snapshot)
 
+    _reject_character_category(payload.category)
     skill = skill_library.create(
         session,
         owner_user_id=user.id,
@@ -142,6 +145,8 @@ def update_skill(
     _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> CreationSkillDetail:
     skill = _require_owned(session, skill_id, user.id)
+    _reject_character_category(skill.category)
+    _reject_character_category(payload.category)
     skill = skill_library.update(
         session,
         skill=skill,
@@ -301,6 +306,24 @@ def apply_skill(
     return _detail(session, skill, user.id)
 
 
+def _reject_character_category(category: str) -> None:
+    """Characters and scenes are created and edited only via `/v1/characters`
+    / `/v1/scenes`: those paths enforce the one-name-per-owner rule and keep
+    the looks/variants tables and their `params_json` mirror in step, while
+    this route would skip the first (surfacing the unique index as an
+    `IntegrityError`) and overwrite the second wholesale."""
+    if category == CreationSkillCategory.CHARACTER:
+        raise ValidationFailed(
+            "角色请通过角色库接口创建和编辑。",
+            fields={"category": "character skills are managed via /v1/characters"},
+        )
+    if category == CreationSkillCategory.SCENE_ASSET:
+        raise ValidationFailed(
+            "场景请通过场景库接口创建和编辑。",
+            fields={"category": "scene skills are managed via /v1/scenes"},
+        )
+
+
 def _require_owned(session: DbSession, skill_id: str, owner_user_id: str) -> CreationSkill:
     return skill_library.get_owned(session, skill_id=skill_id, owner_user_id=owner_user_id)
 
@@ -330,12 +353,29 @@ def _summary(
 def _detail(session: DbSession, skill: CreationSkill, viewer_id: str | None) -> CreationSkillDetail:
     summary = _summary(session, skill, viewer_id)
     unlocked = summary.viewer_unlocked
+    is_card = skill.category in (CreationSkillCategory.CHARACTER, CreationSkillCategory.SCENE_ASSET)
+    anchor = asset_variants_service.anchor(skill) if unlocked and is_card else None
     return CreationSkillDetail(
         **summary.model_dump(),
         cover_asset_id=skill.cover_asset_id,
-        params=skill.params_json if unlocked else {},
+        params=_public_params(skill) if unlocked else {},
         reject_reason=skill.reject_reason,
+        asset_variants=asset_variant_presenter.variant_views(session, skill)
+        if unlocked and is_card
+        else [],
+        anchor_asset_id=anchor.asset_id if anchor else None,
     )
+
+
+def _public_params(skill: CreationSkill) -> dict[str, Any]:
+    """`params_json` without a character/scene card's `reference_assets`
+    mirror — the images go out as signed `asset_variants` instead."""
+    params = dict(skill.params_json or {})
+    for key in ("character", "scene"):
+        nested = params.get(key)
+        if isinstance(nested, dict) and "reference_assets" in nested:
+            params[key] = {k: v for k, v in nested.items() if k != "reference_assets"}
+    return params
 
 
 def _author(session: DbSession, user_id: str) -> AuthorSummary:

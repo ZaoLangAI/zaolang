@@ -47,6 +47,10 @@ class Asset(Base, TimestampMixin):
     # Set when the seed importer created this from assets-pack; surfaced in the
     # UI so prototype media is never mistaken for user content.
     is_prototype: Mapped[bool] = mapped_column(default=False, nullable=False)
+    # The uploader's own declaration that this image/video shows a real
+    # person. Such an asset needs an active portrait `AssetConsent` before it
+    # may feed a generation job — see `app.domain.consent.service`.
+    depicts_real_person: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     __table_args__ = (
         Index("ix_assets_owner_user_id_role", "owner_user_id", "role"),
@@ -76,6 +80,8 @@ class UploadSession(Base, TimestampMixin):
         ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
     )
     bound_export_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Carried from presign to the `Asset` this session completes into.
+    depicts_real_person: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     __table_args__ = (Index("ix_upload_sessions_user_id", "user_id"),)
 
@@ -94,8 +100,17 @@ class AssetConsent(Base, TimestampMixin):
     )
     status: Mapped[str] = mapped_column(String(24), default=ConsentStatus.DECLARED, nullable=False)
     expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Who declared it, and when it was withdrawn. A revoked consent keeps its
+    # row, so the audit trail can still point at what was once authorised.
+    declared_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    __table_args__ = (Index("ix_asset_consents_asset_id", "asset_id"),)
+    __table_args__ = (
+        Index("ix_asset_consents_asset_id", "asset_id"),
+        Index("ix_asset_consents_declared_by_user_id", "declared_by_user_id"),
+    )
 
 
 class ContentFingerprint(Base, TimestampMixin):

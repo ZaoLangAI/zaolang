@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.domain.characters import service as characters_service
 from app.models import Asset, User
 from app.models.base import new_id
 from app.models.enums import (
@@ -74,10 +75,10 @@ def test_create_character_rejects_audio_references(
     assert response.status_code == 422
 
 
-def test_create_character_rejects_more_than_four_references(
+def test_create_character_rejects_more_than_the_reference_cap(
     client: TestClient, db: Session, author: User
 ) -> None:
-    assets = [_asset(db, author) for _ in range(5)]
+    assets = [_asset(db, author) for _ in range(characters_service.MAX_REFERENCE_ASSETS + 1)]
     response = client.post(
         "/v1/characters",
         json={"name": "太多素材", "reference_asset_ids": [a.id for a in assets]},
@@ -122,9 +123,7 @@ def test_create_character_rejects_a_duplicate_name_for_the_same_owner(
 ) -> None:
     first = client.post("/v1/characters", json={"name": "林彻"}, headers=auth_header(author))
     assert first.status_code == 201
-    duplicate = client.post(
-        "/v1/characters", json={"name": " 林彻 "}, headers=auth_header(author)
-    )
+    duplicate = client.post("/v1/characters", json={"name": " 林彻 "}, headers=auth_header(author))
     assert duplicate.status_code == 422
     body = duplicate.json()["error"]
     assert body["code"] == "VALIDATION_FAILED"
@@ -246,3 +245,22 @@ def test_withdraw_returns_a_published_character_to_draft(
     assert withdrawn.status_code == 200
     assert withdrawn.json()["status"] == "draft"
     assert withdrawn.json()["visibility"] == "private"
+
+
+def test_character_name_is_bounded_by_the_skill_title_column(
+    client: TestClient, db: Session, author: User
+) -> None:
+    # A character is stored as a `CreationSkill` whose `title` is
+    # `VARCHAR(80)` — a longer name must fail validation, not the INSERT.
+    too_long = client.post("/v1/characters", json={"name": "角" * 81}, headers=auth_header(author))
+    assert too_long.status_code == 422, too_long.text
+
+    created = client.post("/v1/characters", json={"name": "角" * 80}, headers=auth_header(author))
+    assert created.status_code == 201, created.text
+
+    renamed = client.patch(
+        f"/v1/characters/{created.json()['id']}",
+        json={"name": "色" * 81},
+        headers=auth_header(author),
+    )
+    assert renamed.status_code == 422, renamed.text

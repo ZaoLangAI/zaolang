@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.image_assets import prompt_builder
 from app.models import GenerationJob, JobEvent, ProviderAttempt
 from app.models.enums import (
     ImageAssetKind,
@@ -52,7 +53,9 @@ _FAST_RETRY_OPERATIONS = frozenset(
 )
 
 # The three codes `aihubmix_media.py`/`dmxapi_media.py` use to classify a
-# genuine upstream failure (see `zaolang-agent-gateway` invariant #1).
+# genuine upstream failure (see the `zaolang-agent-gateway` providers
+# reference on classifying poll errors, and `zaolang-generation-jobs` on fast
+# retry).
 # Deliberately excludes `MISSING_REFERENCE` (a user-input problem no provider
 # switch fixes), `PROVIDER_TIMEOUT` (sandbox-only synchronous-poll timeout),
 # and `QUALITY_REJECTED` (the provider produced something; quality rejected
@@ -154,8 +157,12 @@ def _resolved_prompt(session: Session, job_id: str) -> tuple[str, str | None] | 
     if event is None:
         return None
     payload = event.payload_json or {}
-    prompt = payload.get("prompt")
+    # `base_prompt` is the prompt before the reference legend was prefixed;
+    # the retry's own `provider_generate` adds a fresh one, so seeding with
+    # the legend would send it twice.
+    prompt = payload.get("base_prompt") or payload.get("prompt")
     if not isinstance(prompt, str) or not prompt:
         return None
+    prompt = prompt_builder.strip_reference_legend(prompt)
     negative_prompt = payload.get("negative_prompt")
     return prompt, negative_prompt if isinstance(negative_prompt, str) else None

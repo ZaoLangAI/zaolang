@@ -33,9 +33,9 @@ export function SaveCoverAsSkillDialog({
   const [credits, setCredits] = useState(0);
   const [busy, setBusy] = useState(false);
 
-  // Reset on each open, adjusted during render rather than in an effect
-  // (same pattern as `command-palette.tsx`).
-  const [wasOpen, setWasOpen] = useState(false);
+  // Clear the form for each open during render rather than in an effect
+  // (same "adjust state during render" pattern as `promote-job-dialog.tsx`).
+  const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open) {

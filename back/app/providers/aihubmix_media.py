@@ -81,7 +81,8 @@ class NativeVideoModelProfile:
     supports_generate_audio: bool = False
     # Where the async task lands after `POST /ai/v1/videos`. MiniMax H3 and
     # `wan2.7-videoedit` poll a legacy `/ai/v1/tasks/{id}` (+ `/content`) pair
-    # confirmed live (see reference.md invariant #14). `doubao-
+    # confirmed live (see the `zaolang-agent-gateway` providers reference,
+    # AiHubMix native video profiles). `doubao-
     # seedance-2-5-260628`'s own AiHubMix schema
     # (`https://aihubmix.com/call/schema/models/doubao-seedance-2-5-260628/
     # endpoints`, checked 2026-08) instead documents `/ai/v1/videos/{id}` with
@@ -183,7 +184,8 @@ _VIDEO_ANALYSIS_INSTRUCTIONS = (
     "不要包含任何 JSON 之外的文字或 Markdown 代码块标记，字段如下：\n"
     "{\n"
     '  "summary": "对整体内容、题材与风格的一段话摘要",\n'
-    '  "composed_prompt": "可直接用于视频生成的整合提示词，需具体描述运镜、场景、主体、光线与风格",\n'
+    '  "composed_prompt": "可直接用于视频生成的整合提示词，'
+    '需具体描述运镜、场景、主体、光线与风格",\n'
     '  "style_tags": ["风格标签", "..."],\n'
     '  "pacing": "整体节奏描述，例如：快节奏剪辑 / 舒缓长镜头",\n'
     '  "shots": [\n'
@@ -1226,6 +1228,17 @@ def _flatten_content_parts(content: object) -> str:
         if isinstance(part, dict) and isinstance(part.get("text"), str):
             parts.append(part["text"])
     return "\n".join(parts)
+
+
+def image_reference_cap(model: str) -> int:
+    """Generic image references this adapter forwards for `model`, front-first:
+    gpt-image-2's `/v1/images/edits` takes one source image, Qwen edit up to
+    `_QWEN_EDIT_MAX_REFERENCES`, everything else `_MAX_INPUT_REFERENCES`."""
+    if is_gpt_image_2(model):
+        return 1
+    if _is_qwen_model(model):
+        return _QWEN_EDIT_MAX_REFERENCES
+    return _MAX_INPUT_REFERENCES
 
 
 def _image_reference_keys(request: GenerationRequest) -> list[str]:

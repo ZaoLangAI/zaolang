@@ -10,7 +10,16 @@ from sqlalchemy.orm import Session
 from app.domain.credits import service as credits_service
 from app.domain.jobs import service as jobs_service
 from app.domain.publishing import service as publishing
-from app.models import Follow, Notification, ReportCase, User, Work, WorkAppeal, WorkVersion
+from app.models import (
+    Follow,
+    Notification,
+    Profile,
+    ReportCase,
+    User,
+    Work,
+    WorkAppeal,
+    WorkVersion,
+)
 from app.models.base import new_id
 from app.models.enums import LifecycleStatus, NotificationType, Operation, QualityTier, Visibility
 from app.workers import pipeline
@@ -157,6 +166,68 @@ def test_adding_the_same_work_twice_does_not_duplicate_it(
 
     listed = client.get("/v1/collections", headers=auth_header(remixer))
     assert listed.json()["items"][0]["item_count"] == 1
+
+
+def test_you_cannot_collect_a_work_you_cannot_see(
+    client: TestClient, db: Session, work: Work, remixer: User, author: User
+) -> None:
+    work.visibility = Visibility.PRIVATE
+    db.commit()
+    created = client.post(
+        "/v1/collections",
+        json={"name": "灵感", "description": None, "is_public": False},
+        headers=auth_header(remixer),
+    )
+    collection_id = created.json()["id"]
+
+    added = client.post(
+        f"/v1/collections/{collection_id}/items",
+        params={"work_id": work.id},
+        headers=auth_header(remixer),
+    )
+    assert added.status_code == 404
+
+    listed = client.get("/v1/collections", headers=auth_header(remixer))
+    assert listed.json()["items"][0]["item_count"] == 0
+
+    # The author still sees their own private work, so they may collect it.
+    own = client.post(
+        "/v1/collections",
+        json={"name": "草稿", "description": None, "is_public": False},
+        headers=auth_header(author),
+    )
+    assert (
+        client.post(
+            f"/v1/collections/{own.json()['id']}/items",
+            params={"work_id": work.id},
+            headers=auth_header(author),
+        ).status_code
+        == 200
+    )
+
+
+def test_a_work_that_goes_private_drops_out_of_collection_covers(
+    client: TestClient, db: Session, work: Work, remixer: User
+) -> None:
+    created = client.post(
+        "/v1/collections",
+        json={"name": "灵感", "description": None, "is_public": False},
+        headers=auth_header(remixer),
+    )
+    collection_id = created.json()["id"]
+    client.post(
+        f"/v1/collections/{collection_id}/items",
+        params={"work_id": work.id},
+        headers=auth_header(remixer),
+    )
+    before = client.get("/v1/collections", headers=auth_header(remixer)).json()["items"][0]
+    assert len(before["cover_urls"]) == 1
+
+    work.visibility = Visibility.PRIVATE
+    db.commit()
+
+    after = client.get("/v1/collections", headers=auth_header(remixer)).json()["items"][0]
+    assert after["cover_urls"] == []
 
 
 def test_the_owner_can_rename_and_publish_a_collection(client: TestClient, remixer: User) -> None:
@@ -420,6 +491,25 @@ def test_the_profile_reports_follower_counts(
     assert body["viewer_following"] is True
 
 
+def test_a_private_profile_hides_its_works_from_visitors(
+    client: TestClient, db: Session, work: Work, author: User, remixer: User
+) -> None:
+    """The works list must 404 exactly like the profile page does, or a
+    private profile's public works stay enumerable by handle."""
+    profile = db.scalar(select(Profile).where(Profile.user_id == author.id))
+    assert profile is not None
+    profile.public_profile = False
+    db.commit()
+
+    assert client.get("/v1/profiles/author", headers=auth_header(remixer)).status_code == 404
+    assert client.get("/v1/profiles/author/works", headers=auth_header(remixer)).status_code == 404
+    assert client.get("/v1/profiles/author/works").status_code == 404
+
+    own = client.get("/v1/profiles/author/works", headers=auth_header(author))
+    assert own.status_code == 200
+    assert [item["id"] for item in own.json()["items"]] == [work.id]
+
+
 def test_anonymous_bookmarks_are_rejected_as_unauthenticated(client: TestClient) -> None:
     """A missing session is a 401, not a 404: the endpoint exists."""
     assert client.get("/v1/me/bookmarks").status_code == 401
@@ -486,6 +576,21 @@ def test_reporting_a_work_opens_a_case(
     assert case.reporter_user_id == remixer.id
 
 
+def test_a_report_with_an_unknown_reason_is_rejected(
+    client: TestClient, db: Session, work: Work, remixer: User
+) -> None:
+    """The admin queue groups and filters by `ReportReason`; a free-form
+    reason would land in no bucket."""
+    response = client.post(
+        "/v1/reports",
+        json={"subject_type": "work", "subject_id": work.id, "reason": "i_dont_like_it"},
+        headers=auth_header(remixer),
+    )
+    assert response.status_code == 422
+
+    assert db.scalar(select(ReportCase).where(ReportCase.subject_id == work.id)) is None
+
+
 def test_appealing_a_hidden_work_opens_a_pending_appeal(
     client: TestClient, db: Session, work: Work, author: User
 ) -> None:
@@ -520,9 +625,7 @@ def test_only_the_owner_can_appeal_a_hidden_work(
     assert response.status_code == 403
 
 
-def test_an_active_work_cannot_be_appealed(
-    client: TestClient, work: Work, author: User
-) -> None:
+def test_an_active_work_cannot_be_appealed(client: TestClient, work: Work, author: User) -> None:
     response = client.post(
         f"/v1/works/{work.id}/appeal",
         json={"reason": "作品并没有被隐藏。"},

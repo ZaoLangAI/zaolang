@@ -3304,6 +3304,66 @@
         }
       }
     },
+    "/v1/generation-jobs/quote:batch": {
+      "post": {
+        "tags": [
+          "generation"
+        ],
+        "summary": "Quote Batch",
+        "description": "A whole batch priced before anything is committed: each line through\nthe same `quote_for` a submit uses, summed — plus what the balance and\nthe user's own monthly cap still allow.",
+        "operationId": "quote_batch_v1_generation_jobs_quote_batch_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchQuoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchQuoteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/generation-jobs/models": {
       "get": {
         "tags": [
@@ -5224,6 +5284,970 @@
         }
       }
     },
+    "/v1/characters/{card_id}/looks": {
+      "post": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Create Variant",
+        "operationId": "create_character_look",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetVariantCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetVariantView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/characters/{card_id}/looks/{variant_id}": {
+      "patch": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Update Variant",
+        "operationId": "update_character_look",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "variant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Variant Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetVariantUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetVariantView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Delete Variant",
+        "operationId": "delete_character_look",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "variant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Variant Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/characters/{card_id}/looks/{variant_id}/entries": {
+      "post": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Add Entry",
+        "operationId": "add_character_look_entry",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "variant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Variant Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetEntryCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetEntryView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/characters/{card_id}/entries/{entry_id}": {
+      "patch": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Update Entry",
+        "operationId": "update_character_entry",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetEntryUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetEntryView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Delete Entry",
+        "operationId": "delete_character_entry",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/characters/{card_id}/entries/{entry_id}:anchor": {
+      "post": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Set Anchor",
+        "operationId": "set_character_anchor",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetEntryView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenes/{card_id}/variants": {
+      "post": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Create Variant",
+        "operationId": "create_scene_variant",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetVariantCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetVariantView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenes/{card_id}/variants/{variant_id}": {
+      "patch": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Update Variant",
+        "operationId": "update_scene_variant",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "variant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Variant Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetVariantUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetVariantView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Delete Variant",
+        "operationId": "delete_scene_variant",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "variant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Variant Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenes/{card_id}/variants/{variant_id}/entries": {
+      "post": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Add Entry",
+        "operationId": "add_scene_variant_entry",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "variant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Variant Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetEntryCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetEntryView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenes/{card_id}/entries/{entry_id}": {
+      "patch": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Update Entry",
+        "operationId": "update_scene_entry",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetEntryUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetEntryView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Delete Entry",
+        "operationId": "delete_scene_entry",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenes/{card_id}/entries/{entry_id}:anchor": {
+      "post": {
+        "tags": [
+          "asset-variants"
+        ],
+        "summary": "Set Anchor",
+        "operationId": "set_scene_anchor",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetEntryView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/gateway/status": {
       "get": {
         "tags": [
@@ -5640,6 +6664,205 @@
         }
       }
     },
+    "/v1/assets/{asset_id}/consents": {
+      "get": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "List Consents",
+        "description": "The caller's consent declarations for one of their own assets.",
+        "operationId": "list_consents_v1_assets__asset_id__consents_get",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConsentResponse"
+                  },
+                  "title": "Response List Consents V1 Assets  Asset Id  Consents Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Declare Consent",
+        "description": "Declares that the real person whose voice or likeness `asset_id`\ncarries consented to its use as generation input — required before a\nvoice-clone sample or a real-person reference can be submitted.",
+        "operationId": "declare_consent_v1_assets__asset_id__consents_post",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentDeclareRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/asset-consents/{consent_id}/revoke": {
+      "post": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Revoke Consent",
+        "description": "Withdraws a consent; the asset can no longer feed a new generation job.",
+        "operationId": "revoke_consent_v1_asset_consents__consent_id__revoke_post",
+        "parameters": [
+          {
+            "name": "consent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Consent Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentRevokeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/credits/balance": {
       "get": {
         "tags": [
@@ -5665,6 +6888,66 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditBalanceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/credits/spend-limit": {
+      "put": {
+        "tags": [
+          "credits"
+        ],
+        "summary": "Set Spend Limit",
+        "description": "The user's own monthly cap on generation spend (`null` removes it).",
+        "operationId": "set_spend_limit_v1_credits_spend_limit_put",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpendLimitRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11732,7 +13015,7 @@
           "canvas"
         ],
         "summary": "Confirm Canvas Agent Run",
-        "description": "Spend the credits and submit the planned jobs.",
+        "description": "Spend the credits and submit the planned jobs.\n\nThe conditional transition in `confirm_run` already stops a second confirm\nfrom reserving credits twice, but it answers that second call with an\nerror. A client retrying after a timeout needs the answer the first call\ngot instead — the credits *were* spent — so a keyed retry replays it.",
         "operationId": "confirm_canvas_agent_run_v1_canvas_agent_runs__run_id__confirm_post",
         "parameters": [
           {
@@ -11758,6 +13041,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
             }
           }
         ],
@@ -12603,6 +13902,364 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/{episode_id}/blocking/turns": {
+      "post": {
+        "tags": [
+          "blocking"
+        ],
+        "summary": "Create Blocking Turn",
+        "operationId": "create_blocking_turn_v1_scripts__episode_id__blocking_turns_post",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockingTurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/{episode_id}/blocking:rebuild": {
+      "post": {
+        "tags": [
+          "blocking"
+        ],
+        "summary": "Rebuild Blocking",
+        "description": "The first build, and the stale banner's \"rebuild from the new\nscript\". Stages from the persisted script; no chat turn is written.",
+        "operationId": "rebuild_blocking_v1_scripts__episode_id__blocking_rebuild_post",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/{episode_id}/blocking": {
+      "patch": {
+        "tags": [
+          "blocking"
+        ],
+        "summary": "Patch Blocking",
+        "operationId": "patch_blocking_v1_scripts__episode_id__blocking_patch",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockingPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockingState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/{episode_id}/blocking/settings": {
+      "patch": {
+        "tags": [
+          "blocking"
+        ],
+        "summary": "Update Blocking Settings",
+        "operationId": "update_blocking_settings_v1_scripts__episode_id__blocking_settings_patch",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockingSettingsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockingState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/{episode_id}/blocking/versions/{version_no}": {
+      "get": {
+        "tags": [
+          "blocking"
+        ],
+        "summary": "Get Blocking Version",
+        "operationId": "get_blocking_version_v1_scripts__episode_id__blocking_versions__version_no__get",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "version_no",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version No"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockingVersionResponse"
+                }
               }
             }
           },
@@ -22537,6 +24194,294 @@
         ],
         "title": "ApplyCommandsRequest"
       },
+      "AssetEntryCreateRequest": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Asset Id"
+          },
+          "entry_type": {
+            "$ref": "#/components/schemas/AssetEntryType"
+          },
+          "view": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View"
+          },
+          "expressions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "neutral",
+                    "smile",
+                    "laugh",
+                    "smirk",
+                    "restrained",
+                    "breakdown",
+                    "anger",
+                    "shock",
+                    "fear",
+                    "sad",
+                    "shy",
+                    "cold_gaze"
+                  ]
+                },
+                "type": "array",
+                "maxItems": 9
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expressions"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id",
+          "entry_type"
+        ],
+        "title": "AssetEntryCreateRequest"
+      },
+      "AssetEntryStatus": {
+        "type": "string",
+        "enum": [
+          "candidate",
+          "approved"
+        ],
+        "title": "AssetEntryStatus",
+        "description": "Candidate vs. approved (定稿). P1 writes everything as `approved`."
+      },
+      "AssetEntryType": {
+        "type": "string",
+        "enum": [
+          "identity_portrait",
+          "character_sheet",
+          "view",
+          "expression_sheet",
+          "pose",
+          "outfit_detail",
+          "prop",
+          "master",
+          "shot",
+          "other"
+        ],
+        "title": "AssetEntryType",
+        "description": "What one `SkillAssetEntry` image is for inside its look/variant."
+      },
+      "AssetEntryUpdateRequest": {
+        "properties": {
+          "variant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Id"
+          },
+          "entry_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssetEntryType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "view": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View"
+          },
+          "clear_view": {
+            "type": "boolean",
+            "title": "Clear View",
+            "default": false
+          },
+          "expressions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "neutral",
+                    "smile",
+                    "laugh",
+                    "smirk",
+                    "restrained",
+                    "breakdown",
+                    "anger",
+                    "shock",
+                    "fear",
+                    "sad",
+                    "shy",
+                    "cold_gaze"
+                  ]
+                },
+                "type": "array",
+                "maxItems": 9
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expressions"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssetEntryStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "AssetEntryUpdateRequest",
+        "description": "`view: null` is \"leave as is\"; send `clear_view` to unset it."
+      },
+      "AssetEntryView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "entry_type": {
+            "$ref": "#/components/schemas/AssetEntryType"
+          },
+          "view": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View"
+          },
+          "expressions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Expressions"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AssetEntryStatus"
+          },
+          "is_anchor": {
+            "type": "boolean",
+            "title": "Is Anchor",
+            "default": false
+          },
+          "source_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Job Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "asset_id",
+          "entry_type",
+          "status"
+        ],
+        "title": "AssetEntryView"
+      },
       "AssetResponse": {
         "properties": {
           "id": {
@@ -22611,6 +24556,11 @@
             "type": "boolean",
             "title": "Ai Generated",
             "default": false
+          },
+          "depicts_real_person": {
+            "type": "boolean",
+            "title": "Depicts Real Person",
+            "default": false
           }
         },
         "type": "object",
@@ -22622,6 +24572,153 @@
           "moderation_status"
         ],
         "title": "AssetResponse"
+      },
+      "AssetVariantCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "presets": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VariantPresets"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "AssetVariantCreateRequest"
+      },
+      "AssetVariantUpdateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "presets": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VariantPresets"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          },
+          "make_default": {
+            "type": "boolean",
+            "title": "Make Default",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "AssetVariantUpdateRequest"
+      },
+      "AssetVariantView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "presets": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Presets"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/AssetEntryView"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "is_default",
+          "sort_order"
+        ],
+        "title": "AssetVariantView"
       },
       "AsyncProviderTaskView": {
         "properties": {
@@ -22973,6 +25070,166 @@
         ],
         "title": "BackupTriggerRequest"
       },
+      "BatchQuoteItem": {
+        "properties": {
+          "operation": {
+            "$ref": "#/components/schemas/Operation"
+          },
+          "quality_tier": {
+            "$ref": "#/components/schemas/QualityTier"
+          },
+          "duration_seconds": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Duration Seconds",
+            "default": 0
+          },
+          "asset_kind": {
+            "$ref": "#/components/schemas/ImageAssetKind",
+            "default": "general"
+          },
+          "character_views": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CharacterViewAngle"
+                },
+                "type": "array",
+                "maxItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Views"
+          },
+          "scene_variants": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ScenePresetCombo"
+                },
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Variants"
+          },
+          "count": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Count",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "operation",
+          "quality_tier"
+        ],
+        "title": "BatchQuoteItem",
+        "description": "One line of a batch: `count` identical jobs."
+      },
+      "BatchQuoteLine": {
+        "properties": {
+          "unit_credits": {
+            "type": "integer",
+            "title": "Unit Credits"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "credits": {
+            "type": "integer",
+            "title": "Credits"
+          },
+          "estimated_seconds": {
+            "type": "integer",
+            "title": "Estimated Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "unit_credits",
+          "count",
+          "credits",
+          "estimated_seconds"
+        ],
+        "title": "BatchQuoteLine"
+      },
+      "BatchQuoteRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchQuoteItem"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "BatchQuoteRequest"
+      },
+      "BatchQuoteResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchQuoteLine"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total_credits": {
+            "type": "integer",
+            "title": "Total Credits"
+          },
+          "available_credits": {
+            "type": "integer",
+            "title": "Available Credits"
+          },
+          "period_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Remaining"
+          },
+          "within_spend_limit": {
+            "type": "boolean",
+            "title": "Within Spend Limit"
+          },
+          "sufficient": {
+            "type": "boolean",
+            "title": "Sufficient"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total_credits",
+          "available_credits",
+          "within_spend_limit",
+          "sufficient"
+        ],
+        "title": "BatchQuoteResponse",
+        "description": "A batch priced line by line with the same `quote_for` a submit uses\n— an exact sum, never a range (see the `zaolang-credits-billing` skill on\nbatch quotes)."
+      },
       "BindEditorExportRequest": {
         "properties": {
           "export_id": {
@@ -22990,6 +25247,846 @@
           "export_id"
         ],
         "title": "BindEditorExportRequest"
+      },
+      "BlockingAnchor": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          },
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "z": {
+            "type": "number",
+            "title": "Z"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "x",
+          "z"
+        ],
+        "title": "BlockingAnchor"
+      },
+      "BlockingBeat": {
+        "properties": {
+          "cast_id": {
+            "type": "string",
+            "title": "Cast Id"
+          },
+          "t0": {
+            "type": "number",
+            "title": "T0"
+          },
+          "t1": {
+            "type": "number",
+            "title": "T1"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "stand",
+              "sit",
+              "walk",
+              "run",
+              "turn",
+              "point",
+              "talk",
+              "wave",
+              "kneel",
+              "fall",
+              "pickup",
+              "hug",
+              "fight"
+            ],
+            "title": "Action"
+          },
+          "to": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockingMark"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "face": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockingFacing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "cast_id",
+          "t0",
+          "t1",
+          "action"
+        ],
+        "title": "BlockingBeat"
+      },
+      "BlockingCameraMove": {
+        "properties": {
+          "preset": {
+            "type": "string",
+            "enum": [
+              "static",
+              "push_in",
+              "pull_out",
+              "pan_left",
+              "pan_right",
+              "tilt_up",
+              "tilt_down",
+              "truck_left",
+              "truck_right",
+              "follow",
+              "orbit_cw",
+              "orbit_ccw",
+              "crane_up",
+              "crane_down",
+              "handheld"
+            ],
+            "title": "Preset"
+          },
+          "intensity": {
+            "type": "number",
+            "title": "Intensity"
+          },
+          "ease": {
+            "type": "string",
+            "enum": [
+              "linear",
+              "in_out"
+            ],
+            "title": "Ease"
+          }
+        },
+        "type": "object",
+        "required": [
+          "preset",
+          "intensity",
+          "ease"
+        ],
+        "title": "BlockingCameraMove"
+      },
+      "BlockingCameraOverride": {
+        "properties": {
+          "start": {
+            "$ref": "#/components/schemas/BlockingCameraPose"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockingCameraPose"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "start"
+        ],
+        "title": "BlockingCameraOverride"
+      },
+      "BlockingCameraPose": {
+        "properties": {
+          "position": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Position"
+          },
+          "target": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Target"
+          },
+          "fov": {
+            "type": "number",
+            "title": "Fov"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "target",
+          "fov"
+        ],
+        "title": "BlockingCameraPose"
+      },
+      "BlockingCastMember": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "character_ref_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Ref Id"
+          },
+          "color_index": {
+            "type": "integer",
+            "title": "Color Index"
+          },
+          "height_m": {
+            "type": "number",
+            "title": "Height M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "color_index",
+          "height_m"
+        ],
+        "title": "BlockingCastMember"
+      },
+      "BlockingDocument": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "script_hash": {
+            "type": "string",
+            "title": "Script Hash"
+          },
+          "target_duration_s": {
+            "type": "integer",
+            "title": "Target Duration S"
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "9:16",
+              "16:9",
+              "1:1"
+            ],
+            "title": "Aspect Ratio"
+          },
+          "sets": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingSet"
+            },
+            "type": "array",
+            "title": "Sets"
+          },
+          "cast": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingCastMember"
+            },
+            "type": "array",
+            "title": "Cast"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingSegment"
+            },
+            "type": "array",
+            "title": "Segments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "script_hash",
+          "target_duration_s",
+          "aspect_ratio"
+        ],
+        "title": "BlockingDocument"
+      },
+      "BlockingFacing": {
+        "properties": {
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "deg": {
+            "type": "number",
+            "title": "Deg",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "title": "BlockingFacing"
+      },
+      "BlockingMark": {
+        "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor"
+          },
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "z": {
+            "type": "number",
+            "title": "Z"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "z"
+        ],
+        "title": "BlockingMark"
+      },
+      "BlockingPatchRequest": {
+        "properties": {
+          "document": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Document"
+          },
+          "base_version_no": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Base Version No"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document",
+          "base_version_no"
+        ],
+        "title": "BlockingPatchRequest",
+        "description": "A manual 白膜 edit — the browser's whole document, re-validated by\n`app.domain.blocking.sanitize.sanitize_blocking(mode=\"manual\")`."
+      },
+      "BlockingProp": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "primitive": {
+            "type": "string",
+            "enum": [
+              "box",
+              "plane",
+              "cylinder",
+              "sphere",
+              "cone",
+              "capsule",
+              "torus",
+              "stairs"
+            ],
+            "title": "Primitive"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          },
+          "color_role": {
+            "type": "string",
+            "enum": [
+              "wall",
+              "floor",
+              "furniture",
+              "door",
+              "window",
+              "vehicle",
+              "nature",
+              "accent"
+            ],
+            "title": "Color Role"
+          },
+          "position": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Position"
+          },
+          "rotation_y_deg": {
+            "type": "number",
+            "title": "Rotation Y Deg",
+            "default": 0.0
+          },
+          "scale": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Scale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "primitive",
+          "color_role",
+          "position",
+          "scale"
+        ],
+        "title": "BlockingProp"
+      },
+      "BlockingSegment": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "heading": {
+            "type": "string",
+            "title": "Heading"
+          },
+          "set_id": {
+            "type": "string",
+            "title": "Set Id"
+          },
+          "source_hash": {
+            "type": "string",
+            "title": "Source Hash"
+          },
+          "duration_s": {
+            "type": "integer",
+            "title": "Duration S"
+          },
+          "start": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingStartEntry"
+            },
+            "type": "array",
+            "title": "Start"
+          },
+          "beats": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingBeat"
+            },
+            "type": "array",
+            "title": "Beats"
+          },
+          "shots": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingShot"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Shots"
+          },
+          "camera_override": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockingCameraOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "heading",
+          "set_id",
+          "source_hash",
+          "duration_s",
+          "shots"
+        ],
+        "title": "BlockingSegment"
+      },
+      "BlockingSet": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "heading": {
+            "type": "string",
+            "title": "Heading"
+          },
+          "ground": {
+            "type": "string",
+            "enum": [
+              "floor",
+              "street",
+              "grass",
+              "sand",
+              "water",
+              "void"
+            ],
+            "title": "Ground"
+          },
+          "width_m": {
+            "type": "number",
+            "title": "Width M"
+          },
+          "depth_m": {
+            "type": "number",
+            "title": "Depth M"
+          },
+          "props": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingProp"
+            },
+            "type": "array",
+            "title": "Props"
+          },
+          "anchors": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingAnchor"
+            },
+            "type": "array",
+            "title": "Anchors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "heading",
+          "ground",
+          "width_m",
+          "depth_m"
+        ],
+        "title": "BlockingSet"
+      },
+      "BlockingSettingsRequest": {
+        "properties": {
+          "target_duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1800.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Duration Seconds"
+          },
+          "aspect_ratio": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "9:16",
+                  "16:9",
+                  "1:1"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aspect Ratio"
+          },
+          "base_version_no": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Base Version No"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_version_no"
+        ],
+        "title": "BlockingSettingsRequest"
+      },
+      "BlockingShot": {
+        "properties": {
+          "t0": {
+            "type": "number",
+            "title": "T0",
+            "default": 0.0
+          },
+          "transition": {
+            "type": "string",
+            "enum": [
+              "cut",
+              "continuous"
+            ],
+            "title": "Transition",
+            "default": "cut"
+          },
+          "size": {
+            "type": "string",
+            "enum": [
+              "extreme_wide",
+              "wide",
+              "full",
+              "medium",
+              "medium_close",
+              "close",
+              "extreme_close"
+            ],
+            "title": "Size"
+          },
+          "lens_mm": {
+            "type": "integer",
+            "title": "Lens Mm"
+          },
+          "height": {
+            "type": "string",
+            "enum": [
+              "ground",
+              "low",
+              "eye",
+              "high",
+              "overhead"
+            ],
+            "title": "Height"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "front",
+              "left",
+              "right",
+              "back",
+              "ots_left",
+              "ots_right"
+            ],
+            "title": "Side"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
+          },
+          "over": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Over"
+          },
+          "move": {
+            "$ref": "#/components/schemas/BlockingCameraMove"
+          }
+        },
+        "type": "object",
+        "required": [
+          "size",
+          "lens_mm",
+          "height",
+          "side",
+          "move"
+        ],
+        "title": "BlockingShot"
+      },
+      "BlockingStartEntry": {
+        "properties": {
+          "cast_id": {
+            "type": "string",
+            "title": "Cast Id"
+          },
+          "at": {
+            "$ref": "#/components/schemas/BlockingMark"
+          },
+          "face": {
+            "$ref": "#/components/schemas/BlockingFacing"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "stand",
+              "sit",
+              "walk",
+              "run",
+              "turn",
+              "point",
+              "talk",
+              "wave",
+              "kneel",
+              "fall",
+              "pickup",
+              "hug",
+              "fight"
+            ],
+            "title": "Action"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cast_id",
+          "at",
+          "face",
+          "action"
+        ],
+        "title": "BlockingStartEntry"
+      },
+      "BlockingState": {
+        "properties": {
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockingDocument"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version_no": {
+            "type": "integer",
+            "title": "Version No",
+            "default": 0
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale",
+            "default": false
+          },
+          "stale_segment_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Stale Segment Keys"
+          },
+          "duration_warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Warning"
+          },
+          "target_duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Duration Seconds"
+          },
+          "default_target_duration_seconds": {
+            "type": "integer",
+            "title": "Default Target Duration Seconds",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "BlockingState"
+      },
+      "BlockingTurnRequest": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Message"
+          },
+          "current_script": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScriptDocument"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "BlockingTurnRequest"
+      },
+      "BlockingVersionResponse": {
+        "properties": {
+          "version_no": {
+            "type": "integer",
+            "title": "Version No"
+          },
+          "origin": {
+            "type": "string",
+            "title": "Origin"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          },
+          "document": {
+            "$ref": "#/components/schemas/BlockingDocument"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_no",
+          "origin",
+          "summary",
+          "document"
+        ],
+        "title": "BlockingVersionResponse"
       },
       "Body_extract_script_source_v1_scripts_extract_post": {
         "properties": {
@@ -24036,7 +27133,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "maxLength": 120,
+            "maxLength": 80,
             "minLength": 1,
             "title": "Name"
           },
@@ -24057,7 +27154,7 @@
               "type": "string"
             },
             "type": "array",
-            "maxItems": 4,
+            "maxItems": 24,
             "title": "Reference Asset Ids"
           },
           "voice_description": {
@@ -24089,6 +27186,49 @@
         },
         "type": "object",
         "title": "CharacterPublishRequest"
+      },
+      "CharacterRefSelection": {
+        "properties": {
+          "character_id": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Character Id"
+          },
+          "variant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Id"
+          },
+          "asset_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "character_id"
+        ],
+        "title": "CharacterRefSelection",
+        "description": "Which of one character's images a job should use instead of the card's\ndefault subset: a look (`variant_id` → that look's default subset, e.g.\nthe 婚礼 outfit), exact images (`asset_ids`, each one of the card's own),\nor both (the images must then belong to that look). Resolved by\n`image_assets.reference_resolver`."
       },
       "CharacterReferenceAsset": {
         "properties": {
@@ -24266,6 +27406,24 @@
             ],
             "title": "Voice Description"
           },
+          "looks": {
+            "items": {
+              "$ref": "#/components/schemas/AssetVariantView"
+            },
+            "type": "array",
+            "title": "Looks"
+          },
+          "anchor_entry_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor Entry Id"
+          },
           "status": {
             "$ref": "#/components/schemas/CreationSkillStatus",
             "default": "draft"
@@ -24295,7 +27453,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 120,
+                "maxLength": 80,
                 "minLength": 1
               },
               {
@@ -24323,7 +27481,7 @@
                   "type": "string"
                 },
                 "type": "array",
-                "maxItems": 4
+                "maxItems": 24
               },
               {
                 "type": "null"
@@ -24919,6 +28077,140 @@
         ],
         "title": "ConfigVersionView"
       },
+      "ConsentDeclareRequest": {
+        "properties": {
+          "consent_type": {
+            "type": "string",
+            "enum": [
+              "voice",
+              "portrait"
+            ],
+            "title": "Consent Type"
+          },
+          "subject_reference": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Subject Reference"
+          },
+          "evidence_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Asset Id"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "consent_type",
+          "subject_reference"
+        ],
+        "title": "ConsentDeclareRequest",
+        "description": "The uploader declares that the real person whose voice or likeness the\nasset carries consented to its use (深度合成管理规定 §14). `evidence_asset_id`\nis an optional `consent_evidence` upload an operator can verify against."
+      },
+      "ConsentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "consent_type": {
+            "type": "string",
+            "title": "Consent Type"
+          },
+          "subject_reference": {
+            "type": "string",
+            "title": "Subject Reference"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "has_evidence": {
+            "type": "boolean",
+            "title": "Has Evidence"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "asset_id",
+          "consent_type",
+          "subject_reference",
+          "status",
+          "has_evidence",
+          "created_at"
+        ],
+        "title": "ConsentResponse"
+      },
+      "ConsentRevokeRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "title": "ConsentRevokeRequest"
+      },
       "ContentDailyPoint": {
         "properties": {
           "date": {
@@ -25370,6 +28662,24 @@
               }
             ],
             "title": "Reject Reason"
+          },
+          "asset_variants": {
+            "items": {
+              "$ref": "#/components/schemas/AssetVariantView"
+            },
+            "type": "array",
+            "title": "Asset Variants"
+          },
+          "anchor_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor Asset Id"
           }
         },
         "type": "object",
@@ -25581,6 +28891,38 @@
             "type": "string",
             "title": "Currency",
             "default": "CREDIT"
+          },
+          "monthly_spend_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Spend Limit"
+          },
+          "period": {
+            "type": "string",
+            "title": "Period",
+            "default": ""
+          },
+          "period_spent": {
+            "type": "integer",
+            "title": "Period Spent",
+            "default": 0
+          },
+          "period_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Remaining"
           }
         },
         "type": "object",
@@ -28395,6 +31737,11 @@
               }
             ],
             "title": "Voices"
+          },
+          "max_outputs_per_call": {
+            "type": "integer",
+            "title": "Max Outputs Per Call",
+            "default": 1
           }
         },
         "type": "object",
@@ -28603,6 +31950,201 @@
               }
             ],
             "title": "Forced Model"
+          },
+          "character_expressions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "neutral",
+                    "smile",
+                    "laugh",
+                    "smirk",
+                    "restrained",
+                    "breakdown",
+                    "anger",
+                    "shock",
+                    "fear",
+                    "sad",
+                    "shy",
+                    "cold_gaze"
+                  ]
+                },
+                "type": "array",
+                "maxItems": 9,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Expressions"
+          },
+          "character_outfit_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Outfit Label"
+          },
+          "target_variant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Variant Id"
+          },
+          "character_ref_selection": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CharacterRefSelection"
+                },
+                "type": "array",
+                "maxItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Ref Selection"
+          },
+          "scene_ref_selection": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SceneRefSelection"
+                },
+                "type": "array",
+                "maxItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Ref Selection"
+          },
+          "scene_lighting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dawn",
+                  "day",
+                  "dusk",
+                  "night_interior",
+                  "night_exterior",
+                  "candle",
+                  "neon",
+                  "overcast"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Lighting"
+          },
+          "scene_weather": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "clear",
+                  "rain",
+                  "snow",
+                  "fog",
+                  "sandstorm"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Weather"
+          },
+          "scene_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "intact",
+                  "messy",
+                  "searched",
+                  "damage_light",
+                  "damage_medium",
+                  "damage_heavy",
+                  "ruins",
+                  "festive"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene State"
+          },
+          "scene_period": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ancient",
+                  "republic",
+                  "1980s",
+                  "1990s",
+                  "contemporary",
+                  "near_future"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Period"
+          },
+          "scene_variants": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ScenePresetCombo"
+                },
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Variants"
+          },
+          "reference_labels": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ReferenceLabel"
+                },
+                "type": "array",
+                "maxItems": 9
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Labels"
           },
           "extra": {
             "additionalProperties": true,
@@ -30694,6 +34236,11 @@
           "canvas_studio": {
             "type": "boolean",
             "title": "Canvas Studio"
+          },
+          "blocking_studio": {
+            "type": "boolean",
+            "title": "Blocking Studio",
+            "default": false
           }
         },
         "type": "object",
@@ -33843,6 +37390,114 @@
             "type": "object",
             "maxProperties": 8,
             "title": "Question Answers"
+          },
+          "character_expressions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "neutral",
+                    "smile",
+                    "laugh",
+                    "smirk",
+                    "restrained",
+                    "breakdown",
+                    "anger",
+                    "shock",
+                    "fear",
+                    "sad",
+                    "shy",
+                    "cold_gaze"
+                  ]
+                },
+                "type": "array",
+                "maxItems": 9
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Expressions"
+          },
+          "scene_lighting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dawn",
+                  "day",
+                  "dusk",
+                  "night_interior",
+                  "night_exterior",
+                  "candle",
+                  "neon",
+                  "overcast"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Lighting"
+          },
+          "scene_weather": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "clear",
+                  "rain",
+                  "snow",
+                  "fog",
+                  "sandstorm"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Weather"
+          },
+          "scene_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "intact",
+                  "messy",
+                  "searched",
+                  "damage_light",
+                  "damage_medium",
+                  "damage_heavy",
+                  "ruins",
+                  "festive"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene State"
+          },
+          "scene_period": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ancient",
+                  "republic",
+                  "1980s",
+                  "1990s",
+                  "contemporary",
+                  "near_future"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Period"
           }
         },
         "type": "object",
@@ -34525,6 +38180,22 @@
               }
             ],
             "title": "Character Views"
+          },
+          "scene_variants": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ScenePresetCombo"
+                },
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Variants"
           }
         },
         "type": "object",
@@ -34831,6 +38502,27 @@
         ],
         "title": "RedemptionRecordView"
       },
+      "ReferenceLabel": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Asset Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 60,
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id",
+          "label"
+        ],
+        "title": "ReferenceLabel",
+        "description": "What one reference image is — written by the server at submit\n(`media.service.label_references`), never trusted from a client."
+      },
       "Region": {
         "type": "string",
         "enum": [
@@ -35034,8 +38726,7 @@
             "title": "Subject Id"
           },
           "reason": {
-            "type": "string",
-            "title": "Reason"
+            "$ref": "#/components/schemas/ReportReason"
           },
           "detail": {
             "anyOf": [
@@ -35057,6 +38748,19 @@
           "reason"
         ],
         "title": "ReportCreateRequest"
+      },
+      "ReportReason": {
+        "type": "string",
+        "enum": [
+          "copyright",
+          "sexual_content",
+          "violence",
+          "hate",
+          "minor_safety",
+          "fraud",
+          "other"
+        ],
+        "title": "ReportReason"
       },
       "ReportResolveRequest": {
         "properties": {
@@ -35387,7 +39091,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "maxLength": 120,
+            "maxLength": 80,
             "minLength": 1,
             "title": "Name"
           },
@@ -35408,7 +39112,7 @@
               "type": "string"
             },
             "type": "array",
-            "maxItems": 4,
+            "maxItems": 24,
             "title": "Reference Asset Ids"
           }
         },
@@ -35417,6 +39121,135 @@
           "name"
         ],
         "title": "SceneCreateRequest"
+      },
+      "ScenePresetCombo": {
+        "properties": {
+          "lighting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dawn",
+                  "day",
+                  "dusk",
+                  "night_interior",
+                  "night_exterior",
+                  "candle",
+                  "neon",
+                  "overcast"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lighting"
+          },
+          "weather": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "clear",
+                  "rain",
+                  "snow",
+                  "fog",
+                  "sandstorm"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weather"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "intact",
+                  "messy",
+                  "searched",
+                  "damage_light",
+                  "damage_medium",
+                  "damage_heavy",
+                  "ruins",
+                  "festive"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ancient",
+                  "republic",
+                  "1980s",
+                  "1990s",
+                  "contemporary",
+                  "near_future"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          }
+        },
+        "type": "object",
+        "title": "ScenePresetCombo",
+        "description": "One image of a scene variant group (`GenerationParams.scene_variants`):\nthe preset combination that image should show."
+      },
+      "SceneRefSelection": {
+        "properties": {
+          "scene_id": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Scene Id"
+          },
+          "variant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Id"
+          },
+          "asset_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scene_id"
+        ],
+        "title": "SceneRefSelection",
+        "description": "Scene-side twin of `CharacterRefSelection`: a variant (黄昏/战损…),\nexact images, or both."
       },
       "SceneReferenceAsset": {
         "properties": {
@@ -35538,6 +39371,24 @@
             "type": "array",
             "title": "Reference Assets"
           },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/AssetVariantView"
+            },
+            "type": "array",
+            "title": "Variants"
+          },
+          "anchor_entry_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor Entry Id"
+          },
           "status": {
             "$ref": "#/components/schemas/CreationSkillStatus",
             "default": "draft"
@@ -35567,7 +39418,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 120,
+                "maxLength": 80,
                 "minLength": 1
               },
               {
@@ -35595,7 +39446,7 @@
                   "type": "string"
                 },
                 "type": "array",
-                "maxItems": 4
+                "maxItems": 24
               },
               {
                 "type": "null"
@@ -35657,6 +39508,17 @@
               }
             ],
             "title": "Character Ref Id"
+          },
+          "look_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Look Id"
           }
         },
         "type": "object",
@@ -35681,6 +39543,18 @@
               }
             ],
             "title": "Character Ref Id"
+          },
+          "look_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Look Id"
           }
         },
         "type": "object",
@@ -35793,6 +39667,16 @@
               }
             ],
             "title": "Last Error"
+          },
+          "blocking": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockingState"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "type": "string",
@@ -35949,6 +39833,17 @@
               }
             ],
             "title": "Ref Id"
+          },
+          "variant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Id"
           }
         },
         "type": "object",
@@ -35974,6 +39869,18 @@
               }
             ],
             "title": "Ref Id"
+          },
+          "variant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Id"
           }
         },
         "type": "object",
@@ -36174,6 +40081,11 @@
             "type": "string",
             "title": "Thinking",
             "default": ""
+          },
+          "origin": {
+            "type": "string",
+            "title": "Origin",
+            "default": "script"
           }
         },
         "type": "object",
@@ -36763,6 +40675,26 @@
         ],
         "title": "SkillTemplateView",
         "description": "A starting prompt the skill editor can load.\n\nLoading one only fills the form: publishing stays a separate confirmed\naction, because the published text is what decides whether content gets\nrejected or a retry spends credits."
+      },
+      "SpendLimitRequest": {
+        "properties": {
+          "monthly_spend_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Spend Limit"
+          }
+        },
+        "type": "object",
+        "title": "SpendLimitRequest",
+        "description": "`null` removes the cap."
       },
       "StorageUsageResponse": {
         "properties": {
@@ -37567,6 +41499,11 @@
             "type": "string",
             "pattern": "^(generation_reference|avatar|profile_cover|consent_evidence|learn_media|style_gallery_cover|series_logo|episode_preview|video_analysis_source|editor_source|editor_export|caption|font|voice_sample)$",
             "title": "Purpose"
+          },
+          "depicts_real_person": {
+            "type": "boolean",
+            "title": "Depicts Real Person",
+            "default": false
           }
         },
         "type": "object",
@@ -37758,6 +41695,104 @@
           "profile_keys"
         ],
         "title": "VariantBatchCreateRequest"
+      },
+      "VariantPresets": {
+        "properties": {
+          "lighting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dawn",
+                  "day",
+                  "dusk",
+                  "night_interior",
+                  "night_exterior",
+                  "candle",
+                  "neon",
+                  "overcast"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lighting"
+          },
+          "weather": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "clear",
+                  "rain",
+                  "snow",
+                  "fog",
+                  "sandstorm"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weather"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "intact",
+                  "messy",
+                  "searched",
+                  "damage_light",
+                  "damage_medium",
+                  "damage_heavy",
+                  "ruins",
+                  "festive"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ancient",
+                  "republic",
+                  "1980s",
+                  "1990s",
+                  "contemporary",
+                  "near_future"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "age_stage": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Stage"
+          }
+        },
+        "type": "object",
+        "title": "VariantPresets",
+        "description": "Scene variant presets (P0 vocabulary) or a look's `age_stage`."
       },
       "VendorCatalogView": {
         "properties": {
@@ -37993,6 +42028,18 @@
               }
             ],
             "title": "Last Frame Asset Id"
+          },
+          "reference_video_role": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "motion_guide"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Video Role"
           }
         },
         "type": "object",

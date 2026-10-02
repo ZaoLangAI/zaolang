@@ -7,13 +7,17 @@ import { useRef, useState } from 'react';
 import { VideoFirstFrame } from '@/components/media/video-first-frame';
 import type { StudioSource } from '@/components/studio/generation-studio-shell';
 import { IconButton } from '@/components/ui/button';
+import { TextInput } from '@/components/ui/field';
 import { IconClose, IconSparkle, IconUpload } from '@/components/ui/icons';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { Link } from '@/i18n/navigation';
 import type { WorkDetail } from '@/lib/api/types';
 import { cn, controlPress } from '@/lib/cn';
-import { type Asset, uploadFile } from '@/lib/upload';
+import { type Asset, declareConsent, uploadFile } from '@/lib/upload';
+
+// `SUBJECT_MAX_LENGTH` in `app/domain/consent/service.py`.
+const CONSENT_SUBJECT_MAX_LENGTH = 255;
 
 /**
  * Left rail of the studio: what the new version inherits, plus anything the
@@ -22,6 +26,13 @@ import { type Asset, uploadFile } from '@/lib/upload';
  * Inherited materials are not removable — they are the licence-bearing part of
  * the remix, and dropping them would break the attribution the lineage
  * promises.
+ *
+ * An added material that shows a real person needs that person's consent
+ * before it may feed a generation (深度合成管理规定 §14): ticking "shows a real
+ * person" asks who it is plus an explicit confirmation *before* the upload,
+ * flags the upload (`depictsRealPerson`) and records a portrait consent right
+ * after it. The confirmation resets after every upload, so each real-person
+ * asset gets its own declaration.
  */
 export function SourceMaterialRail({
   source,
@@ -58,6 +69,9 @@ export function SourceMaterialRail({
   const { notify } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [realPerson, setRealPerson] = useState(false);
+  const [consentSubject, setConsentSubject] = useState('');
+  const [consentConfirmed, setConsentConfirmed] = useState(false);
 
   const sourceMediaType = source?.work.media_type ?? source?.work.current_version?.media_type;
   const inherited = source
@@ -87,12 +101,26 @@ export function SourceMaterialRail({
     : [];
 
   const total = inherited.length + uploads.length;
+  const consentMissing = realPerson && (!consentSubject.trim() || !consentConfirmed);
 
   const pick = async (file: File | undefined) => {
     if (!file) return;
     setBusy(true);
     try {
-      onUploaded(await uploadFile(file, 'generation_reference'));
+      const asset = await uploadFile(file, 'generation_reference', {
+        depictsRealPerson: realPerson,
+      });
+      if (realPerson) {
+        try {
+          await declareConsent(asset.id, { type: 'portrait', subject: consentSubject.trim() });
+        } catch {
+          // The asset is kept; a submit using it is refused with
+          // `ASSET_RIGHTS_REQUIRED` until a consent is recorded.
+          notify(t('consentFailed'), 'error');
+        }
+        setConsentConfirmed(false);
+      }
+      onUploaded(asset);
     } catch {
       notify(tStates('error'), 'error');
     } finally {
@@ -156,7 +184,7 @@ export function SourceMaterialRail({
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              disabled={busy || uploads.length >= 9}
+              disabled={busy || uploads.length >= 9 || consentMissing}
               className={cn(
                 'flex aspect-[4/3] w-full flex-col items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-dashed border-border text-[11px] text-muted hover:border-border-strong hover:text-text disabled:opacity-60',
                 controlPress,
@@ -176,6 +204,44 @@ export function SourceMaterialRail({
           </li>
         )}
       </ul>
+
+      {hideUpload ? null : (
+        <div className="mt-3 flex flex-col gap-2">
+          <label className="flex cursor-pointer items-start gap-2 text-[11px] leading-relaxed">
+            <input
+              type="checkbox"
+              checked={realPerson}
+              onChange={(event) => setRealPerson(event.target.checked)}
+              className="mt-0.5 size-3.5 shrink-0 accent-[var(--primary)]"
+            />
+            <span>
+              {t('depictsRealPerson')}
+              <span className="block text-muted">{t('depictsRealPersonHint')}</span>
+            </span>
+          </label>
+          {realPerson ? (
+            <>
+              <TextInput
+                label={t('consentSubjectLabel')}
+                hint={t('consentSubjectHint')}
+                value={consentSubject}
+                maxLength={CONSENT_SUBJECT_MAX_LENGTH}
+                required
+                onChange={(event) => setConsentSubject(event.target.value)}
+              />
+              <label className="flex cursor-pointer items-start gap-2 text-[11px] leading-relaxed">
+                <input
+                  type="checkbox"
+                  checked={consentConfirmed}
+                  onChange={(event) => setConsentConfirmed(event.target.checked)}
+                  className="mt-0.5 size-3.5 shrink-0 accent-[var(--primary)]"
+                />
+                {t('consentConfirmPortrait')}
+              </label>
+            </>
+          ) : null}
+        </div>
+      )}
 
       {reference ? (
         <section className="mt-5 border-t border-border pt-4">

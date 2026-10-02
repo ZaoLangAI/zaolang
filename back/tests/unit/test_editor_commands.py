@@ -178,7 +178,9 @@ def test_remove_track_rejects_caption_and_overlay() -> None:
 def test_remove_track_then_re_add_succeeds_when_empty() -> None:
     document = docs.empty_document()
     document = commands.apply_batch(
-        document, [{"type": "add_track", "kind": "video", "track_id": "trk_extra"}], known_assets=set()
+        document,
+        [{"type": "add_track", "kind": "video", "track_id": "trk_extra"}],
+        known_assets=set(),
     )
     result = commands.apply_batch(
         document, [{"type": "remove_track", "track_id": "trk_extra"}], known_assets=set()
@@ -191,7 +193,9 @@ def test_remove_track_then_re_add_succeeds_when_empty() -> None:
 def test_set_track_order_changes_canonicalized_order() -> None:
     document = docs.empty_document()
     document = commands.apply_batch(
-        document, [{"type": "add_track", "kind": "video", "track_id": "trk_top"}], known_assets=set()
+        document,
+        [{"type": "add_track", "kind": "video", "track_id": "trk_top"}],
+        known_assets=set(),
     )
     document = commands.apply_batch(
         document,
@@ -206,7 +210,9 @@ def test_set_track_order_changes_canonicalized_order() -> None:
 def test_set_track_muted_toggles_flag() -> None:
     document = docs.empty_document()
     result = commands.apply_batch(
-        document, [{"type": "set_track_muted", "track_id": "trk_audio", "muted": True}], known_assets=set()
+        document,
+        [{"type": "set_track_muted", "track_id": "trk_audio", "muted": True}],
+        known_assets=set(),
     )
     track = docs.find_track(result, "trk_audio")
     assert track is not None
@@ -303,7 +309,11 @@ def test_add_effect_appends_and_rejects_unknown_type() -> None:
     document = commands.apply_batch(
         _document_with_clip(),
         [
-            {"type": "add_effect", "element_id": "el_clip", "effect": {"type": "blur", "params": {"intensity": 20}}},
+            {
+                "type": "add_effect",
+                "element_id": "el_clip",
+                "effect": {"type": "blur", "params": {"intensity": 20}},
+            },
             {
                 "type": "add_effect",
                 "element_id": "el_clip",
@@ -319,7 +329,13 @@ def test_add_effect_appends_and_rejects_unknown_type() -> None:
     with pytest.raises(BatchRolledBack):
         commands.apply_batch(
             document,
-            [{"type": "add_effect", "element_id": "el_clip", "effect": {"type": "sepia", "params": {}}}],
+            [
+                {
+                    "type": "add_effect",
+                    "element_id": "el_clip",
+                    "effect": {"type": "sepia", "params": {}},
+                }
+            ],
             known_assets=set(),
         )
 
@@ -327,7 +343,11 @@ def test_add_effect_appends_and_rejects_unknown_type() -> None:
 def test_add_effect_caps_effects_per_element() -> None:
     document = _document_with_clip()
     batch = [
-        {"type": "add_effect", "element_id": "el_clip", "effect": {"type": "brightness", "params": {"amount": 110}}}
+        {
+            "type": "add_effect",
+            "element_id": "el_clip",
+            "effect": {"type": "brightness", "params": {"amount": 110}},
+        }
         for _ in range(9)
     ]
     with pytest.raises(BatchRolledBack):
@@ -338,18 +358,30 @@ def test_remove_effect_by_index() -> None:
     document = commands.apply_batch(
         _document_with_clip(),
         [
-            {"type": "add_effect", "element_id": "el_clip", "effect": {"type": "blur", "params": {"intensity": 20}}},
-            {"type": "add_effect", "element_id": "el_clip", "effect": {"type": "contrast", "params": {"amount": 120}}},
+            {
+                "type": "add_effect",
+                "element_id": "el_clip",
+                "effect": {"type": "blur", "params": {"intensity": 20}},
+            },
+            {
+                "type": "add_effect",
+                "element_id": "el_clip",
+                "effect": {"type": "contrast", "params": {"amount": 120}},
+            },
         ],
         known_assets=set(),
     )
     document = commands.apply_batch(
-        document, [{"type": "remove_effect", "element_id": "el_clip", "effect_index": 0}], known_assets=set()
+        document,
+        [{"type": "remove_effect", "element_id": "el_clip", "effect_index": 0}],
+        known_assets=set(),
     )
     assert _clip(document)["effects"] == [{"type": "contrast", "params": {"amount": 120}}]
     with pytest.raises(BatchRolledBack):
         commands.apply_batch(
-            document, [{"type": "remove_effect", "element_id": "el_clip", "effect_index": 5}], known_assets=set()
+            document,
+            [{"type": "remove_effect", "element_id": "el_clip", "effect_index": 5}],
+            known_assets=set(),
         )
 
 
@@ -367,7 +399,14 @@ def test_update_effect_params_merges_without_dropping_keys() -> None:
     )
     document = commands.apply_batch(
         document,
-        [{"type": "update_effect_params", "element_id": "el_clip", "effect_index": 0, "params": {"intensity": 40}}],
+        [
+            {
+                "type": "update_effect_params",
+                "element_id": "el_clip",
+                "effect_index": 0,
+                "params": {"intensity": 40},
+            }
+        ],
         known_assets=set(),
     )
     assert _clip(document)["effects"][0]["params"] == {"intensity": 40, "extra": 1}
@@ -389,7 +428,9 @@ def test_set_clip_mask_sets_and_clears() -> None:
     )
     assert _clip(document)["mask"] == mask
     document = commands.apply_batch(
-        document, [{"type": "set_clip_mask", "element_id": "el_clip", "mask": None}], known_assets=set()
+        document,
+        [{"type": "set_clip_mask", "element_id": "el_clip", "mask": None}],
+        known_assets=set(),
     )
     assert _clip(document)["mask"] is None
 
@@ -424,7 +465,11 @@ def test_split_element_does_not_alias_effects_between_halves() -> None:
     document = commands.apply_batch(
         _document_with_clip(),
         [
-            {"type": "add_effect", "element_id": "el_clip", "effect": {"type": "blur", "params": {"intensity": 20}}},
+            {
+                "type": "add_effect",
+                "element_id": "el_clip",
+                "effect": {"type": "blur", "params": {"intensity": 20}},
+            },
             {"type": "split_element", "element_id": "el_clip", "at_ticks": 2 * 120_000},
         ],
         known_assets=set(),
@@ -436,7 +481,13 @@ def test_split_element_does_not_alias_effects_between_halves() -> None:
 
     document = commands.apply_batch(
         document,
-        [{"type": "add_effect", "element_id": right["id"], "effect": {"type": "grayscale", "params": {"amount": 100}}}],
+        [
+            {
+                "type": "add_effect",
+                "element_id": right["id"],
+                "effect": {"type": "grayscale", "params": {"amount": 100}},
+            }
+        ],
         known_assets=set(),
     )
     elements = document["tracks"][0]["elements"]

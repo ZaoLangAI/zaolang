@@ -34,9 +34,9 @@ RULES: dict[str, RateLimitRule] = {
     "upload_presign": RateLimitRule(limit=30, window_seconds=60),
     "editor_write": RateLimitRule(limit=60, window_seconds=60),
     "editor_export": RateLimitRule(limit=20, window_seconds=60),
-    # Each call is a real LLM turn (draft or revise), not a cheap metadata
-    # write — priced between `editor_write` and the much stricter
-    # `generation_submit`.
+    # Each call is a real LLM turn (a script draft or revise, a canvas Agent
+    # plan), not a cheap metadata write — priced between `editor_write` and
+    # the much stricter `generation_submit`.
     "script_studio_write": RateLimitRule(limit=20, window_seconds=60),
     # A real platform push per channel (upload + create_post) — heavier than
     # `authenticated_write`, lighter than `generation_submit`'s per-provider cost.
@@ -45,6 +45,11 @@ RULES: dict[str, RateLimitRule] = {
     # in the same way a login attempt is, so it gets its own strict budget
     # rather than sharing `editor_write`'s much looser one.
     "series_collab_invite": RateLimitRule(limit=10, window_seconds=300),
+    # Following notifies a stranger (and an unfollow/re-follow cycle notifies
+    # again); a report lands in the operator queue with no dedupe. Both are
+    # cheap to send and costly to receive, so neither shares
+    # `authenticated_write`'s budget.
+    "social_outreach": RateLimitRule(limit=30, window_seconds=300),
     "mcp_tool": RateLimitRule(limit=60, window_seconds=60),
     # Back office gets its own budget so consumer traffic can never starve an
     # operator during an incident.

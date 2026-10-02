@@ -1,24 +1,28 @@
-"""Upload handshake and asset access."""
+"""Upload handshake, asset access and real-person consent."""
 
 from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.api.deps import CurrentUser, DbSession, OptionalUser, rate_limited
 from app.api.schemas.common import Page
 from app.api.schemas.jobs import (
     AssetResponse,
+    ConsentDeclareRequest,
+    ConsentResponse,
+    ConsentRevokeRequest,
     ExtractFrameRequest,
     ProvenanceResponse,
     UploadCompleteRequest,
     UploadPresignRequest,
     UploadPresignResponse,
 )
+from app.domain.consent import service as consent_service
 from app.domain.errors import NotFound
 from app.domain.media import service as media_service
-from app.models import Asset
+from app.models import Asset, AssetConsent
 from app.models.enums import AssetRole, MediaType
 from app.presenters import media_urls
 
@@ -59,6 +63,7 @@ def presign(
         size_bytes=payload.size_bytes,
         checksum_sha256=payload.checksum_sha256,
         purpose=payload.purpose,
+        depicts_real_person=payload.depicts_real_person,
     )
     session.commit()
     return UploadPresignResponse(
@@ -153,6 +158,54 @@ def asset_provenance(asset_id: str, session: DbSession, viewer: OptionalUser) ->
     )
 
 
+@router.get("/assets/{asset_id}/consents", response_model=list[ConsentResponse])
+def list_consents(asset_id: str, user: CurrentUser, session: DbSession) -> list[ConsentResponse]:
+    """The caller's consent declarations for one of their own assets."""
+    consents = consent_service.list_for_asset(session, user_id=user.id, asset_id=asset_id)
+    return [_consent_response(consent) for consent in consents]
+
+
+@router.post("/assets/{asset_id}/consents", response_model=ConsentResponse, status_code=201)
+def declare_consent(
+    asset_id: str,
+    payload: ConsentDeclareRequest,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+) -> ConsentResponse:
+    """Declares that the real person whose voice or likeness `asset_id`
+    carries consented to its use as generation input — required before a
+    voice-clone sample or a real-person reference can be submitted."""
+    consent = consent_service.declare(
+        session,
+        user=user,
+        asset_id=asset_id,
+        consent_type=payload.consent_type,
+        subject_reference=payload.subject_reference,
+        evidence_asset_id=payload.evidence_asset_id,
+        expires_at=payload.expires_at,
+        request=request,
+    )
+    session.commit()
+    return _consent_response(consent)
+
+
+@router.post("/asset-consents/{consent_id}/revoke", response_model=ConsentResponse)
+def revoke_consent(
+    consent_id: str,
+    payload: ConsentRevokeRequest,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+) -> ConsentResponse:
+    """Withdraws a consent; the asset can no longer feed a new generation job."""
+    consent = consent_service.revoke(
+        session, user=user, consent_id=consent_id, reason=payload.reason, request=request
+    )
+    session.commit()
+    return _consent_response(consent)
+
+
 def _asset_response(  # type: ignore[no-untyped-def]
     session, asset: Asset, *, viewer_id: str | None, download: bool = False
 ) -> AssetResponse:
@@ -169,4 +222,19 @@ def _asset_response(  # type: ignore[no-untyped-def]
         moderation_status=asset.moderation_status,
         is_prototype=asset.is_prototype,
         ai_generated=asset.role == AssetRole.GENERATION_OUTPUT,
+        depicts_real_person=asset.depicts_real_person,
+    )
+
+
+def _consent_response(consent: AssetConsent) -> ConsentResponse:
+    return ConsentResponse(
+        id=consent.id,
+        asset_id=consent.asset_id,
+        consent_type=consent.consent_type,
+        subject_reference=consent.subject_reference,
+        status=consent.status,
+        has_evidence=consent.evidence_asset_id is not None,
+        expires_at=consent.expires_at,
+        revoked_at=consent.revoked_at,
+        created_at=consent.created_at,
     )

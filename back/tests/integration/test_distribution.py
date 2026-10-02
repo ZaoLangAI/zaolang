@@ -82,9 +82,7 @@ def test_disconnect_someone_elses_link_is_forbidden(
         db.add(link)
         db.commit()
 
-        response = client.delete(
-            f"/v1/platform-accounts/{link.id}", headers=auth_header(author)
-        )
+        response = client.delete(f"/v1/platform-accounts/{link.id}", headers=auth_header(author))
         assert response.status_code == 403
     finally:
         settings.platform_token_encryption_key = original_key

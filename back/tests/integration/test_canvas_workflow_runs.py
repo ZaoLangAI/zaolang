@@ -177,9 +177,7 @@ def test_an_unanswered_required_variable_is_refused(
     assert db.query(CanvasAgentRun).count() == 0
 
 
-def test_an_option_outside_the_authors_list_is_dropped(
-    db: Session, author: User
-) -> None:
+def test_an_option_outside_the_authors_list_is_dropped(db: Session, author: User) -> None:
     """A single-choice answer is validated against the declared options: the
     list is the author's vocabulary, and accepting anything else would turn a
     choice into a free-text injection point."""
@@ -268,9 +266,7 @@ def test_confirming_a_workflow_run_submits_through_the_ordinary_job_path(
     )
     run_id = started.json()["id"]
 
-    confirmed = client.post(
-        f"/v1/canvas-agent-runs/{run_id}/confirm", headers=auth_header(funded)
-    )
+    confirmed = client.post(f"/v1/canvas-agent-runs/{run_id}/confirm", headers=auth_header(funded))
     assert confirmed.status_code == 200, confirmed.text
     body = confirmed.json()
     assert body["origin"] == CanvasAgentRunOrigin.WORKFLOW.value

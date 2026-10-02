@@ -55,6 +55,10 @@
           "title": "文案创作工作室",
           "description": "独立于短剧工作室，可单独开放文案创作。"
         },
+        "blocking_studio_enabled": {
+          "title": "白膜预演工作台",
+          "description": "文案创作内的 3D 白膜预演与参考视频生成，需同时开启文案创作工作室。"
+        },
         "video_analysis_enabled": {
           "title": "视频解析",
           "description": "控制创作页的视频解析工具与对应提交。"
@@ -150,6 +154,10 @@
           "title": "Script studio",
           "description": "Independent of the drama studio; can ship on its own."
         },
+        "blocking_studio_enabled": {
+          "title": "Blockout studio",
+          "description": "3D blockout previs inside script writing, used as a reference video for generation. Requires the script studio."
+        },
         "video_analysis_enabled": {
           "title": "Video analysis",
           "description": "Controls the video-analysis tool on the create page and matching submissions."
@@ -244,6 +252,10 @@
         "script_studio_enabled": {
           "title": "脚本スタジオ",
           "description": "短編スタジオとは独立して、脚本制作だけを開放できます。"
+        },
+        "blocking_studio_enabled": {
+          "title": "ブロックアウトスタジオ",
+          "description": "脚本作成内の 3D ブロックアウト（プリビズ）と参照動画生成。脚本スタジオの有効化が必要です。"
         },
         "video_analysis_enabled": {
           "title": "動画解析",

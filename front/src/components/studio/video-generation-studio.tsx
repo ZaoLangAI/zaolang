@@ -61,6 +61,12 @@ import { useGenerationModels } from '@/lib/use-generation-models';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
 import { useJobStream } from '@/lib/use-job-stream';
 import { useResource } from '@/lib/use-resource';
+import {
+  ReferenceImagePicker,
+  useReferencePicks,
+} from '@/components/studio/reference-image-picker';
+import { defaultCharacterReferenceIds } from '@/lib/characters';
+import { defaultSceneReferenceIds } from '@/lib/scenes';
 
 type Operation = 'text_to_video' | 'image_to_video' | 'video_to_video';
 type ReferenceMode = 'input_references' | 'frame_images';
@@ -84,8 +90,8 @@ const VIDEO_ASSET_KINDS = [
 // here is a subset of the backend's per-model `NativeVideoModelProfile` —
 // widest is MiniMax H3's ten ratios; a narrower-profiled native model (e.g.
 // `wan2.7-videoedit`) is simply hard-filtered out of routing if a value
-// outside its own profile is submitted (see `zaolang-frontend-ui` invariant
-// #10).
+// outside its own profile is submitted (see the `zaolang-frontend-ui` skill's
+// studios reference on provider-safe video params).
 const LANDSCAPE_ASPECTS = ['16:9', '4:3', '21:9', '3:2'] as const;
 const PORTRAIT_ASPECTS = ['9:16', '3:4', '2:3', '9:21'] as const;
 // A third orientation, not a member of either bucket above: the provider
@@ -161,7 +167,8 @@ export function VideoGenerationStudio({
    * Pre-fills the asset-kind picker below — the character library's
    * "生成动作视频" button deep-links here the same way the script studio's
    * image jump-out pre-fills `ImageGenerationStudio`'s `initialAssetKind`
-   * (see `zaolang-frontend-ui` invariant #16).
+   * (see the `zaolang-frontend-ui` skill's studios reference on the jump-out
+   * convention).
    */
   initialVideoAssetKind?: VideoAssetKind;
   initialTargetCharacterId?: string;
@@ -252,6 +259,10 @@ export function VideoGenerationStudio({
   const [selectedReferenceSceneIds, setSelectedReferenceSceneIds] = useState<string[]>(
     initialReferenceSceneIds ?? [],
   );
+  // Which of each picked character's/scene's images to send (e.g. only the
+  // 婚礼 outfit) — unset means the backend's default subset.
+  const characterRefPicks = useReferencePicks();
+  const sceneRefPicks = useReferencePicks();
 
   // Inline progress/result + version history state — the same shape
   // `ImageGenerationStudio` uses. `draftId` is created on the first submit
@@ -353,15 +364,12 @@ export function VideoGenerationStudio({
     lastRememberedDisplayJobRef.current = displayJob;
     setKnownJobsById((current) => ({ ...current, [displayJob.id]: displayJob }));
   }, [displayJob]);
-  // Adjusted during render rather than in an effect (same pattern as the
-  // resumed-job handling above). Keyed on the succeeded job's id so it fires
-  // once per success and never snaps back over a version applied afterwards.
-  const succeededJobId =
-    liveJob?.status === 'succeeded' && liveJob.id === activeJobId ? liveJob.id : null;
-  const [lastSucceededJobId, setLastSucceededJobId] = useState<string | null>(null);
-  if (succeededJobId !== lastSucceededJobId) {
-    setLastSucceededJobId(succeededJobId);
-    if (succeededJobId) setAppliedJobId(succeededJobId);
+  // A job that just succeeded becomes the applied version. Adjusted during
+  // render, once per live snapshot, rather than with a setState in an effect.
+  const [autoAppliedJob, setAutoAppliedJob] = useState<GenerationJob | null>(null);
+  if (liveJob?.status === 'succeeded' && liveJob.id === activeJobId && liveJob !== autoAppliedJob) {
+    setAutoAppliedJob(liveJob);
+    setAppliedJobId(liveJob.id);
   }
 
   const cancelActiveJob = async () => {
@@ -618,6 +626,14 @@ export function VideoGenerationStudio({
       styleGalleryId: appliedStyleGalleryId ?? undefined,
       characterIds: selectedReferenceCharacterIds,
       sceneIds: selectedReferenceSceneIds,
+      assetPresets: {
+        character_ref_selection: characterRefPicks
+          .selectionFor(selectedReferenceCharacterIds)
+          .map(({ ownerId, ...pick }) => ({ character_id: ownerId, ...pick })),
+        scene_ref_selection: sceneRefPicks
+          .selectionFor(selectedReferenceSceneIds)
+          .map(({ ownerId, ...pick }) => ({ scene_id: ownerId, ...pick })),
+      },
       sourceWorkId: source?.work.id,
       maxCredits: quote?.credits,
       draftTitle: source?.work.title ?? null,
@@ -728,6 +744,15 @@ export function VideoGenerationStudio({
                       </span>
                       {character.name}
                     </label>
+                    {checked ? (
+                      <ReferenceImagePicker
+                        label={t('referencePickLabel', { name: character.name })}
+                        variants={character.looks ?? []}
+                        defaultAssetIds={defaultCharacterReferenceIds(character)}
+                        value={characterRefPicks.picks[character.id]}
+                        onChange={(pick) => characterRefPicks.set(character.id, pick)}
+                      />
+                    ) : null}
                   </li>
                 );
               })}
@@ -772,6 +797,15 @@ export function VideoGenerationStudio({
                       </span>
                       {scene.name}
                     </label>
+                    {checked ? (
+                      <ReferenceImagePicker
+                        label={t('referencePickLabel', { name: scene.name })}
+                        variants={scene.variants ?? []}
+                        defaultAssetIds={defaultSceneReferenceIds(scene)}
+                        value={sceneRefPicks.picks[scene.id]}
+                        onChange={(pick) => sceneRefPicks.set(scene.id, pick)}
+                      />
+                    ) : null}
                   </li>
                 );
               })}

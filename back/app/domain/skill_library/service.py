@@ -18,18 +18,21 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.orm import Session
 
 from app.domain.access import service as access_service
+from app.domain.asset_variants import service as asset_variants_service
 from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.domain.moderation_policy import assert_allowed, text_values
 from app.domain.moderation_queue import service as moderation_queue
 from app.domain.skill_library import catalog as skill_catalog
-from app.models import Asset, CreationSkill, ModerationQueueItem
+from app.models import Asset, CreationSkill, ModerationQueueItem, Profile, SkillAssetEntry
 from app.models.base import utcnow
 from app.models.enums import (
     IMAGE_ASSET_SKILL_CATEGORIES,
+    AssetEntryStatus,
+    AssetEntryType,
     AssetRole,
     CharacterViewAngle,
     CreationSkillCategory,
@@ -140,7 +143,7 @@ def ensure_catalog_skills(session: Session, *, owner_user_id: str) -> list[Creat
             session.flush()
             created.append(skill)
         _ensure_seeded_cover(session, skill=skill, item=item, owner_user_id=owner_user_id)
-        _ensure_seeded_reference(skill, item=item)
+        _ensure_seeded_reference(session, skill, item=item)
     return created
 
 
@@ -189,41 +192,30 @@ def _ensure_seeded_cover(
     session.flush()
 
 
-def _ensure_seeded_reference(skill: CreationSkill, *, item: skill_catalog.CatalogSkill) -> None:
-    """Puts the seeded cover onto a character/scene skill's
-    `reference_assets` once, so the plaza card and a later `@` apply share
-    the same still. A no-op when the nested list is already non-empty —
-    an operator who replaced the demo still survives `make seed`. Cover
-    assets have no nested bundle."""
+def _ensure_seeded_reference(
+    session: Session, skill: CreationSkill, *, item: skill_catalog.CatalogSkill
+) -> None:
+    """Puts the seeded cover onto a character/scene skill as its default
+    look's sheet / master plate (and the card's anchor) once, so the plaza
+    card and a later `@` apply share the same still. A no-op when the card
+    already has any image — an operator who replaced the demo still survives
+    `make seed`. Cover assets have no looks."""
     cover_id = skill.cover_asset_id
     if cover_id is None:
         return
     if item.category == CreationSkillCategory.CHARACTER:
-        nest_key = "character"
-        view = CharacterViewAngle.FRONT.value
+        entry_type, view = AssetEntryType.CHARACTER_SHEET.value, CharacterViewAngle.FRONT.value
     elif item.category == CreationSkillCategory.SCENE_ASSET:
-        nest_key = "scene"
-        view = "establishing"
+        entry_type, view = AssetEntryType.MASTER.value, None
     else:
         return
-
-    current = dict(skill.params_json or {})
-    nested = dict(current.get(nest_key) or {}) if isinstance(current.get(nest_key), dict) else {}
-    refs = nested.get("reference_assets")
-    if isinstance(refs, list) and refs:
+    if asset_variants_service.entries(skill):
         return
-    nested = {
-        **nested,
-        "reference_assets": [
-            {
-                "asset_id": cover_id,
-                "view": view,
-                "label": None,
-                "created_at": utcnow().isoformat(),
-            }
-        ],
-    }
-    skill.params_json = {**current, nest_key: nested}
+    default = asset_variants_service.ensure_default(session, skill)
+    entry = asset_variants_service.add_entry(
+        session, skill, default, asset_id=cover_id, entry_type=entry_type, view=view
+    )
+    asset_variants_service.set_anchor(session, skill, entry)
 
 
 def update(
@@ -250,12 +242,24 @@ def update(
     skill.applicable_operations_json = _deduped_operations(applicable_operations)
     skill.cover_asset_id = cover_asset_id
 
-    # 已公开或正在审核的技能一旦改动内容，视为撤回分享——必须重新走 publish()。
-    if skill.status != CreationSkillStatus.DRAFT:
-        _unpublish(skill)
-
+    withdraw_after_edit(session, skill)
     session.flush()
     return skill
+
+
+def withdraw_after_edit(session: Session, skill: CreationSkill) -> None:
+    """A content edit on a shared or in-review skill withdraws it to a private
+    `DRAFT` — the owner has to `publish()` again.
+
+    Shared by `update()` and the character/scene adapters. The open queue item
+    closes too: otherwise it lingers in the review queue for a skill that is
+    no longer `PENDING_REVIEW`, and a reviewer approving it hits `approve()`'s
+    409.
+    """
+    if skill.status == CreationSkillStatus.DRAFT:
+        return
+    _unpublish(skill)
+    _resolve_open_queue_item(session, skill)
 
 
 def update_pricing(
@@ -293,7 +297,13 @@ def publish(session: Session, *, skill: CreationSkill, actor_user_id: str) -> Cr
     assert_allowed(
         session,
         config_key="skill_moderation",
-        texts=[skill.title, skill.description, *text_values(skill.params_json)],
+        texts=[
+            skill.title,
+            skill.description,
+            *text_values(skill.params_json),
+            # Look/variant names and image labels live in their own tables.
+            *asset_variants_service.moderation_texts(skill),
+        ],
         user_id=actor_user_id,
         subject_type="skill",
     )
@@ -353,25 +363,40 @@ def viewer_has_access(session: Session, skill: CreationSkill, viewer_id: str | N
 def asset_is_usable_skill_reference(
     session: Session, *, asset: Asset, viewer_id: str | None
 ) -> bool:
-    """A published marketplace skill's public cover may be sent as a
-    generation reference by anyone who can use that skill — the still is
-    already `PUBLIC_VIEW_ONLY`, and attaching it is how an image-asset
-    recipe becomes an img2img reference without cloning the row into the
-    viewer's own roster."""
-    if asset.media_type != MediaType.IMAGE:
+    """A published marketplace skill's images may be sent as a generation
+    reference by anyone who can use that skill (owner, free, or unlocked):
+
+    - its public cover — already `PUBLIC_VIEW_ONLY`; attaching it is how an
+      image-asset recipe becomes an img2img reference without cloning the row
+      into the viewer's own roster;
+    - an approved image filed on one of a character/scene card's looks — the
+      look/variant is what the buyer unlocked. The asset itself stays
+      private: only the provider ever receives a signed URL for it.
+    """
+    if asset.media_type == MediaType.IMAGE and asset.visibility != Visibility.PRIVATE:
+        skill = session.scalar(
+            select(CreationSkill).where(
+                CreationSkill.cover_asset_id == asset.id,
+                CreationSkill.status == CreationSkillStatus.PUBLISHED,
+                CreationSkill.visibility == CreationSkillVisibility.PUBLIC,
+            )
+        )
+        if skill is not None and viewer_has_access(session, skill, viewer_id):
+            return True
+    if asset.media_type not in (MediaType.IMAGE, MediaType.VIDEO):
         return False
-    if asset.visibility == Visibility.PRIVATE:
-        return False
-    skill = session.scalar(
-        select(CreationSkill).where(
-            CreationSkill.cover_asset_id == asset.id,
+    cards = session.scalars(
+        select(CreationSkill)
+        .join(SkillAssetEntry, SkillAssetEntry.skill_id == CreationSkill.id)
+        .where(
+            SkillAssetEntry.asset_id == asset.id,
+            SkillAssetEntry.status == AssetEntryStatus.APPROVED,
             CreationSkill.status == CreationSkillStatus.PUBLISHED,
             CreationSkill.visibility == CreationSkillVisibility.PUBLIC,
         )
+        .distinct()
     )
-    if skill is None:
-        return False
-    return viewer_has_access(session, skill, viewer_id)
+    return any(viewer_has_access(session, card, viewer_id) for card in cards)
 
 
 def assert_unlocked_for_use(session: Session, skill: CreationSkill, viewer_id: str | None) -> None:
@@ -546,7 +571,8 @@ def _reopen_queue_item(session: Session, skill: CreationSkill) -> None:
 
 
 def _resolve_open_queue_item(session: Session, skill: CreationSkill) -> None:
-    """Owner-initiated withdrawal closes a queue item still awaiting review."""
+    """Owner-initiated withdrawal (explicit or by editing) closes a queue item
+    still awaiting review."""
     item = _queue_item_for(session, skill)
     if item is not None and item.status == ModerationStatus.NEEDS_REVIEW:
         item.status = ModerationStatus.REJECTED
@@ -588,6 +614,24 @@ _FORMAT_SKILL_TITLES_BY_DIMENSION: dict[str, frozenset[str]] = {
 }
 
 MAX_AUTO_APPLIED_FORMAT_SKILLS = 2
+
+
+def _planted_catalog_rows() -> tuple[ColumnElement[bool], ...]:
+    """Narrows a title match to rows `ensure_catalog_skills` planted.
+
+    The auto-matchers below skip `assert_unlocked_for_use`/`record_usage`,
+    which is only defensible for the free, platform-owned catalogue. A title
+    alone is not an identity — any user can publish a skill under a catalogue
+    title, and a paid one would then be applied for free — so the owner has to
+    be the catalogue account too. `access_credits == 0` keeps that true even if
+    an operator later prices a planted row.
+    """
+    return (
+        CreationSkill.owner_user_id.in_(
+            select(Profile.user_id).where(Profile.handle == skill_catalog.CATALOG_OWNER_HANDLE)
+        ),
+        CreationSkill.access_credits == 0,
+    )
 
 
 def apply_matching_format_skills(
@@ -640,6 +684,7 @@ def apply_matching_format_skills(
                 CreationSkill.status == CreationSkillStatus.PUBLISHED,
                 CreationSkill.visibility == CreationSkillVisibility.PUBLIC,
                 CreationSkill.title.in_(candidate_titles),
+                *_planted_catalog_rows(),
             )
         )
     }
@@ -681,9 +726,7 @@ def apply_matching_format_skills(
 # because the catalogue is free, public and factory-owned. A user-authored
 # paid `drama` skill must not be handed to an agent behind its author's back.
 _CATALOG_DRAMA_TITLES: frozenset[str] = frozenset(
-    item.title
-    for item in skill_catalog.CATALOG
-    if item.category == CreationSkillCategory.DRAMA
+    item.title for item in skill_catalog.CATALOG if item.category == CreationSkillCategory.DRAMA
 )
 
 
@@ -701,6 +744,7 @@ def list_drama_candidates(session: Session) -> list[tuple[str, str]]:
             CreationSkill.status == CreationSkillStatus.PUBLISHED,
             CreationSkill.visibility == CreationSkillVisibility.PUBLIC,
             CreationSkill.title.in_(_CATALOG_DRAMA_TITLES),
+            *_planted_catalog_rows(),
         )
     )
     return sorted(((row.id, row.title) for row in rows), key=lambda pair: pair[1])

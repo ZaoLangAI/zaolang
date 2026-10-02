@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import asdict
 from typing import Any
@@ -25,9 +25,16 @@ from app.domain.characters import service as characters_service
 from app.domain.costs import service as costs_service
 from app.domain.credits.pricing import settlement_credits
 from app.domain.errors import NotFound, ValidationFailed
+from app.domain.image_assets import prompt_builder
+from app.domain.image_assets.vocabulary import (
+    EXPRESSION_PRESETS,
+    scene_preset_label,
+    scene_presets_from,
+)
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
 from app.domain.jobs.cancellation import honor_user_cancel
+from app.domain.media import reference_roles
 from app.domain.media import service as media_service
 from app.domain.moderation_queue import service as moderation_queue
 from app.domain.scenes import service as scenes_service
@@ -238,7 +245,7 @@ def publish_thinking(ctx: WorkflowContext, text: str) -> None:
 
 
 @contextmanager
-def _live_thinking(ctx: WorkflowContext):
+def _live_thinking(ctx: WorkflowContext) -> Iterator[None]:
     def on_chunk(chunk: StreamChunk) -> None:
         if chunk.kind == "thinking" and chunk.text:
             publish_thinking(ctx, chunk.text)
@@ -493,103 +500,32 @@ def execute_intent_router(ctx: WorkflowContext, config: IntentRouterConfig) -> N
 
 ASSET_PLAN_STATE_KEY = "asset_plan"
 ASSET_OUTPUTS_STATE_KEY = "asset_outputs"
+# Which `scene_variants` entry the current pass of a scene variant set is
+# producing (0-based); advanced by `execute_asset_output_advance`.
+SCENE_VARIANT_STATE_KEY = "_current_scene_variant"
 _ORIGINAL_PROMPT_STATE_KEY = "_asset_plan_original_prompt"
 _ORIGINAL_NEGATIVE_PROMPT_STATE_KEY = "_asset_plan_original_negative_prompt"
 
-# The intent fed to `planner.plan_asset` for a side/back completion pass —
-# deliberately *not* whatever free-text prompt the caller sent (a character's
-# own description or name, in every one of the three callers that submit
-# this job shape: `character-library.tsx`, `image-generation-studio.tsx`,
-# and iOS's `StudioViewModel.completeViews`). The front reference image is
-# already forwarded unchanged into every loop pass via `reference_asset_ids`
-# (see `execute_provider_generate`'s `media_service.provider_references_for`
-# call) — the *only* thing this instruction needs to do is tell the model to
-# use that image as material, so it never competes with a caller's own
-# (possibly inconsistent, possibly irrelevant) description text.
-#
-# Keyed per view rather than one shared "侧面/背面" string: a real job's
-# `job_events` payload showed that ambiguous slash sitting verbatim at the
-# start of *both* the side pass's and the back pass's final prompt (still
-# "生成侧面/背面图" even on the pass that only wanted "back") — exactly the
-# kind of phrasing that nudges an image model toward producing both angles
-# in one image instead of the one this specific pass asked for.
-_CHARACTER_COMPLETION_FIXED_PROMPTS: dict[str, str] = {
-    CharacterViewAngle.SIDE.value: "参考本图生成侧面图",
-    CharacterViewAngle.BACK.value: "参考本图生成背面图",
-}
-
-# Guaranteed regardless of what the planner's own `negative_prompt_
-# suggestions` come up with (see `execute_asset_planning`) — a real side/
-# back completion job's actual output came back as a multi-panel character
-# turnaround sheet (sometimes literally labelled "FRONT VIEW"/"SIDE
-# VIEW"/"BACK VIEW"), the model's apparent default association for this
-# kind of "consistent with the other views" phrasing when it has no real
-# reference photo to anchor on (see `Settings.embed_reference_images_as_
-# base64` for the reference-reachability half of that fix). This is
-# defense-in-depth on top of that fix, not a replacement for it.
+# The fixed character/scene prompt fragments live in
+# `app.domain.image_assets.prompt_builder` now; these aliases keep the names
+# older callers and tests import from here.
+_CHARACTER_COMPLETION_FIXED_PROMPTS = prompt_builder.CHARACTER_COMPLETION_FIXED_PROMPTS
 _CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT = (
-    "多视角拼接图、对比图、分格或并排画面、同一画面出现两个以上角度、画面中出现视角文字标注"
-    "（如FRONT VIEW/SIDE VIEW/BACK VIEW）"
+    prompt_builder.CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT
 )
-
-# Appended on a CHARACTER `front` pass (the library / script-studio sheet
-# job). Must not replace the caller's identity prompt — unlike the side/back
-# override above — and must not run on a completion pass, where the
-# anti-collage negative is still in force.
-_CHARACTER_SHEET_LAYOUT_SUFFIX = (
-    "输出必须是一张专业角色设定图（单张画面，不要拆成多张）："
-    "左侧从左到右全身三视图（正面、侧面、背面），纯白背景、全身站姿、不裁切头脚；"
-    "右侧为面部多角度特写、服装面料与配饰细节、标准化色板；"
-    "各分区为同一人物，严格保持五官、发型、服装与气质，禁止改设定、禁止额外角色或故事场景。"
-)
-
-# Visual-medium lock for a CHARACTER `front` pass. Script traits are supposed
-# to lead with one shared medium; older scripts and free-typed library prompts
-# often omit it, and the image model then picks photoreal for one cast member
-# and anime for the next. Completion (side/back) follows the front reference
-# and must not invent a medium of its own.
-_CHARACTER_PHOTOREAL_MEDIUM = "真人写实影视短剧造型"
-_CHARACTER_PHOTOREAL_NEGATIVE = "动漫、二次元、卡通、anime、illustration"
-_CHARACTER_ANIME_NEGATIVE = "真人照片、摄影棚写实"
-_PHOTOREAL_MEDIUM_MARKERS = ("真人", "写实", "影视", "photoreal")
-_ANIME_MEDIUM_MARKERS = ("动漫", "二次元", "anime", "插画")
-
-
-def _merge_negative(base: str | None, addition: str) -> str:
-    return f"{base}，{addition}" if base else addition
-
-
-def _character_prompt_medium(text: str) -> str | None:
-    """`'anime'` / `'photoreal'` / `None` when the prompt names no medium."""
-    lowered = (text or "").lower()
-    if any(marker.lower() in lowered for marker in _ANIME_MEDIUM_MARKERS):
-        return "anime"
-    if any(marker.lower() in lowered for marker in _PHOTOREAL_MEDIUM_MARKERS):
-        return "photoreal"
-    return None
+_CHARACTER_SHEET_LAYOUT_SUFFIX = prompt_builder.CHARACTER_SHEET_LAYOUT_SUFFIX
+_CHARACTER_PHOTOREAL_MEDIUM = prompt_builder.CHARACTER_PHOTOREAL_MEDIUM
+_CHARACTER_PHOTOREAL_NEGATIVE = prompt_builder.CHARACTER_PHOTOREAL_NEGATIVE
+_CHARACTER_ANIME_NEGATIVE = prompt_builder.CHARACTER_ANIME_NEGATIVE
+_merge_negative = prompt_builder.merge_negative
 
 
 def _apply_character_visual_medium(ctx: WorkflowContext) -> None:
-    """Locks a character front pass to one visual medium.
-
-    No named medium → default photoreal live-action and reject anime.
-    Anime already named → keep it and reject photoreal. Photoreal already
-    named → keep it and reject anime. Never rewrite an explicit medium.
-    """
-    medium = _character_prompt_medium(ctx.prompt)
-    if medium is None:
-        ctx.prompt = (
-            f"{ctx.prompt}。{_CHARACTER_PHOTOREAL_MEDIUM}"
-            if ctx.prompt
-            else _CHARACTER_PHOTOREAL_MEDIUM
-        )
-        medium = "photoreal"
-    negative = (
-        _CHARACTER_ANIME_NEGATIVE if medium == "anime" else _CHARACTER_PHOTOREAL_NEGATIVE
+    """Locks a character pass to one visual medium — see
+    `prompt_builder.apply_visual_medium`."""
+    ctx.prompt, ctx.params["negative_prompt"] = prompt_builder.apply_visual_medium(
+        ctx.prompt, ctx.params.get("negative_prompt")
     )
-    existing = ctx.params.get("negative_prompt")
-    if negative not in (existing or ""):
-        ctx.params["negative_prompt"] = _merge_negative(existing, negative)
 
 
 def _current_character_view(ctx: WorkflowContext) -> str:
@@ -610,31 +546,84 @@ def _current_character_view(ctx: WorkflowContext) -> str:
     return CharacterViewAngle.FRONT.value
 
 
-def _scale_for_character_views(ctx: WorkflowContext, progress: int) -> int:
-    """Rescales a node's fixed progress constant for a multi-view `CHARACTER`
-    job, so the overall bar climbs once per produced view instead of
-    restarting from the same per-node constant on every loop-back through
-    `asset_planning` (see `execute_asset_output_advance`).
+def _start_next_asset_pass(ctx: WorkflowContext) -> None:
+    """Gives a multi-view job's next pass a fresh routing budget.
 
-    A no-op for every job that isn't `asset_kind=CHARACTER` with more than
-    one `character_views` entry — every other job's progress numbers are
-    unchanged. Safe to apply to *every* emitted event unconditionally
-    (including `queued`/`safety`, which only ever fire once before the loop
-    even starts, and the terminal `succeeded`/`failed` events, whose raw
-    stored value doesn't matter since `progress_for` and the frontend both
-    already force 100 for a terminal status regardless of what's stored).
+    Each view is its own generation: the previous view already succeeded,
+    so neither its spent `route_attempts` nor the providers it excluded
+    along the way (`tried_providers`, plus the stale `failure_code` that
+    `execute_route_score` reads to grow that set) say anything about this
+    one. `attempt_seq` is deliberately *not* reset — it keeps numbering
+    output object keys uniquely across the whole job.
     """
-    if ctx.params.get("asset_kind") != ImageAssetKind.CHARACTER.value:
+    ctx.state["route_attempts"] = 0
+    ctx.state["tried_providers"] = set()
+    ctx.state.pop("failure_code", None)
+    ctx.state.pop("decision", None)
+
+
+def _scale_for_character_views(ctx: WorkflowContext, progress: int) -> int:
+    """Rescales a node's fixed progress constant for a multi-pass asset job
+    (several `character_views`, or a scene variant set), so the overall bar
+    climbs once per produced image instead of restarting from the same
+    per-node constant on every loop-back through `asset_planning` (see
+    `execute_asset_output_advance`).
+
+    A no-op for every single-pass job. Safe to apply to *every* emitted
+    event unconditionally (including `queued`/`safety`, which only ever fire
+    once before the loop even starts, and the terminal `succeeded`/`failed`
+    events, whose raw stored value doesn't matter since `progress_for` and
+    the frontend both already force 100 for a terminal status).
+    """
+    passes, index = _pass_position(ctx)
+    if passes <= 1:
         return progress
-    raw_views = ctx.params.get("character_views")
-    views = [str(v) for v in raw_views] if isinstance(raw_views, list) and raw_views else []
-    if len(views) <= 1:
-        return progress
-    try:
-        view_index = views.index(_current_character_view(ctx))
-    except ValueError:
-        view_index = 0
-    return round((view_index * 100 + progress) / len(views))
+    return round((index * 100 + progress) / passes)
+
+
+def _pass_position(ctx: WorkflowContext) -> tuple[int, int]:
+    """`(total passes, current 0-based pass)` of a looping asset job."""
+    kind = ctx.params.get("asset_kind")
+    if kind == ImageAssetKind.CHARACTER.value:
+        raw_views = ctx.params.get("character_views")
+        views = [str(v) for v in raw_views] if isinstance(raw_views, list) and raw_views else []
+        try:
+            index = views.index(_current_character_view(ctx))
+        except ValueError:
+            index = 0
+        return len(views), index
+    if kind == ImageAssetKind.SCENE.value:
+        return len(_scene_variants(ctx)), _current_scene_variant(ctx)
+    return 1, 0
+
+
+def _scene_variants(ctx: WorkflowContext) -> list[dict[str, str]]:
+    """A scene variant set's combos (`GenerationParams.scene_variants`), each
+    produced by its own pass; empty for any other job."""
+    if ctx.params.get("asset_kind") != ImageAssetKind.SCENE.value:
+        return []
+    raw = ctx.params.get("scene_variants")
+    if not isinstance(raw, list) or len(raw) < 2:
+        return []
+    return [scene_presets_from(item) for item in raw if isinstance(item, dict)]
+
+
+def _current_scene_variant(ctx: WorkflowContext) -> int:
+    return int(ctx.state.get(SCENE_VARIANT_STATE_KEY) or 0)
+
+
+def _pass_params(ctx: WorkflowContext) -> dict[str, Any]:
+    """`ctx.params` as this pass should see them: a scene variant set's
+    current combo becomes the single-image `scene_*` presets."""
+    variants = _scene_variants(ctx)
+    if not variants:
+        return ctx.params
+    combo = variants[min(_current_scene_variant(ctx), len(variants) - 1)]
+    params = {key: value for key, value in ctx.params.items() if key != "scene_variants"}
+    for axis in ("lighting", "weather", "state", "period"):
+        params[f"scene_{axis}"] = combo.get(axis)
+    params["current_scene_variant"] = scene_preset_label(combo)
+    return params
 
 
 def _asset_axis(ctx: WorkflowContext) -> tuple[str, str] | None:
@@ -670,27 +659,26 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
     on every entry first, so the second/third pass enhances that, not
     whatever the previous view's pass already appended to it.
 
-    For a `CHARACTER` pass whose `character_view` is `side`/`back`, that
-    reset prompt is then immediately overridden with the matching entry of
-    `_CHARACTER_COMPLETION_FIXED_PROMPTS` — a "补全侧面/背面" completion job
-    must be driven by the attached front reference image, not by whatever
-    free-text prompt the caller happened to send, so this is a hard
-    backend-side override rather than a convention callers are trusted to
-    follow. The `front` pass (including a plain single-view job) keeps the
-    caller's identity prompt and appends `_CHARACTER_SHEET_LAYOUT_SUFFIX`
-    so the model is required to emit one multi-panel sheet rather than a
-    single full-body still. A front pass with no named visual medium also
-    gets `_CHARACTER_PHOTOREAL_MEDIUM` (and the opposite-medium negative);
-    an already-named anime/photoreal medium is kept.
-    `ctx.params["negative_prompt"]` gets the same
-    reset-then-override treatment (via `_ORIGINAL_NEGATIVE_PROMPT_STATE_KEY`)
-    so pass 2 of a multi-view job doesn't inherit pass 1's view-specific
-    negative text either.
+    The reset prompt is then composed by `prompt_builder.compose` for this
+    pass (`prompt_builder.resolve_pass`): a side/back completion is
+    hard-overridden by a fixed reference-driven instruction; a sheet keeps
+    the caller's identity text, gains the sheet layout (and a 换装 prefix
+    for a named outfit with a reference) plus the medium lock; a composite
+    expression image gets the grid layout instead of the sheet; a scene
+    gets its lighting/weather/state/period fragments (prefixed by the
+    master-plate lock when a reference exists) or, for a variant group,
+    one line per image. `ctx.params["negative_prompt"]` gets the same
+    reset-then-compose treatment (via `_ORIGINAL_NEGATIVE_PROMPT_STATE_KEY`)
+    so a later pass never inherits the previous one's text. The planner's
+    additions are filtered by `prompt_builder.sanitize_enhancements`.
     """
     axis = _asset_axis(ctx)
     if axis is None:
         return NodeResult(port="ok")
     media_axis, asset_kind = axis
+
+    if ctx.state.get(ASSET_OUTPUTS_STATE_KEY):
+        _start_next_asset_pass(ctx)
 
     if _ORIGINAL_PROMPT_STATE_KEY not in ctx.state:
         ctx.state[_ORIGINAL_PROMPT_STATE_KEY] = ctx.prompt
@@ -701,22 +689,22 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
 
     is_character = media_axis == "image" and asset_kind == ImageAssetKind.CHARACTER.value
     character_view = _current_character_view(ctx) if is_character else None
-    is_completion_pass = (
-        is_character and character_view in _CHARACTER_COMPLETION_FIXED_PROMPTS
+    pass_params = _pass_params(ctx)
+    asset_pass = (
+        prompt_builder.resolve_pass(
+            pass_params, asset_kind=asset_kind, character_view=character_view
+        )
+        if media_axis == "image"
+        else prompt_builder.AssetPass.OTHER
     )
-    if is_completion_pass and character_view:
-        ctx.prompt = _CHARACTER_COMPLETION_FIXED_PROMPTS[character_view]
-        ctx.params["negative_prompt"] = _merge_negative(
-            ctx.params.get("negative_prompt"), _CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT
-        )
-    elif is_character and _CHARACTER_SHEET_LAYOUT_SUFFIX not in ctx.prompt:
-        ctx.prompt = (
-            f"{ctx.prompt}。{_CHARACTER_SHEET_LAYOUT_SUFFIX}"
-            if ctx.prompt
-            else _CHARACTER_SHEET_LAYOUT_SUFFIX
-        )
-    if is_character and not is_completion_pass:
-        _apply_character_visual_medium(ctx)
+    ctx.prompt, ctx.params["negative_prompt"] = prompt_builder.compose(
+        asset_pass,
+        prompt=ctx.prompt,
+        negative=ctx.params.get("negative_prompt"),
+        params=pass_params,
+        character_view=character_view,
+        has_reference=bool(ctx.params.get("reference_asset_ids")),
+    )
 
     if media_axis == "video":
         _emit(ctx, JobEventType.PLANNING, JobStatus.QUEUED, "正在规划视频资产生成方案", 16)
@@ -740,9 +728,10 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
                 intent=ctx.prompt,
                 asset_kind=asset_kind,
                 character_view=character_view,
+                asset_pass=asset_pass.value,
                 target_character_id=ctx.params.get("target_character_id"),
                 target_scene_id=ctx.params.get("target_scene_id"),
-                source_params=ctx.params,
+                source_params=pass_params,
                 job_id=ctx.agent_job_id,
                 user_id=ctx.job.user_id,
                 agent_id=config.agent_id,
@@ -752,7 +741,8 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
 
     enhancements = outcome.data.get("prompt_enhancements")
     if isinstance(enhancements, list) and enhancements:
-        addition = "，".join(str(item) for item in enhancements if item)
+        kept = prompt_builder.sanitize_enhancements(asset_pass, enhancements, params=pass_params)
+        addition = "，".join(kept)
         if addition and addition not in ctx.prompt:
             ctx.prompt = f"{ctx.prompt}，{addition}" if ctx.prompt else addition
     negative_suggestions = outcome.data.get("negative_prompt_suggestions")
@@ -783,12 +773,32 @@ def execute_asset_output_advance(
     """
     axis = _asset_axis(ctx)
     asset_kind = axis[1] if axis else None
-    outputs: list[dict[str, str]] = ctx.state.setdefault(ASSET_OUTPUTS_STATE_KEY, [])
+    outputs: list[dict[str, Any]] = ctx.state.setdefault(ASSET_OUTPUTS_STATE_KEY, [])
     asset_id = ctx.state.get("asset_id")
     is_character = (
         axis is not None and axis[0] == "image" and asset_kind == ImageAssetKind.CHARACTER.value
     )
     view = _current_character_view(ctx) if is_character else str(asset_kind or "")
+    variants = _scene_variants(ctx)
+    if variants:
+        index = _current_scene_variant(ctx)
+        if asset_id:
+            combo = variants[min(index, len(variants) - 1)]
+            outputs.append(
+                {
+                    "asset_id": str(asset_id),
+                    "view": view,
+                    "label": scene_preset_label(combo),
+                    "presets": combo,
+                }
+            )
+        if index + 1 >= len(variants):
+            return NodeResult(port="done")
+        ctx.state[SCENE_VARIANT_STATE_KEY] = index + 1
+        return NodeResult(
+            port="next",
+            summary=f"继续生成第 {index + 2}/{len(variants)} 张场景变体",
+        )
     if asset_id:
         outputs.append({"asset_id": str(asset_id), "view": view})
 
@@ -878,15 +888,37 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
             # the output stays a plain generated asset.
         elif asset_kind == ImageAssetKind.CHARACTER.value:
             target_id = ctx.params.get("target_character_id")
+            expressions = ctx.params.get("character_expressions")
             for entry in outputs:
-                target_id = _link_character_output(
-                    ctx,
-                    config,
-                    asset_id=str(entry.get("asset_id")),
-                    view=str(entry.get("view") or CharacterViewAngle.FRONT.value),
-                    subject_name=subject_name,
-                    target_id=target_id,
-                )
+                # One output failing to attach must not drop the others; the
+                # savepoint keeps a failed SQL statement from poisoning the
+                # job's own transaction.
+                try:
+                    with ctx.session.begin_nested():
+                        target_id = _link_character_output(
+                            ctx,
+                            config,
+                            asset_id=str(entry.get("asset_id")),
+                            # A composite expression image is a free-form extra,
+                            # never a front/side/back sheet view it could replace.
+                            view=CharacterViewAngle.GENERAL.value
+                            if expressions
+                            else str(entry.get("view") or CharacterViewAngle.FRONT.value),
+                            label=_character_output_label(ctx.params),
+                            subject_name=subject_name,
+                            target_id=target_id,
+                            filing={
+                                "variant_id": ctx.params.get("target_variant_id"),
+                                "expressions": list(expressions) if expressions else None,
+                                "source_job_id": ctx.job.id,
+                            },
+                        )
+                except Exception:
+                    logger.exception(
+                        "job %s could not attach character output %s",
+                        ctx.job.id,
+                        entry.get("asset_id"),
+                    )
             # Recorded on the job row (not just `ctx.state`) so it survives
             # into `GenerationJobResponse` — the script studio's "返回文案
             # 创作" jump-back reads this to know which card to auto-relink.
@@ -903,14 +935,30 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
         elif asset_kind == ImageAssetKind.SCENE.value:
             target_id = ctx.params.get("target_scene_id")
             for entry in outputs:
-                target_id = _link_scene_output(
-                    ctx,
-                    config,
-                    asset_id=str(entry.get("asset_id")),
-                    view=str(entry.get("view") or ""),
-                    subject_name=subject_name,
-                    target_id=target_id,
-                )
+                try:
+                    with ctx.session.begin_nested():
+                        target_id = _link_scene_output(
+                            ctx,
+                            config,
+                            asset_id=str(entry.get("asset_id")),
+                            view=str(entry.get("view") or ""),
+                            label=_scene_output_label(ctx.params, entry),
+                            subject_name=subject_name,
+                            target_id=target_id,
+                            filing={
+                                "variant_id": ctx.params.get("target_variant_id"),
+                                # A variant set's pass recorded its own combo;
+                                # a single image uses the job's presets.
+                                "presets": entry.get("presets")
+                                or scene_presets_from(ctx.params)
+                                or None,
+                                "source_job_id": ctx.job.id,
+                            },
+                        )
+                except Exception:
+                    logger.exception(
+                        "job %s could not attach scene output %s", ctx.job.id, entry.get("asset_id")
+                    )
             if target_id:
                 ctx.job.linked_scene_id = target_id
                 ctx.session.flush()
@@ -927,6 +975,31 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
     return NodeResult(port="ok")
 
 
+def _character_output_label(params: dict[str, Any]) -> str | None:
+    """The reference-entry label a character output is filed under: the
+    outfit name for a sheet, or `表情·冷笑/隐忍…` for a composite expression
+    image (≤60, the label column's own limit)."""
+    expressions = params.get("character_expressions")
+    if isinstance(expressions, list) and expressions:
+        names = [
+            EXPRESSION_PRESETS[str(key)].label
+            for key in expressions
+            if str(key) in EXPRESSION_PRESETS
+        ]
+        return f"表情·{'/'.join(names)}"[:60] if names else "表情"
+    outfit = params.get("character_outfit_label")
+    return str(outfit).strip()[:60] or None if isinstance(outfit, str) else None
+
+
+def _scene_output_label(params: dict[str, Any], entry: dict[str, Any]) -> str | None:
+    """A scene output's label: its own variant label (a variant group sets
+    one per image), else the single-image presets' combined label."""
+    own = entry.get("label")
+    if isinstance(own, str) and own.strip():
+        return own.strip()[:60]
+    return scene_preset_label(scene_presets_from(params))[:60] or None
+
+
 def _link_character_output(
     ctx: WorkflowContext,
     config: AssetOutputLinkConfig,
@@ -935,6 +1008,8 @@ def _link_character_output(
     view: str,
     subject_name: str,
     target_id: str | None,
+    label: str | None = None,
+    filing: dict[str, Any] | None = None,
 ) -> str | None:
     """Attaches one output to `target_id`, auto-creating a character from
     scratch on the first call if there was none — also the fallback when
@@ -958,6 +1033,8 @@ def _link_character_output(
                 character_id=str(target_id),
                 asset_id=asset_id,
                 view=view,
+                label=label,
+                **(filing or {}),
             )
             return target_id
         except NotFound:
@@ -984,6 +1061,8 @@ def _link_character_output(
             character_id=existing.id,
             asset_id=asset_id,
             view=view,
+            label=label,
+            **(filing or {}),
         )
         return existing.id
     try:
@@ -1010,6 +1089,8 @@ def _link_character_output(
         character_id=character.id,
         asset_id=asset_id,
         view=view,
+        label=label,
+        **(filing or {}),
     )
     return character.id
 
@@ -1022,6 +1103,8 @@ def _link_scene_output(
     view: str,
     subject_name: str,
     target_id: str | None,
+    label: str | None = None,
+    filing: dict[str, Any] | None = None,
 ) -> str | None:
     """Attaches one output to `target_id`, auto-creating a scene from
     scratch on the first call if there was none — mirrors
@@ -1043,6 +1126,8 @@ def _link_scene_output(
                 scene_id=str(target_id),
                 asset_id=asset_id,
                 view=view,
+                label=label,
+                **(filing or {}),
             )
             return target_id
         except NotFound:
@@ -1061,7 +1146,13 @@ def _link_scene_output(
         reference_asset_ids=[],
     )
     scenes_service.append_reference_asset(
-        ctx.session, user_id=ctx.job.user_id, scene_id=scene.id, asset_id=asset_id, view=view
+        ctx.session,
+        user_id=ctx.job.user_id,
+        scene_id=scene.id,
+        asset_id=asset_id,
+        view=view,
+        label=label,
+        **(filing or {}),
     )
     ctx.state["created_scene_id"] = scene.id
     return scene.id
@@ -1203,6 +1294,7 @@ def _input_checkpoint(
             # `ProviderAttempt` was recorded as attempt 2 (live:
             # `job_01m1608wr7hm49wzdggkynz6ay`).
             "route_attempts": ctx.state.get("route_attempts", 0),
+            "attempt_seq": ctx.state.get("attempt_seq", 0),
             "tried_providers": sorted(ctx.state.get("tried_providers") or ()),
             "intent_hint": ctx.state.get("intent_hint") or {},
         },
@@ -1273,13 +1365,19 @@ def _effective_tier(requested: str, hint: dict[str, object]) -> str:
 
 
 def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeResult:
+    # `route_attempts` is this *pass's* budget (reset per character view by
+    # `execute_asset_planning`); `attempt_seq` numbers every attempt across
+    # the whole job, so `attempt_number` — which names the output object key
+    # `generated/{job_id}/output_{n}.png` — never repeats between views.
     attempts = ctx.state.get("route_attempts", 0) + 1
     ctx.state["route_attempts"] = attempts
     if attempts > config.max_attempts:
         return NodeResult(
             port="retries_exhausted", summary=f"已用尽 {config.max_attempts} 次选路预算"
         )
-    ctx.state["attempt_number"] = attempts
+    attempt_seq = int(ctx.state.get("attempt_seq", 0)) + 1
+    ctx.state["attempt_seq"] = attempt_seq
+    ctx.state["attempt_number"] = attempt_seq
 
     _emit(ctx, JobEventType.ROUTING, JobStatus.QUEUED, "正在选择生成路线", 24)
 
@@ -1384,6 +1482,7 @@ def _provider_checkpoint(
         "state": {
             "attempt_number": ctx.state.get("attempt_number", 1),
             "route_attempts": ctx.state.get("route_attempts", 1),
+            "attempt_seq": ctx.state.get("attempt_seq", ctx.state.get("attempt_number", 1)),
             "tried_providers": sorted(ctx.state.get("tried_providers") or ()),
             "intent_hint": ctx.state.get("intent_hint") or {},
         },
@@ -1424,6 +1523,17 @@ def _clarify_answer_text(plan: dict[str, Any]) -> str:
 
 
 def _plan_enhancements(ctx: WorkflowContext) -> tuple[str, str | None]:
+    """The prompt actually sent: the planner's suggestions folded in (see
+    `_planned_prompt`), then any reference-role directive — e.g. telling the
+    model a 白膜 motion-guide clip is staging to follow, not footage to copy
+    (`app.domain.media.reference_roles`)."""
+    prompt, negative_prompt = _planned_prompt(ctx)
+    return reference_roles.apply_reference_roles(
+        prompt, negative_prompt, ctx.params.get("video_options")
+    )
+
+
+def _planned_prompt(ctx: WorkflowContext) -> tuple[str, str | None]:
     """Folds the planning node's suggestions into what actually gets sent.
 
     Reads the `PLAN_STATE_KEY` convention key regardless of what
@@ -1437,7 +1547,8 @@ def _plan_enhancements(ctx: WorkflowContext) -> tuple[str, str | None]:
     folded its own `asset_kind`/`character_view`-scoped guidance straight
     into `ctx.prompt` earlier in this exact pass. The generic `planning`
     node's plan is blind to that context — same reason its `clarify` sub-step
-    is disabled for these kinds (see `zaolang-generation-jobs` invariant #21)
+    is disabled for these kinds (see the `zaolang-generation-jobs` skill's
+    asset-pipeline reference on the planning node's clarify slot)
     — and, for a multi-view `CHARACTER` job, it runs exactly once *before*
     the per-view loop even starts, already describing every remaining view
     at once. Folding it in here on every loop pass would leak the other
@@ -1536,6 +1647,25 @@ def _preview_url_for(object_key: str) -> str:
     return s3.presign_get(object_key, expires_in=get_settings().download_url_ttl_seconds)
 
 
+def _with_reference_legend(
+    prompt: str, references: list[Any], capability: Any, ctx: WorkflowContext
+) -> str:
+    """Prefixes the "参考图说明" legend naming each labelled reference image
+    the provider will receive (`prompt_builder.reference_legend`)."""
+    raw_labels = ctx.params.get("reference_labels")
+    labels = {
+        str(item.get("asset_id")): str(item.get("label"))
+        for item in raw_labels or []
+        if isinstance(item, dict) and item.get("asset_id") and item.get("label")
+    }
+    if not labels:
+        return prompt
+    legend = prompt_builder.reference_legend(
+        references, labels, cap=getattr(capability, "max_image_references", None)
+    )
+    return f"{legend}{prompt}" if legend else prompt
+
+
 def _sandbox_live_generate(ctx: WorkflowContext, decision: Any) -> GenerationResult:
     """Calls the selected provider without writing job/attempt/ledger rows.
 
@@ -1571,6 +1701,9 @@ def _sandbox_live_generate(ctx: WorkflowContext, decision: Any) -> GenerationRes
         )
 
     effective_prompt, effective_negative_prompt = _plan_enhancements(ctx)
+    effective_prompt = _with_reference_legend(
+        effective_prompt, references, decision.capability, ctx
+    )
     request = GenerationRequest(
         job_id=ctx.job.id,
         operation=operation,
@@ -1663,6 +1796,17 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
         if ctx.job.status == JobStatus.QUEUED:
             ctx.job = sm.transition(ctx.session, ctx.job.id, JobStatus.SUBMITTED)
         effective_prompt, effective_negative_prompt = _plan_enhancements(ctx)
+        # Resolved before the GENERATING event so the logged prompt is
+        # exactly what the provider gets, legend included.
+        references = media_service.provider_references_for(
+            ctx.session,
+            user_id=ctx.job.user_id,
+            asset_ids=ctx.params.get("reference_asset_ids") or [],
+            video_options=ctx.params.get("video_options"),
+            source_work_version_id=ctx.job.source_work_version_id,
+        )
+        base_prompt = effective_prompt
+        effective_prompt = _with_reference_legend(effective_prompt, references, capability, ctx)
         _emit(
             ctx,
             JobEventType.GENERATING,
@@ -1671,6 +1815,7 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             40,
             payload={
                 "prompt": effective_prompt,
+                "base_prompt": base_prompt,
                 "negative_prompt": effective_negative_prompt,
                 **_resolution_adapt_fields(capability, ctx.params),
             },
@@ -1698,13 +1843,7 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             # still receives exactly the spelling its profile table declares
             # (`768P`, `1080p`, …), never the leftover studio token.
             resolution=_vendor_resolution_for(capability, ctx.params),
-            references=media_service.provider_references_for(
-                ctx.session,
-                user_id=ctx.job.user_id,
-                asset_ids=ctx.params.get("reference_asset_ids") or [],
-                video_options=ctx.params.get("video_options"),
-                source_work_version_id=ctx.job.source_work_version_id,
-            ),
+            references=references,
             extra=dict(ctx.params.get("extra") or {}),
             attempt_number=attempt_number,
         )
@@ -1789,6 +1928,7 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             latency_ms=result.latency_ms,
             cost_minor=result.cost_minor,
             cost_micro_usd=attempt_cost_micro_usd,
+            failure_code=None if result.succeeded else result.failure_code,
         )
         ctx.session.flush()
 
@@ -1935,6 +2075,7 @@ def execute_video_analysis_generate(
             latency_ms=result.latency_ms,
             cost_minor=result.cost_minor,
             cost_micro_usd=attempt_cost_micro_usd,
+            failure_code=None if result.succeeded else result.failure_code,
         )
         ctx.session.flush()
 
@@ -1963,9 +2104,7 @@ def execute_video_analysis_generate(
     if ctx.dry_run and ctx.live_provider:
         ctx.state["_preview_result_json"] = result.output_json
     _emit(ctx, JobEventType.GENERATING, JobStatus.RUNNING, "解析完成，正在结算", 85)
-    return NodeResult(
-        port="succeeded", summary=f"{capability.name} 第 {attempt_number} 次尝试成功"
-    )
+    return NodeResult(port="succeeded", summary=f"{capability.name} 第 {attempt_number} 次尝试成功")
 
 
 def _maybe_fill_linked_episode_preview(session: Any, draft: Draft) -> None:

@@ -10,12 +10,14 @@ import {
 } from '@/components/library/existing-asset-picker-dialog';
 import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { VideoFirstFrame } from '@/components/media/video-first-frame';
+import { AssetVariantsSheet } from '@/components/library/asset-variants-sheet';
 import { Button, IconButton } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog } from '@/components/ui/dialog';
 import { TextArea, TextInput } from '@/components/ui/field';
 import {
   IconClose,
+  IconGrid,
   IconImage,
   IconPencil,
   IconPlus,
@@ -108,6 +110,7 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
   const [publishBusy, setPublishBusy] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
+  const [looksTarget, setLooksTarget] = useState<Character | null>(null);
 
   const openCreate = () => {
     setEditing(null);
@@ -304,7 +307,7 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
       <TextInput
         label={t('nameLabel')}
         value={form.name}
-        maxLength={120}
+        maxLength={80}
         required
         error={nameError ?? undefined}
         onChange={(event) => {
@@ -533,6 +536,13 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
                     >
                       <IconPencil className="size-4" />
                     </IconButton>
+                    <IconButton
+                      size="sm"
+                      label={t('manageLooks')}
+                      onClick={() => setLooksTarget(character)}
+                    >
+                      <IconGrid className="size-4" />
+                    </IconButton>
                     {character.status === 'draft' || character.status === 'rejected' ? (
                       <IconButton
                         size="sm"
@@ -666,6 +676,30 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
           {publishError ? <ErrorNotice title={publishError} /> : null}
         </div>
       </Dialog>
+      {looksTarget ? (
+        <AssetVariantsSheet
+          kind="character"
+          card={looksTarget}
+          variants={looksTarget.looks ?? []}
+          anchorEntryId={looksTarget.anchor_entry_id}
+          open
+          onClose={() => setLooksTarget(null)}
+          onCardChange={(updated) => {
+            setLooksTarget(updated);
+            setCharacters((current) => current.map((c) => (c.id === updated.id ? updated : c)));
+          }}
+          generateHref={(look) =>
+            characterImageStudioHref({
+              characterId: looksTarget.id,
+              name: looksTarget.name,
+              appearance: [looksTarget.description, look.is_default ? null : look.description]
+                .filter(Boolean)
+                .join('。'),
+              variantId: look.id,
+            })
+          }
+        />
+      ) : null}
     </div>
   );
 }

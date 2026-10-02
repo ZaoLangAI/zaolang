@@ -98,22 +98,38 @@ export function Sheet({
     });
   }, [render, reduced]);
 
-  useEffect(() => {
+  // Opener captured a commit before the panel mounts; see `ui/dialog.tsx`.
+  useIsomorphicLayoutEffect(() => {
     if (!open) return;
+    const active = document.activeElement as HTMLElement | null;
+    if (!panelRef.current?.contains(active)) restoreTo.current = active;
+  }, [open]);
 
-    restoreTo.current = document.activeElement as HTMLElement | null;
+  // Keyed on `open && render` so the panel is mounted before it is focused;
+  // see `ui/dialog.tsx`.
+  const active = open && render;
+  useEffect(() => {
+    if (!active) return;
+
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    panelRef.current?.focus();
+    const panel = panelRef.current;
+    if (panel && !panel.contains(document.activeElement)) panel.focus();
 
     return () => {
       document.body.style.overflow = previousOverflow;
       restoreTo.current?.focus();
     };
-  }, [open]);
+  }, [active]);
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
+      // React bubbles events through portals along the component tree, so a
+      // `Dialog` opened from inside the sheet (e.g. the style gallery) sends
+      // its keys here too. Those belong to that dialog: without this, Escape
+      // would close the sheet underneath and, by stopping propagation, keep
+      // the dialog's own document-level handler from ever seeing it.
+      if (!panelRef.current?.contains(event.target as Node)) return;
       if (event.key === 'Escape') {
         event.stopPropagation();
         onClose();

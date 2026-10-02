@@ -61,6 +61,12 @@ from typing import Any
 
 from app.models.enums import CreationSkillCategory, Operation
 
+# The account every catalogue row is planted under — `make seed`
+# (`app.scripts.seed`) and the production backfill (`app.scripts.ensure_catalog`)
+# both use it. `CatalogSkill.key` is never stored, so anything that has to tell
+# a planted row from a user's same-titled one matches on this owner.
+CATALOG_OWNER_HANDLE = "zaolang_studio"
+
 # AI-generated cover stills shipped alongside this module (one JPEG per
 # `CatalogSkill.key`), committed to the repo as system-default content —
 # `ensure_catalog_skills` uploads whichever of these exist and are still
@@ -674,8 +680,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="scene-rainy-street-showdown",
         title="雨夜巷口·摊牌戏",
         description=(
-            "潮湿冷调的户外对手戏场景，雨滴与路灯逆光制造情绪张力，适合关键秘密揭露或"
-            "决裂段落。"
+            "潮湿冷调的户外对手戏场景，雨滴与路灯逆光制造情绪张力，适合关键秘密揭露或决裂段落。"
         ),
         category=CreationSkillCategory.SCENE,
         prompt_suffix=(
@@ -688,8 +693,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="scene-hospital-corridor",
         title="医院走廊·生死时刻",
         description=(
-            "高对比度荧光灯走廊，长焦压缩透视强化等待与不安，适合抢救、诊断或亲情戏的"
-            "高压场次。"
+            "高对比度荧光灯走廊，长焦压缩透视强化等待与不安，适合抢救、诊断或亲情戏的高压场次。"
         ),
         category=CreationSkillCategory.SCENE,
         prompt_suffix=(
@@ -715,8 +719,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="scene-glass-tower-office",
         title="玻璃幕墙·总裁办公室",
         description=(
-            "高层办公室俯瞰全景，冷色调玻璃反射，适合“总裁”“董事”身份揭示或权力宣示"
-            "类场次。"
+            "高层办公室俯瞰全景，冷色调玻璃反射，适合“总裁”“董事”身份揭示或权力宣示类场次。"
         ),
         category=CreationSkillCategory.SCENE,
         prompt_suffix=(
@@ -757,8 +760,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="scene-underground-parking",
         title="地下停车场·密谈",
         description=(
-            "低顶混凝土、一盏钠灯、远处车灯扫过，适合交易、威胁或不能被第三人听见的"
-            "短对峙。"
+            "低顶混凝土、一盏钠灯、远处车灯扫过，适合交易、威胁或不能被第三人听见的短对峙。"
         ),
         category=CreationSkillCategory.SCENE,
         prompt_suffix=(
@@ -771,8 +773,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="scene-airport-gate-farewell",
         title="登机口·离别挽留",
         description=(
-            "落地玻璃、航班信息屏冷光、旅客人流虚化，适合分手挽留、临行摊牌或错过最后"
-            "一班的停顿。"
+            "落地玻璃、航班信息屏冷光、旅客人流虚化，适合分手挽留、临行摊牌或错过最后一班的停顿。"
         ),
         category=CreationSkillCategory.SCENE,
         prompt_suffix=(
@@ -798,9 +799,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
     CatalogSkill(
         key="style-sweet-romance-golden-soft",
         title="甜宠·暖金柔光",
-        description=(
-            "高光溢出的柔焦暖调，皮肤质感细腻但不失真，适合甜宠、追妻题材的浪漫日常戏。"
-        ),
+        description=("高光溢出的柔焦暖调，皮肤质感细腻但不失真，适合甜宠、追妻题材的浪漫日常戏。"),
         category=CreationSkillCategory.STYLE,
         prompt_suffix=(
             "warm golden soft lighting, gentle highlight bloom, soft focus glow, "
@@ -820,9 +819,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
     CatalogSkill(
         key="style-period-opera-sidelight",
         title="古装·戏曲式侧光",
-        description=(
-            "借鉴传统戏曲舞台光的强侧光与阴影分割，服务古装宫斗/权谋题材的仪式感构图。"
-        ),
+        description=("借鉴传统戏曲舞台光的强侧光与阴影分割，服务古装宫斗/权谋题材的仪式感构图。"),
         category=CreationSkillCategory.STYLE,
         prompt_suffix=(
             "strong side lighting reminiscent of traditional opera stage lighting, "
@@ -845,8 +842,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="style-cel-shaded-comic",
         title="漫剧·赛璐璐渲染",
         description=(
-            "平涂色块叠加清晰轮廓线的二次元渲染风格，服务漫剧（条漫/动态漫）类内容的"
-            "统一视觉语言。"
+            "平涂色块叠加清晰轮廓线的二次元渲染风格，服务漫剧（条漫/动态漫）类内容的统一视觉语言。"
         ),
         category=CreationSkillCategory.STYLE,
         prompt_suffix=(
@@ -886,8 +882,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="style-korean-window-soft",
         title="韩剧窗光·柔焦",
         description=(
-            "侧窗自然光打在脸颊高光、背景轻轻虚化，适合告白、和解或“终于说出口”的"
-            "室内近景。"
+            "侧窗自然光打在脸颊高光、背景轻轻虚化，适合告白、和解或“终于说出口”的室内近景。"
         ),
         category=CreationSkillCategory.STYLE,
         prompt_suffix=(
@@ -899,8 +894,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="style-hongkong-wet-neon",
         title="港风湿街·霓虹",
         description=(
-            "潮湿街道、招牌红绿叠色、路灯晕开，比赛博朋克更生活、更夜市，适合都市夜戏"
-            "和擦肩而过。"
+            "潮湿街道、招牌红绿叠色、路灯晕开，比赛博朋克更生活、更夜市，适合都市夜戏和擦肩而过。"
         ),
         category=CreationSkillCategory.STYLE,
         prompt_suffix=(
@@ -913,8 +907,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="style-ink-wash-guofeng",
         title="水墨国风·留白",
         description=(
-            "淡墨渲染、大面积留白、衣袂与山雾同色阶，适合古装独白、诀别或把情绪交给"
-            "空镜的一场。"
+            "淡墨渲染、大面积留白、衣袂与山雾同色阶，适合古装独白、诀别或把情绪交给空镜的一场。"
         ),
         category=CreationSkillCategory.STYLE,
         prompt_suffix=(
@@ -1124,8 +1117,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "one named subject, one clear action, one stated place, and that is "
-            "the whole of it"
+            "one named subject, one clear action, one stated place, and that is the whole of it"
         ),
     ),
     CatalogSkill(
@@ -1153,8 +1145,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "framing and camera move stated first, subject and action second, "
-            "environment last"
+            "framing and camera move stated first, subject and action second, environment last"
         ),
     ),
     CatalogSkill(
@@ -1275,9 +1266,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
             "认可的“一个片段一个连续动作”。"
         ),
         category=CreationSkillCategory.FORMAT,
-        prompt_suffix=(
-            "opens on the conflict already in motion in the very first frame"
-        ),
+        prompt_suffix=("opens on the conflict already in motion in the very first frame"),
     ),
     CatalogSkill(
         key="fmt-hook-one-line-identity",
@@ -1304,8 +1293,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "extreme close-up on one story-critical object filling the entire "
-            "frame edge to edge"
+            "extreme close-up on one story-critical object filling the entire frame edge to edge"
         ),
     ),
     CatalogSkill(
@@ -1374,10 +1362,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
             "会拖慢动作。"
         ),
         category=CreationSkillCategory.FORMAT,
-        prompt_suffix=(
-            "enters mid-action, the motion already at full speed in the first "
-            "frame"
-        ),
+        prompt_suffix=("enters mid-action, the motion already at full speed in the first frame"),
     ),
     CatalogSkill(
         key="fmt-hook-visible-countdown",
@@ -1433,8 +1418,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "written at body-part level: fingers curling, jaw tightening, "
-            "shoulders dropping"
+            "written at body-part level: fingers curling, jaw tightening, shoulders dropping"
         ),
     ),
     CatalogSkill(
@@ -1477,9 +1461,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
             "手指敲桌、眼神闪躲。七家官方都指出抽象词让模型自行解释，结果是随机的。"
         ),
         category=CreationSkillCategory.FORMAT,
-        prompt_suffix=(
-            "emotion carried entirely by visible physical tells"
-        ),
+        prompt_suffix=("emotion carried entirely by visible physical tells"),
     ),
     CatalogSkill(
         key="fmt-action-speed-evidence",
@@ -1491,8 +1473,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "speed shown through its physical evidence, dust kicking up and fabric "
-            "snapping back"
+            "speed shown through its physical evidence, dust kicking up and fabric snapping back"
         ),
     ),
     CatalogSkill(
@@ -1532,10 +1513,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
             "写“熙熙攘攘的街道”会强迫模型发明几十个运动元素，时序随之崩溃。"
         ),
         category=CreationSkillCategory.FORMAT,
-        prompt_suffix=(
-            "exactly one subject in motion, everyone else in frame holding their "
-            "pose"
-        ),
+        prompt_suffix=("exactly one subject in motion, everyone else in frame holding their pose"),
     ),
     CatalogSkill(
         key="fmt-action-hold-tail",
@@ -1547,8 +1525,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "the action completes and the subject holds still for a beat before "
-            "the clip ends"
+            "the action completes and the subject holds still for a beat before the clip ends"
         ),
     ),
     CatalogSkill(
@@ -1661,9 +1638,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
             "在竖屏窄画幅里效果被放大。"
         ),
         category=CreationSkillCategory.FORMAT,
-        prompt_suffix=(
-            "close-up with the eyes placed on the upper third line"
-        ),
+        prompt_suffix=("close-up with the eyes placed on the upper third line"),
     ),
     CatalogSkill(
         key="fmt-vertical-angle-four",
@@ -1675,8 +1650,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "camera height stated as one of eye level, low angle, high angle or "
-            "dutch tilt"
+            "camera height stated as one of eye level, low angle, high angle or dutch tilt"
         ),
     ),
     CatalogSkill(
@@ -1706,8 +1680,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "a single continuous camera move holding one direction for the whole "
-            "of each beat"
+            "a single continuous camera move holding one direction for the whole of each beat"
         ),
     ),
     CatalogSkill(
@@ -1734,8 +1707,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "camera move given as a named term with an explicit direction and an "
-            "explicit speed"
+            "camera move given as a named term with an explicit direction and an explicit speed"
         ),
     ),
     CatalogSkill(
@@ -1748,8 +1720,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "each camera and framing term followed by its standard English "
-            "equivalent in brackets"
+            "each camera and framing term followed by its standard English equivalent in brackets"
         ),
     ),
     CatalogSkill(
@@ -1960,10 +1931,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
             "句子描述音频。所以“没写音频”不等于“静音”，而等于“交给模型随机决定”。"
         ),
         category=CreationSkillCategory.FORMAT,
-        prompt_suffix=(
-            "audio described in its own dedicated sentence rather than left "
-            "unstated"
-        ),
+        prompt_suffix=("audio described in its own dedicated sentence rather than left unstated"),
     ),
     CatalogSkill(
         key="fmt-audio-three-layers",
@@ -2031,8 +1999,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "each voice given its line plus emotion, intonation, pace, timbre and "
-            "accent"
+            "each voice given its line plus emotion, intonation, pace, timbre and accent"
         ),
     ),
     CatalogSkill(
@@ -2045,8 +2012,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "each sound effect written immediately after the visual moment that "
-            "causes it"
+            "each sound effect written immediately after the visual moment that causes it"
         ),
     ),
     CatalogSkill(
@@ -2059,8 +2025,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "audio limited to the room's own ambient bed, dialogue and music both "
-            "silent"
+            "audio limited to the room's own ambient bed, dialogue and music both silent"
         ),
     ),
     CatalogSkill(
@@ -2115,8 +2080,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "a shared shape or colour held at the same screen position on both "
-            "sides of the cut"
+            "a shared shape or colour held at the same screen position on both sides of the cut"
         ),
     ),
     CatalogSkill(
@@ -2129,8 +2093,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "camera pushes through a foreground occluder until it fills the frame "
-            "completely"
+            "camera pushes through a foreground occluder until it fills the frame completely"
         ),
     ),
     CatalogSkill(
@@ -2170,10 +2133,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
             "对环境镜头的要求也是不要包含人物。同时它是整场戏的呼吸点。"
         ),
         category=CreationSkillCategory.FORMAT,
-        prompt_suffix=(
-            "a deserted environment empty of people, carried by one slow camera "
-            "move"
-        ),
+        prompt_suffix=("a deserted environment empty of people, carried by one slow camera move"),
     ),
     CatalogSkill(
         key="fmt-transition-single-axis",
@@ -2283,8 +2243,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "the subject named and the movement described, appearance left to the "
-            "reference"
+            "the subject named and the movement described, appearance left to the reference"
         ),
     ),
     CatalogSkill(
@@ -2311,8 +2270,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "palette pinned to three to five named colours, the same set as the "
-            "rest of the scene"
+            "palette pinned to three to five named colours, the same set as the rest of the scene"
         ),
     ),
     CatalogSkill(
@@ -2368,8 +2326,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "each story prop held in the same hand or resting in the same spot as "
-            "the shot before"
+            "each story prop held in the same hand or resting in the same spot as the shot before"
         ),
     ),
     CatalogSkill(
@@ -2607,8 +2564,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "energy opening high, dropping to a quiet beat, then rebuilding toward "
-            "the climax"
+            "energy opening high, dropping to a quiet beat, then rebuilding toward the climax"
         ),
     ),
     CatalogSkill(
@@ -2620,9 +2576,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
             "但不能给出可辨识的解答画面。"
         ),
         category=CreationSkillCategory.FORMAT,
-        prompt_suffix=(
-            "footage drawn only from the setup, the outcome left off screen"
-        ),
+        prompt_suffix=("footage drawn only from the setup, the outcome left off screen"),
     ),
     CatalogSkill(
         key="fmt-teaser-question-line",
@@ -2634,8 +2588,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "spoken line is a question, the answer withheld, the listener's "
-            "reaction staying opaque"
+            "spoken line is a question, the answer withheld, the listener's reaction staying opaque"
         ),
     ),
     CatalogSkill(
@@ -2647,9 +2600,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
             "结束前一刻仍在进行中，而不是已经完成。"
         ),
         category=CreationSkillCategory.FORMAT,
-        prompt_suffix=(
-            "cuts to black at the emotional peak with the action still in progress"
-        ),
+        prompt_suffix=("cuts to black at the emotional peak with the action still in progress"),
     ),
     CatalogSkill(
         key="fmt-teaser-title-safe-band",
@@ -2661,8 +2612,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "ends on a clean unbroken dark area large enough to carry a title "
-            "added later in post"
+            "ends on a clean unbroken dark area large enough to carry a title added later in post"
         ),
     ),
     CatalogSkill(
@@ -2747,8 +2697,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
         category=CreationSkillCategory.FORMAT,
         prompt_suffix=(
-            "exclusions kept to a handful of specific artefact terms rather than a "
-            "long list"
+            "exclusions kept to a handful of specific artefact terms rather than a long list"
         ),
     ),
     CatalogSkill(
@@ -4431,8 +4380,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="light-single-source-hard-key",
         title="单光源硬光·棱角分明",
         description=(
-            "一盏硬光从侧上方打下来，另一半脸交给阴影。不用补光，"
-            "让明暗交界线自己把人的轮廓画出来。"
+            "一盏硬光从侧上方打下来，另一半脸交给阴影。不用补光，让明暗交界线自己把人的轮廓画出来。"
         ),
         category=CreationSkillCategory.STYLE,
         prompt_suffix=(
@@ -4461,8 +4409,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="light-backlit-silhouette-rim",
         title="逆光轮廓·身份未明",
         description=(
-            "光全在人身后，正面几乎只剩一圈边缘光。人是谁先不告诉观众，"
-            "留到下一个镜头再揭。"
+            "光全在人身后，正面几乎只剩一圈边缘光。人是谁先不告诉观众，留到下一个镜头再揭。"
         ),
         category=CreationSkillCategory.STYLE,
         prompt_suffix=(
@@ -4476,8 +4423,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="light-window-soft-morning",
         title="窗光柔调·清晨室内",
         description=(
-            "一整面窗当柔光箱，光线大面积、方向单一、衰减很慢。"
-            "情绪戏和早晨醒来的镜头默认走这个。"
+            "一整面窗当柔光箱，光线大面积、方向单一、衰减很慢。情绪戏和早晨醒来的镜头默认走这个。"
         ),
         category=CreationSkillCategory.STYLE,
         prompt_suffix=(
@@ -4505,8 +4451,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="light-overcast-flat-documentary",
         title="阴天平光·纪实质感",
         description=(
-            "没有明显主光、没有硬阴影，全靠环境光。刻意不好看，"
-            "换来的是“这真的发生过”的可信度。"
+            "没有明显主光、没有硬阴影，全靠环境光。刻意不好看，换来的是“这真的发生过”的可信度。"
         ),
         category=CreationSkillCategory.STYLE,
         prompt_suffix=(
@@ -4535,8 +4480,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="stage-threshold-doorway",
         title="门口临界·进与不进",
         description=(
-            "人卡在门框里，一半在里一半在外。所有“要不要进这个房间”的戏，"
-            "都可以先落成这一帧。"
+            "人卡在门框里，一半在里一半在外。所有“要不要进这个房间”的戏，都可以先落成这一帧。"
         ),
         category=CreationSkillCategory.SCENE,
         prompt_suffix=(
@@ -4550,8 +4494,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="stage-empty-chair-absence",
         title="空座位·缺席在场",
         description=(
-            "该在的人不在。拍那把空椅子、那副没动过的碗筷，"
-            "比拍一张哭脸更能说明发生了什么。"
+            "该在的人不在。拍那把空椅子、那副没动过的碗筷，比拍一张哭脸更能说明发生了什么。"
         ),
         category=CreationSkillCategory.SCENE,
         prompt_suffix=(
@@ -4565,8 +4508,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="stage-height-difference-power",
         title="高低错位·谁在上位",
         description=(
-            "一个站着一个坐着，或者一个在楼梯上一个在楼梯下。"
-            "不用台词，画面高度差已经把话说完了。"
+            "一个站着一个坐着，或者一个在楼梯上一个在楼梯下。不用台词，画面高度差已经把话说完了。"
         ),
         category=CreationSkillCategory.SCENE,
         prompt_suffix=(
@@ -4815,8 +4757,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="asset-scene-vertical-establish",
         title="竖屏空镜建立",
         description=(
-            "给竖屏短剧用的无人建立镜头：建筑或地形占满高度，人物完全不出现，"
-            "只交代空间尺度。"
+            "给竖屏短剧用的无人建立镜头：建筑或地形占满高度，人物完全不出现，只交代空间尺度。"
         ),
         category=CreationSkillCategory.SCENE_ASSET,
         prompt_suffix=(
@@ -4831,8 +4772,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
         key="asset-scene-rain-alley-empty",
         title="雨夜无人巷空镜",
         description=(
-            "潮湿霓虹后巷的纯空镜：积水反光、无行人无前景车辆，给密谈或追逐戏"
-            "当地点底板。"
+            "潮湿霓虹后巷的纯空镜：积水反光、无行人无前景车辆，给密谈或追逐戏当地点底板。"
         ),
         category=CreationSkillCategory.SCENE_ASSET,
         prompt_suffix=(
@@ -4846,10 +4786,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
     CatalogSkill(
         key="asset-scene-mansion-empty",
         title="冷调豪门客厅空镜",
-        description=(
-            "挑高落地窗的空客厅：冷色调、家具克制，画面里不能有任何人物或"
-            "可辨认肖像。"
-        ),
+        description=("挑高落地窗的空客厅：冷色调、家具克制，画面里不能有任何人物或可辨认肖像。"),
         category=CreationSkillCategory.SCENE_ASSET,
         prompt_suffix=(
             "empty opulent living room, floor-to-ceiling windows, cold color "
@@ -4927,10 +4864,7 @@ CATALOG: tuple[CatalogSkill, ...] = (
     CatalogSkill(
         key="asset-cover-title-safe",
         title="竖屏标题安全区封面",
-        description=(
-            "竖版封面的基础版式：上三分之一留白给标题，主体压在中下，画面里"
-            "不写任何字。"
-        ),
+        description=("竖版封面的基础版式：上三分之一留白给标题，主体压在中下，画面里不写任何字。"),
         category=CreationSkillCategory.COVER_ASSET,
         prompt_suffix=(
             "vertical nine-sixteen key art, top third empty negative space "

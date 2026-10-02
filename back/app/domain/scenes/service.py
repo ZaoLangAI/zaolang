@@ -27,18 +27,21 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.asset_variants import service as asset_variants_service
 from app.domain.errors import NotFound, ValidationFailed
 from app.domain.skill_library import service as skill_library_service
 from app.models import Asset, CreationSkill
-from app.models.base import utcnow
 from app.models.enums import (
+    AssetEntryType,
     CreationSkillCategory,
-    CreationSkillStatus,
-    CreationSkillVisibility,
     MediaType,
 )
 
-MAX_REFERENCE_ASSETS = 4
+# A flat `reference_asset_ids` list (create/PATCH) fills one variant — the
+# per-variant entry cap (`asset_variants.service`); variants hold the rest.
+MAX_REFERENCE_ASSETS = asset_variants_service.MAX_ENTRIES_PER_VARIANT
+MAX_DEFAULT_JOB_REFERENCES = asset_variants_service.MAX_DEFAULT_SCENE_REFERENCES
+MASTER_VIEW = "establishing"
 # Mirrors GenerationParams.reference_asset_ids in jobs.py — kept here too so a
 # validation error names the right limit before a job ever reaches the API
 # schema, same rationale as `characters.service.MAX_JOB_REFERENCE_ASSETS`.
@@ -79,7 +82,9 @@ class SceneView:
 
     @property
     def reference_assets(self) -> list[dict[str, Any]]:
-        return list(_reference_assets(self.skill))
+        """The P0-shaped projection (`asset_variants.service.project`): the
+        master plate first, tagged `establishing`."""
+        return asset_variants_service.project(self.skill)
 
     @property
     def reference_asset_ids(self) -> list[str]:
@@ -112,15 +117,6 @@ def _payload(skill: CreationSkill) -> dict[str, Any]:
     why this must never hand back the live reference."""
     raw = skill.params_json.get(SCENE_PARAMS_KEY)
     return dict(raw) if isinstance(raw, dict) else {}
-
-
-def _reference_assets(skill: CreationSkill) -> list[dict[str, Any]]:
-    """Copies of each reference-asset entry — see `characters.service.
-    _reference_assets` for the dirty-tracking bug this mirrors avoiding."""
-    raw = _payload(skill).get("reference_assets")
-    return (
-        [dict(entry) for entry in raw if isinstance(entry, dict)] if isinstance(raw, list) else []
-    )
 
 
 def _set_payload(skill: CreationSkill, payload: dict[str, Any]) -> None:
@@ -164,17 +160,6 @@ def _validate_reference_assets(
     return deduped
 
 
-def _entries_from_flat_ids(asset_ids: list[str]) -> list[dict[str, Any]]:
-    now = utcnow().isoformat()
-    return [
-        {"asset_id": asset_id, "view": DEFAULT_VIEW, "label": None, "created_at": now}
-        for asset_id in asset_ids
-    ]
-
-
-# ---- Scene CRUD (adapter over the skill library) ------------------------
-
-
 def create_scene(
     session: Session,
     *,
@@ -194,11 +179,14 @@ def create_scene(
         params_json={
             SCENE_PARAMS_KEY: {
                 "description": clean_description,
-                "reference_assets": _entries_from_flat_ids(refs),
+                "reference_assets": [],
             }
         },
         cover_asset_id=None,
     )
+    asset_variants_service.ensure_default(session, skill)
+    asset_variants_service.set_members(session, skill, refs)
+    _promote_master(session, skill)
     return SceneView(skill)
 
 
@@ -235,17 +223,17 @@ def update_scene(
         clean = description.strip() or None
         payload["description"] = clean
         skill.description = _short_description(clean)
+    # Before the reference edit: `set_members` re-syncs the JSON mirror on
+    # top of this payload, and writing the payload afterwards would clobber it.
+    _set_payload(skill, payload)
     if reference_asset_ids is not None:
         refs = _validate_reference_assets(session, user_id=user_id, asset_ids=reference_asset_ids)
-        payload["reference_assets"] = _entries_from_flat_ids(refs)
-    _set_payload(skill, payload)
+        asset_variants_service.set_members(session, skill, refs)
+        _promote_master(session, skill)
     # Editing a shared skill's content withdraws it from the marketplace
     # until the owner re-publishes — same rule as any other `CreationSkill`
     # (`skill_library.service.update`).
-    if skill.status != CreationSkillStatus.DRAFT:
-        skill.status = CreationSkillStatus.DRAFT
-        skill.visibility = CreationSkillVisibility.PRIVATE
-        skill.reject_reason = None
+    skill_library_service.withdraw_after_edit(session, skill)
     session.flush()
     return SceneView(skill)
 
@@ -258,6 +246,62 @@ def delete_scene(session: Session, *, user_id: str, scene_id: str) -> None:
 # ---- Per-image reference asset management --------------------------------
 
 
+def master_entry(entries: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The master plate among projected entries: the first `establishing`
+    one (the projection lists the anchor first, tagged `establishing`), else
+    the oldest unlabelled one."""
+    for entry in entries:
+        if entry.get("view") == MASTER_VIEW:
+            return entry
+    return next((e for e in entries if not (e.get("label") or "").strip()), None)
+
+
+def _promote_master(session: Session, skill: CreationSkill) -> None:
+    """Keeps P0's "a scene always has a master plate" rule on the tables:
+    with no anchor yet, the default variant's first image becomes the
+    `master` and the card's anchor."""
+    if asset_variants_service.anchor(skill) is not None:
+        return
+    default = asset_variants_service.find_default(skill)
+    first = default.entries[0] if default and default.entries else None
+    if first is None:
+        return
+    first.entry_type = AssetEntryType.MASTER.value
+    first.view = None
+    asset_variants_service.set_anchor(session, skill, first)
+
+
+def default_reference_asset_ids(scene: SceneView, variant_id: str | None = None) -> list[str]:
+    """What a job gets for this scene when the caller picked no images: the
+    default (or `variant_id`'s) master plate plus its next shot, falling
+    back to the card's anchor — see `asset_variants.service.default_subset`.
+    Other variants (黄昏/战损…) only go in when picked: a dusk plate must not
+    tint a daytime scene."""
+    variant = asset_variants_service.find_variant(scene.skill, variant_id) if variant_id else None
+    return asset_variants_service.default_subset(scene.skill, variant)
+
+
+def _selection_items(params: dict[str, Any], scenes: list[SceneView]) -> dict[str, dict[str, Any]]:
+    """`scene_ref_selection` keyed by scene id; every named scene must be
+    one of this job's `scene_ids`."""
+    raw = params.get("scene_ref_selection") or []
+    if not isinstance(raw, list):
+        return {}
+    known = {scene.id for scene in scenes}
+    items: dict[str, dict[str, Any]] = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        scene_id = str(item.get("scene_id") or "")
+        if scene_id not in known:
+            raise ValidationFailed(
+                "所选参考图的场景不在本次选择的场景中。",
+                fields={"params.scene_ref_selection": "场景必须同时出现在 scene_ids"},
+            )
+        items[scene_id] = item
+    return items
+
+
 def append_reference_asset(
     session: Session,
     *,
@@ -266,30 +310,54 @@ def append_reference_asset(
     asset_id: str,
     view: str = DEFAULT_VIEW,
     label: str | None = None,
+    presets: dict[str, Any] | None = None,
+    source_job_id: str | None = None,
+    variant_id: str | None = None,
 ) -> SceneView:
-    """Adds (or replaces) one shot's reference image.
+    """Files one image under a variant — the P0 `(view, label)` shape,
+    translated: `variant_id` (a variant of this card) wins, else `presets` (or
+    a `label`) pick the variant (created on first use); a stale `variant_id`
+    falls back to them. `establishing` — or being a non-default variant's
+    first image — makes it that variant's master plate (the previous master
+    becomes a shot); anything else accumulates as a shot up to the variant's
+    cap (422 beyond it). With no anchor yet the default variant's first image
+    becomes master + anchor.
 
-    Called both by the scene library UI's per-image upload and by
-    `app.workflows.nodes.execute_asset_output_link` when a generation job's
-    output is auto-attached.
+    Called by the scene library UI and by
+    `app.workflows.nodes.execute_asset_output_link`.
     """
     skill = _owned_scene_skill(session, user_id=user_id, scene_id=scene_id)
     _validate_reference_assets(session, user_id=user_id, asset_ids=[asset_id])
-    payload = _payload(skill)
-    entries = [e for e in _reference_assets(skill) if e.get("asset_id") != asset_id]
-    entries.append(
-        {
-            "asset_id": asset_id,
-            "view": view,
-            "label": (label or "").strip() or None,
-            "created_at": utcnow().isoformat(),
-        }
+    clean_label = (label or "").strip() or None
+    variant = (
+        asset_variants_service.find_variant(skill, variant_id) if variant_id else None
+    ) or asset_variants_service.find_or_create_variant(
+        session, skill, name=clean_label, presets=presets
     )
-    if len(entries) > MAX_REFERENCE_ASSETS:
-        entries = entries[-MAX_REFERENCE_ASSETS:]
-    payload["reference_assets"] = entries
-    _set_payload(skill, payload)
-    session.flush()
+    has_master = any(e.entry_type == AssetEntryType.MASTER for e in variant.entries)
+    positional = view in ("detail", "reverse")
+    if view == MASTER_VIEW or (not has_master and not variant.is_default and not positional):
+        for previous in variant.entries:
+            if previous.entry_type == AssetEntryType.MASTER and previous.asset_id != asset_id:
+                previous.entry_type = AssetEntryType.SHOT.value
+        entry_type, entry_view = AssetEntryType.MASTER.value, None
+    else:
+        entry_type = AssetEntryType.SHOT.value
+        entry_view = view if positional else None
+    entry = asset_variants_service.add_entry(
+        session,
+        skill,
+        variant,
+        asset_id=asset_id,
+        entry_type=entry_type,
+        view=entry_view,
+        source_job_id=source_job_id,
+    )
+    if entry_type == AssetEntryType.MASTER and (
+        asset_variants_service.anchor(skill) is None or variant.is_default
+    ):
+        asset_variants_service.set_anchor(session, skill, entry)
+    _promote_master(session, skill)
     return SceneView(skill)
 
 
@@ -302,22 +370,28 @@ def update_reference_asset(
     view: str | None = None,
     label: str | None = None,
 ) -> SceneView:
+    """The P0 per-image edit: `view=establishing` makes it the master plate,
+    a new `label` moves it to the variant of that name (blank → default)."""
     skill = _owned_scene_skill(session, user_id=user_id, scene_id=scene_id)
-    payload = _payload(skill)
-    entries = _reference_assets(skill)
-    found = False
-    for entry in entries:
-        if entry.get("asset_id") == asset_id:
-            found = True
-            if view is not None:
-                entry["view"] = view
-            if label is not None:
-                entry["label"] = label.strip() or None
-    if not found:
+    entries = SceneView(skill).reference_assets
+    projected = next((e for e in entries if e.get("asset_id") == asset_id), None)
+    if projected is None:
         raise NotFound("参考素材不存在。")
-    payload["reference_assets"] = entries
-    _set_payload(skill, payload)
-    session.flush()
+    master = master_entry(entries)
+    new_view = view if view is not None else str(projected.get("view") or DEFAULT_VIEW)
+    new_label = label.strip() or None if label is not None else projected.get("label")
+    was_anchor = bool(projected.get("is_anchor")) or projected is master
+    asset_variants_service.remove_asset(session, skill, asset_id)
+    if was_anchor:
+        asset_variants_service.set_anchor(session, skill, None)
+    append_reference_asset(
+        session,
+        user_id=user_id,
+        scene_id=scene_id,
+        asset_id=asset_id,
+        view=MASTER_VIEW if was_anchor and view is None else new_view,
+        label=new_label,
+    )
     return SceneView(skill)
 
 
@@ -325,16 +399,9 @@ def remove_reference_asset(
     session: Session, *, user_id: str, scene_id: str, asset_id: str
 ) -> SceneView:
     skill = _owned_scene_skill(session, user_id=user_id, scene_id=scene_id)
-    payload = _payload(skill)
-    payload["reference_assets"] = [
-        e for e in _reference_assets(skill) if e.get("asset_id") != asset_id
-    ]
-    _set_payload(skill, payload)
-    session.flush()
+    asset_variants_service.remove_asset(session, skill, asset_id)
+    _promote_master(session, skill)
     return SceneView(skill)
-
-
-# ---- Sharing: publish a scene to the skill marketplace -------------------
 
 
 def publish_scene(session: Session, *, user_id: str, scene_id: str) -> SceneView:
@@ -402,10 +469,19 @@ def apply_scene_refs(session: Session, *, user_id: str, params: dict[str, Any]) 
     scenes = [
         SceneView(_owned_scene_skill(session, user_id=user_id, scene_id=sid)) for sid in scene_ids
     ]
+    selection = _selection_items(params, scenes)
 
     merged_refs = list(params.get("reference_asset_ids") or [])
     for scene in scenes:
-        for asset_id in scene.reference_asset_ids:
+        item = selection.get(scene.id)
+        picked = asset_variants_service.select_assets(
+            scene.skill,
+            variant_id=item.get("variant_id") if item else None,
+            asset_ids=list(item.get("asset_ids") or []) if item else None,
+            owner=f"场景「{scene.name}」",
+            field="params.scene_ref_selection",
+        )
+        for asset_id in picked:
             if asset_id not in merged_refs and len(merged_refs) < MAX_JOB_REFERENCE_ASSETS:
                 merged_refs.append(asset_id)
     params["reference_asset_ids"] = merged_refs

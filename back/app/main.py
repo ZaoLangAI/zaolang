@@ -18,7 +18,9 @@ from app.api.errors import register_exception_handlers
 from app.api.middleware import CorrelationMiddleware, SecurityHeadersMiddleware
 from app.api.v1 import (
     admin,
+    asset_variants,
     auth,
+    blocking,
     canvas,
     characters,
     community,
@@ -62,6 +64,7 @@ def build_router() -> APIRouter:
     router.include_router(shortform.router)
     router.include_router(characters.router)
     router.include_router(scenes.router)
+    router.include_router(asset_variants.router)
     router.include_router(gateway.router)
     router.include_router(uploads.router)
     router.include_router(credits.router)
@@ -72,6 +75,7 @@ def build_router() -> APIRouter:
     router.include_router(editor.router)
     router.include_router(canvas.router)
     router.include_router(scripts.router)
+    router.include_router(blocking.router)
     router.include_router(distribution.router)
     router.include_router(admin.router)
     return router

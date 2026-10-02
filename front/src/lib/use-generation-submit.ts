@@ -9,6 +9,7 @@ import { api, newIdempotencyKey } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { Draft, GenerationJob, Operation, QualityTier, Quote } from '@/lib/api/types';
 import { titleFromPrompt } from '@/lib/draft-title';
+import type { AssetPresetParams } from '@/features/image-assets/vocabulary';
 
 /** The inputs the price depends on.
  *
@@ -25,6 +26,8 @@ export interface GenerationQuoteInput {
   durationSeconds: number;
   assetKind?: 'general' | 'character' | 'scene' | 'cover';
   characterViews?: ('front' | 'side' | 'back')[];
+  /** A scene variant group prices one image per variant. */
+  sceneVariants?: AssetPresetParams['scene_variants'];
 }
 
 export interface GenerationSubmitInput extends GenerationQuoteInput {
@@ -78,8 +81,9 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
   targetCharacterId?: string | null;
   /** The scene this output auto-attaches to. Unset with `assetKind: 'scene'`/
    * `videoAssetKind: 'scene_video'` auto-creates a brand-new scene skill
-   * instead (parity with the character path above — see
-   * `zaolang-generation-jobs` invariant 15). */
+   * instead (parity with the character path above — see the
+   * `zaolang-generation-jobs` skill's asset-pipeline reference, write-back).
+   */
   targetSceneId?: string | null;
   /**
    * Overrides the planner's own guessed name when auto-creating a new
@@ -95,6 +99,10 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
    */
   autoAttachAsset?: boolean;
   /** Free-form provider hints, e.g. `{ sound: true }`. */
+  /** Character/scene preset fields (expressions, outfit, reference picks,
+   * lighting/weather/state/period, variant group) — see
+   * `features/image-assets/vocabulary.ts`. Spread into `params` verbatim. */
+  assetPresets?: AssetPresetParams;
   extra?: Record<string, unknown>;
   /**
    * The `CreationSkill`s applied to this request, in pick order. The studio
@@ -214,7 +222,9 @@ export function useGenerationSubmit(
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const { operation, qualityTier, durationSeconds, assetKind, characterViews } = quoteInput;
+  const { operation, qualityTier, durationSeconds, assetKind, characterViews, sceneVariants } =
+    quoteInput;
+  const sceneVariantsKey = JSON.stringify(sceneVariants ?? null);
   // Stable dependency key for the effect below — `characterViews` is a new
   // array identity on every render even when its contents haven't changed.
   const characterViewsKey = characterViews?.join(',') ?? '';
@@ -233,6 +243,7 @@ export function useGenerationSubmit(
           duration_seconds: durationSeconds,
           asset_kind: assetKind ?? 'general',
           character_views: characterViews ?? null,
+          scene_variants: sceneVariants ?? null,
         })
         .then((body) => {
           if (ticket !== latestQuote.current) return;
@@ -246,7 +257,15 @@ export function useGenerationSubmit(
     }, QUOTE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operation, qualityTier, durationSeconds, assetKind, characterViewsKey, sessionStatus]);
+  }, [
+    operation,
+    qualityTier,
+    durationSeconds,
+    assetKind,
+    characterViewsKey,
+    sceneVariantsKey,
+    sessionStatus,
+  ]);
 
   /**
    * Kept across a failed attempt so a retry reuses the same draft instead of
@@ -259,7 +278,7 @@ export function useGenerationSubmit(
    * any client-side timeout) leaves the server's outcome unknown, and
    * re-minting a key on retry would let that lost request *and* the retry
    * both reserve credits. The key is only cleared once a job id actually
-   * comes back — see `zaolang-credits-billing` invariant 5.
+   * comes back — see the `zaolang-frontend-ui` skill on idempotency keys.
    */
   const pendingIdempotencyKey = useRef<string | null>(null);
 
@@ -333,6 +352,7 @@ export function useGenerationSubmit(
                 subject_name_hint: input.subjectNameHint,
                 auto_attach_asset: input.autoAttachAsset ?? true,
                 forced_model: input.forcedModel ?? null,
+                ...input.assetPresets,
                 extra: input.extra ?? {},
               },
               max_credits: input.maxCredits,

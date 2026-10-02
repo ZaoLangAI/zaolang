@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.domain.licensing import service as licensing
+from app.domain.media.conform import conform_reference_video
 from app.models import (
     Asset,
     ContentFingerprint,
@@ -38,6 +39,7 @@ from app.models import (
     Profile,
     ProvenanceManifest,
     Series,
+    SkillAssetEntry,
     UploadSession,
     Work,
     WorkVersion,
@@ -105,7 +107,12 @@ def presign_upload(
     size_bytes: int,
     checksum_sha256: str,
     purpose: str,
+    depicts_real_person: bool = False,
 ) -> PresignedUpload:
+    """`depicts_real_person` is the uploader's own declaration that an image
+    or video shows a real person; it rides on the upload session and lands on
+    the `Asset`, where `consent.assert_reference_consents` then requires a
+    portrait consent before the asset may feed a generation job."""
     settings = get_settings()
 
     extension = s3.ALLOWED_UPLOAD_MIME_TYPES.get(mime_type)
@@ -146,6 +153,8 @@ def presign_upload(
         declared_size_bytes=size_bytes,
         declared_checksum_sha256=checksum_sha256,
         expires_at=expires_at,
+        # Only an image or video can show a person; ignored for anything else.
+        depicts_real_person=depicts_real_person and mime_type.startswith(("image/", "video/")),
     )
     session.add(upload_session)
     session.flush()
@@ -193,12 +202,30 @@ def complete_upload(session: Session, *, user_id: str, upload_session_id: str) -
         s3.delete_object(upload.object_key)
         raise ValidationFailed("文件校验和与申请时不一致。")
 
-    width, height, media_type = _probe(payload, upload.mime_type)
+    object_key = upload.object_key
+    mime_type = upload.mime_type
+    size_bytes = head["size_bytes"]
+    if upload.purpose == "generation_reference" and mime_type.startswith("video/"):
+        conformed = conform_reference_video(payload)
+        if conformed is not None:
+            # Stored beside the original under an `.mp4` name (some providers
+            # read the type off the URL), then the original goes. The session
+            # keeps the declared key/checksum: those described what was signed.
+            object_key = f"{upload.object_key.rsplit('.', 1)[0]}.mp4"
+            s3.put_object(object_key, conformed.payload, content_type=conformed.mime_type)
+            if object_key != upload.object_key:
+                s3.delete_object(upload.object_key)
+            payload = conformed.payload
+            mime_type = conformed.mime_type
+            size_bytes = len(payload)
+            actual_checksum = hashlib.sha256(payload).hexdigest()
+
+    width, height, media_type = _probe(payload, mime_type)
     duration_ms = None
     if media_type in {MediaType.VIDEO, MediaType.AUDIO}:
         from app.domain.editor.analysis import probe_bytes
 
-        probed_w, probed_h, duration_ms = probe_bytes(payload, upload.mime_type)
+        probed_w, probed_h, duration_ms = probe_bytes(payload, mime_type)
         width = width or probed_w
         height = height or probed_h
         if upload.purpose == "editor_export" and duration_ms is None and shutil.which("ffprobe"):
@@ -206,10 +233,10 @@ def complete_upload(session: Session, *, user_id: str, upload_session_id: str) -
 
     asset = Asset(
         owner_user_id=user_id,
-        object_key=upload.object_key,
+        object_key=object_key,
         media_type=media_type,
-        mime_type=upload.mime_type,
-        size_bytes=head["size_bytes"],
+        mime_type=mime_type,
+        size_bytes=size_bytes,
         checksum_sha256=actual_checksum,
         role=PURPOSE_TO_ROLE[upload.purpose],
         width=width,
@@ -217,6 +244,7 @@ def complete_upload(session: Session, *, user_id: str, upload_session_id: str) -
         duration_ms=duration_ms,
         moderation_status=ModerationStatus.PENDING,
         visibility=Visibility.PRIVATE,
+        depicts_real_person=upload.depicts_real_person,
     )
     session.add(asset)
     session.flush()
@@ -383,8 +411,9 @@ def validate_generation_references(
 
     Asset ids are user input.  Resolving them later in a worker without this
     ownership check would let a guessed private id become a signed provider
-    URL, even though the object itself never becomes public.     The exceptions are a remix-licensed source version's primary output,
-    and a published marketplace skill's public cover (so an image-asset
+    URL, even though the object itself never becomes public. The exceptions
+    are a remix-licensed source version's primary output, and a published
+    marketplace skill's public cover (so an image-asset
     recipe can ride as an img2img reference without cloning the still).
     """
 
@@ -442,6 +471,13 @@ def validate_generation_references(
                 "视频生成参考素材仅支持图片或视频。",
                 fields={"params.reference_asset_ids": "仅支持图片或视频"},
             )
+        if video_options.get("reference_video_role") == "motion_guide":
+            videos = [a for a in ordinary_ids if by_id[a].media_type == MediaType.VIDEO]
+            if len(videos) != 1:
+                raise ValidationFailed(
+                    "白膜参考模式必须恰好包含一段参考视频。",
+                    fields={"params.reference_asset_ids": "需要恰好一段参考视频"},
+                )
     elif operation == Operation.AUDIO_GENERATION.value:
         # The one reference `audio_generation` ever takes is a voice-clone
         # sample — count-capped to 1 in `validate_generation_params`
@@ -516,6 +552,7 @@ def provider_references_for(
             object_key=by_id[asset_id].object_key,
             media_type=by_id[asset_id].media_type,
             frame_type=frame_type,
+            asset_id=asset_id,
         )
         for asset_id, frame_type in ordered
         if asset_id in by_id
@@ -593,6 +630,9 @@ def extract_video_frame(session: Session, *, user_id: str, asset_id: str, positi
         height=height,
         moderation_status=ModerationStatus.PENDING,
         visibility=Visibility.PRIVATE,
+        # A frame of a real person still shows that person. It inherits the
+        # flag but not the consent — see `app.domain.consent.service`.
+        depicts_real_person=source.depicts_real_person,
     )
     session.add(frame_asset)
     session.flush()
@@ -859,10 +899,16 @@ def _is_shared(session: Session, asset_id: str, except_work_id: str) -> bool:
     if profile is not None:
         return True
 
-    series_logo = session.scalar(
-        select(Series.id).where(Series.logo_asset_id == asset_id).limit(1)
-    )
+    series_logo = session.scalar(select(Series.id).where(Series.logo_asset_id == asset_id).limit(1))
     if series_logo is not None:
+        return True
+
+    # A character/scene card's reference image (look/variant entry): deleting
+    # the work it first came from must not take the card's image with it.
+    skill_entry = session.scalar(
+        select(SkillAssetEntry.id).where(SkillAssetEntry.asset_id == asset_id).limit(1)
+    )
+    if skill_entry is not None:
         return True
 
     episode_preview = session.scalar(

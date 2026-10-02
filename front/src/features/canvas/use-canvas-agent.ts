@@ -2,6 +2,9 @@
 
 import { useCallback, useRef, useState } from 'react';
 
+import { newIdempotencyKey } from '@/lib/api/client';
+import { ApiError } from '@/lib/api/errors';
+
 import {
   cancelCanvasAgentRun,
   confirmCanvasAgentRun,
@@ -30,9 +33,41 @@ export interface CanvasAgentState {
 
 const IDLE: CanvasAgentState = { phase: 'idle', thinking: '', run: null, error: null };
 
+/**
+ * Confirms a run with one `Idempotency-Key` per attempt.
+ *
+ * The key is held until the confirm succeeds, so a retry after a timeout or a
+ * dropped connection replays the first answer rather than submitting — or
+ * being refused — a second time. A different run gets a fresh key, and so
+ * does the attempt after an `IDEMPOTENCY_CONFLICT`, which says the stored key
+ * belongs to some other request. See the `zaolang-frontend-ui` skill.
+ */
+export function useConfirmCanvasAgentRun() {
+  const pendingRef = useRef<{ runId: string; key: string } | null>(null);
+
+  return useCallback(async (runId: string) => {
+    const attempt =
+      pendingRef.current?.runId === runId
+        ? pendingRef.current
+        : { runId, key: newIdempotencyKey() };
+    pendingRef.current = attempt;
+    try {
+      const run = await confirmCanvasAgentRun(runId, attempt.key);
+      pendingRef.current = null;
+      return run;
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.code === 'IDEMPOTENCY_CONFLICT') {
+        pendingRef.current = null;
+      }
+      throw caught;
+    }
+  }, []);
+}
+
 export function useCanvasAgent(canvasId: string) {
   const [state, setState] = useState<CanvasAgentState>(IDLE);
   const abortRef = useRef<AbortController | null>(null);
+  const confirmRun = useConfirmCanvasAgentRun();
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
@@ -97,7 +132,7 @@ export function useCanvasAgent(canvasId: string) {
     if (!runId) return;
     setState((current) => ({ ...current, phase: 'submitting', error: null }));
     try {
-      const run = await confirmCanvasAgentRun(runId);
+      const run = await confirmRun(runId);
       setState((current) => ({ ...current, phase: 'done', run }));
     } catch (cause) {
       setState((current) => ({
@@ -108,7 +143,7 @@ export function useCanvasAgent(canvasId: string) {
         error: cause instanceof Error ? cause.message : String(cause),
       }));
     }
-  }, [state.run?.id]);
+  }, [confirmRun, state.run?.id]);
 
   const cancel = useCallback(async () => {
     const runId = state.run?.id;

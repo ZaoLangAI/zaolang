@@ -219,9 +219,7 @@ def test_image_generation_time_limits_single_pass() -> None:
 
 
 def test_image_generation_time_limits_scale_with_character_views() -> None:
-    two = _limits_job(
-        asset_kind=ImageAssetKind.CHARACTER.value, character_views=["side", "back"]
-    )
+    two = _limits_job(asset_kind=ImageAssetKind.CHARACTER.value, character_views=["side", "back"])
     three = _limits_job(
         asset_kind=ImageAssetKind.CHARACTER.value,
         character_views=["front", "side", "back"],
@@ -240,3 +238,81 @@ def test_image_generation_time_limits_ignore_views_on_non_character_kind() -> No
     assert tasks.image_generation_time_limits(
         _limits_job(asset_kind=ImageAssetKind.SCENE.value, character_views=["front", "side"])
     ) == {"soft_time_limit": 660, "time_limit": 720}
+
+
+def test_requested_output_count_counts_scene_variant_groups() -> None:
+    assert (
+        jobs_service.requested_output_count(
+            asset_kind=ImageAssetKind.SCENE.value,
+            character_views=None,
+            scene_variants=[{"lighting": "day"}, {"lighting": "dusk"}, {"lighting": "dawn"}],
+        )
+        == 3
+    )
+    assert (
+        jobs_service.requested_output_count(
+            asset_kind=ImageAssetKind.CHARACTER.value, character_views=["front", "side"]
+        )
+        == 2
+    )
+    # A composite expression image is one image.
+    assert (
+        jobs_service.requested_output_count(
+            asset_kind=ImageAssetKind.CHARACTER.value, character_views=["front"]
+        )
+        == 1
+    )
+
+
+def test_submit_reserves_credits_for_every_scene_variant(db: Session, funded: User) -> None:
+    result = jobs_service.submit(
+        db,
+        user_id=funded.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={
+            "prompt": "民国客厅",
+            "asset_kind": ImageAssetKind.SCENE.value,
+            "scene_variants": [{"lighting": "day"}, {"lighting": "night_interior"}],
+        },
+        idempotency_key=new_id("idk"),
+    )
+    baseline = compute_quote(operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
+    assert result.quote.credits == baseline.credits * 2
+
+
+def test_submit_discards_client_sent_reference_labels(db: Session, funded: User) -> None:
+    result = jobs_service.submit(
+        db,
+        user_id=funded.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={
+            "prompt": "神秘女侦探",
+            "reference_labels": [{"asset_id": "ast_x", "label": "角色·伪造"}],
+        },
+        idempotency_key=new_id("idk"),
+    )
+    assert not result.job.request_json.get("reference_labels")
+
+
+def test_submit_refuses_an_expression_sheet_without_a_reference(db: Session, funded: User) -> None:
+    from app.domain.errors import ValidationFailed
+
+    account = credits_service.get_or_create_account(db, funded.id)
+    before = account.available_balance
+    with pytest.raises(ValidationFailed):
+        jobs_service.submit(
+            db,
+            user_id=funded.id,
+            operation=Operation.TEXT_TO_IMAGE,
+            quality_tier=QualityTier.STANDARD,
+            params={
+                "prompt": "林夏",
+                "asset_kind": ImageAssetKind.CHARACTER.value,
+                "character_expressions": ["smile", "anger"],
+            },
+            idempotency_key=new_id("idk"),
+        )
+    db.refresh(account)
+    assert account.available_balance == before

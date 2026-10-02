@@ -649,15 +649,16 @@ def image_generation_time_limits(job: GenerationJob) -> dict[str, int]:
         - 1,
         0,
     )
+    # A scene variant set loops one pass per variant, exactly like views.
+    raw_variants = params.get("scene_variants")
+    if raw_kind == "scene" and isinstance(raw_variants, list):
+        extra = max(len(raw_variants) - 1, 0)
     return {
-        "soft_time_limit": min(
-            _IMAGE_GENERATION["soft_time_limit"] + _IMAGE_EXTRA_VIEW["soft_time_limit"] * extra,
-            _IMAGE_GENERATION_CAP["soft_time_limit"],
-        ),
-        "time_limit": min(
-            _IMAGE_GENERATION["time_limit"] + _IMAGE_EXTRA_VIEW["time_limit"] * extra,
-            _IMAGE_GENERATION_CAP["time_limit"],
-        ),
+        name: min(
+            _IMAGE_GENERATION[name] + _IMAGE_EXTRA_VIEW[name] * extra,
+            _IMAGE_GENERATION_CAP[name],
+        )
+        for name in ("soft_time_limit", "time_limit")
     }
 
 

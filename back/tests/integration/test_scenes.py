@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.domain.scenes import service as scenes_service
 from app.models import Asset, User
 from app.models.base import new_id
 from app.models.enums import AssetRole, MediaType, ModerationStatus, Visibility
@@ -67,10 +68,10 @@ def test_create_scene_rejects_audio_references(
     assert response.status_code == 422
 
 
-def test_create_scene_rejects_more_than_four_references(
+def test_create_scene_rejects_more_than_the_reference_cap(
     client: TestClient, db: Session, author: User
 ) -> None:
-    assets = [_asset(db, author) for _ in range(5)]
+    assets = [_asset(db, author) for _ in range(scenes_service.MAX_REFERENCE_ASSETS + 1)]
     response = client.post(
         "/v1/scenes",
         json={"name": "太多素材", "reference_asset_ids": [a.id for a in assets]},
@@ -195,3 +196,22 @@ def test_scene_pricing_uses_the_generic_skill_pricing_endpoint(
 
     refetched = client.get(f"/v1/scenes/{created['id']}", headers=auth_header(author))
     assert refetched.json()["access_credits"] == 50
+
+
+def test_scene_name_is_bounded_by_the_skill_title_column(
+    client: TestClient, db: Session, author: User
+) -> None:
+    # A scene is stored as a `CreationSkill` whose `title` is `VARCHAR(80)` —
+    # a longer name must fail validation, not the INSERT.
+    too_long = client.post("/v1/scenes", json={"name": "景" * 81}, headers=auth_header(author))
+    assert too_long.status_code == 422, too_long.text
+
+    created = client.post("/v1/scenes", json={"name": "景" * 80}, headers=auth_header(author))
+    assert created.status_code == 201, created.text
+
+    renamed = client.patch(
+        f"/v1/scenes/{created.json()['id']}",
+        json={"name": "场" * 81},
+        headers=auth_header(author),
+    )
+    assert renamed.status_code == 422, renamed.text

@@ -20,6 +20,9 @@ completes.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 import httpx
 
 from app.config import get_settings
@@ -188,13 +191,14 @@ class KuaishouClient(PlatformClient):
     def _post(
         self,
         url: str,
-        payload: dict[str, object],
+        payload: Mapping[str, object],
         *,
         error: type[DomainError],
         headers: dict[str, str] | None = None,
         files: dict[str, tuple[str, bytes, str]] | None = None,
         json_body: bool = False,
-    ) -> dict[str, object]:
+    ) -> dict[str, Any]:
+        """POST and return the platform's JSON object body, still untyped."""
         try:
             with httpx.Client(timeout=_TIMEOUT_SECONDS) as client:
                 if files is not None:
@@ -217,7 +221,7 @@ class KuaishouClient(PlatformClient):
         return body
 
 
-def _token_bundle_from(data: dict[str, object]) -> TokenBundle:
+def _token_bundle_from(data: dict[str, Any]) -> TokenBundle:
     if not data.get("access_token"):
         raise PlatformOAuthFailed(platform_error_code=data.get("result"))
     return TokenBundle(
