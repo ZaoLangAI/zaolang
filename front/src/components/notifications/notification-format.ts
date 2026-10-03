@@ -388,3 +388,13 @@ export function targetHref(item: Notification): string | null {
   }
   return null;
 }
+
+/** At most this many live cards; a batch (a 12-cell scene matrix) queues
+ * that many jobs at once and would otherwise wall off the page. */
+export const MAX_VISIBLE_TOASTS = 3;
+
+/** The newest `MAX_VISIBLE_TOASTS` toasts, and how many older ones are folded. */
+export function visibleToasts<T>(toasts: readonly T[]): { shown: T[]; folded: number } {
+  const shown = toasts.slice(-MAX_VISIBLE_TOASTS);
+  return { shown, folded: toasts.length - shown.length };
+}
