@@ -7,6 +7,7 @@ import {
   notificationText,
   notificationVisual,
   targetHref,
+  visibleToasts,
 } from '@/components/notifications/notification-format';
 import { IconClose } from '@/components/ui/icons';
 import { Link } from '@/i18n/navigation';
@@ -31,13 +32,22 @@ export function NotificationToastStack() {
   const { toasts, dismissToast, markOne } = useNotificationCenter();
 
   if (toasts.length === 0) return null;
+  const { shown, folded } = visibleToasts(toasts);
 
   return (
     <div
       aria-live="polite"
       className="pointer-events-none fixed right-4 top-20 z-50 flex w-full max-w-sm flex-col gap-2"
     >
-      {toasts.map(({ key, notification }) => {
+      {folded > 0 ? (
+        <Link
+          href="/notifications"
+          className="pointer-events-auto rounded-[var(--radius-md)] border border-border bg-surface-raised px-4 py-2 text-xs text-muted shadow-raised hover:text-text"
+        >
+          {t('moreToasts', { count: folded })}
+        </Link>
+      ) : null}
+      {shown.map(({ key, notification }) => {
         const visual = notificationVisual(notification);
         const Icon = visual.icon;
         const Badge = visual.badge;

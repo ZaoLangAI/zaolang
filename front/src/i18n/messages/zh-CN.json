@@ -2783,6 +2783,7 @@
     "title": "通知中心",
     "subtitle": "二创、关注、任务与平台公告都会出现在这里。",
     "markAllRead": "全部标记已读",
+    "moreToasts": "还有 {count} 条创作动态，去通知中心查看",
     "unreadCount": "{count} 条未读",
     "empty": "还没有通知",
     "emptyHint": "有人二创你的作品或关注你时，这里会有提醒。",

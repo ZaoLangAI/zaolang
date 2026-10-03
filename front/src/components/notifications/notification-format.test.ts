@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Notification } from '@/lib/api/types';
 
-import { targetHref } from './notification-format';
+import { MAX_VISIBLE_TOASTS, targetHref, visibleToasts } from './notification-format';
 
 function jobNotification(
   overrides: Partial<Notification> & { payload?: Notification['payload'] } = {},
@@ -71,5 +71,17 @@ describe('targetHref', () => {
         }),
       ),
     ).toBe('/jobs/job_new');
+  });
+});
+
+describe('visibleToasts', () => {
+  it('keeps the newest cards and folds the rest into a count', () => {
+    const toasts = Array.from({ length: 10 }, (_, index) => index);
+    expect(visibleToasts(toasts)).toEqual({ shown: [7, 8, 9], folded: 7 });
+  });
+
+  it('folds nothing while the stack is small', () => {
+    expect(visibleToasts([1, 2])).toEqual({ shown: [1, 2], folded: 0 });
+    expect(MAX_VISIBLE_TOASTS).toBe(3);
   });
 });

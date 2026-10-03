@@ -2783,6 +2783,7 @@
     "title": "Notifications",
     "subtitle": "Remixes, follows, job updates and platform notices all land here.",
     "markAllRead": "Mark all read",
+    "moreToasts": "{count} more updates in the notification center",
     "unreadCount": "{count} unread",
     "empty": "No notifications yet",
     "emptyHint": "You will hear from us when someone remixes your work or follows you.",
