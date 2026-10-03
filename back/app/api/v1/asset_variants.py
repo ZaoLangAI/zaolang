@@ -165,6 +165,9 @@ def _register(
             label=payload.label,
             expressions=[str(e) for e in payload.expressions] if payload.expressions else None,
         )
+        # An upload is approved at once, so it can be the card's first anchor
+        # — without one a scene's matrix cells have no master to keep.
+        av.claim_anchor(session, skill, entry)
         skill_library_service.withdraw_after_edit(session, skill)
         session.commit()
         return presenter.entry_view(session, entry)

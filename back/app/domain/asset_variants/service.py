@@ -473,6 +473,32 @@ def prefer_portrait_anchor(session: Session, skill: CreationSkill, entry: SkillA
         set_anchor(session, skill, entry)
 
 
+def claim_anchor(session: Session, skill: CreationSkill, entry: SkillAssetEntry) -> None:
+    """The automatic anchor for a newly filed approved image, wherever it
+    came from (write-back, the P1 append APIs, the library's 上传图片).
+    Character: an identity portrait (`prefer_portrait_anchor`), else the
+    default look's sheet while the card has no anchor — another outfit's
+    sheet must never become the identity every job leads with. Scene: a
+    master plate while the card has none, the main scene's own, or one that
+    replaced the anchor's master in its variant."""
+    if not is_approved(entry):
+        return
+    current = anchor(skill)
+    if is_character(skill):
+        if entry.entry_type == AssetEntryType.IDENTITY_PORTRAIT:
+            prefer_portrait_anchor(session, skill, entry)
+        elif (
+            current is None
+            and entry.entry_type == AssetEntryType.CHARACTER_SHEET
+            and entry.variant.is_default
+        ):
+            set_anchor(session, skill, entry)
+    elif entry.entry_type == AssetEntryType.MASTER and (
+        current is None or entry.variant.is_default or current.variant_id == entry.variant_id
+    ):
+        set_anchor(session, skill, entry)
+
+
 def add_entry(
     session: Session,
     skill: CreationSkill,

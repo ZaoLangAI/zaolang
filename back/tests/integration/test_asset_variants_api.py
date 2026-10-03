@@ -302,3 +302,46 @@ def test_skill_detail_hides_candidates(client: TestClient, db: Session, author: 
     first, _ = _generated_sheets(db, author, character["id"], 2)
     body = client.get(f"/v1/skills/{character['id']}", headers=auth_header(author)).json()
     assert [e["asset_id"] for e in body["asset_variants"][0]["entries"]] == [first]
+
+
+def test_an_upload_can_become_the_cards_first_anchor(
+    client: TestClient, db: Session, author: User
+) -> None:
+    """The library's 上传图片 files an approved image at once, so it claims
+    the automatic anchor the same way a generated one does — a scene whose
+    master was uploaded by hand still gives its matrix cells a master."""
+    headers = auth_header(author)
+    scene = client.post("/v1/scenes", json={"name": "客厅"}, headers=headers).json()
+    scene_base = f"/v1/scenes/{scene['id']}"
+    master = client.post(
+        f"{scene_base}/variants/{scene['variants'][0]['id']}/entries",
+        json={"asset_id": _asset(db, author).id, "entry_type": "master"},
+        headers=headers,
+    )
+    assert master.status_code == 201
+    assert client.get(scene_base, headers=headers).json()["anchor_entry_id"] == master.json()["id"]
+
+    character = _character(client, author)
+    base = f"/v1/characters/{character['id']}"
+    default_id = character["looks"][0]["id"]
+    wedding = client.post(f"{base}/looks", json={"name": "婚礼"}, headers=headers).json()
+    outfit_sheet = client.post(
+        f"{base}/looks/{wedding['id']}/entries",
+        json={"asset_id": _asset(db, author).id, "entry_type": "character_sheet", "view": "front"},
+        headers=headers,
+    )
+    assert outfit_sheet.status_code == 201
+    assert client.get(base, headers=headers).json()["anchor_entry_id"] is None
+
+    sheet = client.post(
+        f"{base}/looks/{default_id}/entries",
+        json={"asset_id": _asset(db, author).id, "entry_type": "character_sheet", "view": "front"},
+        headers=headers,
+    ).json()
+    assert client.get(base, headers=headers).json()["anchor_entry_id"] == sheet["id"]
+    portrait = client.post(
+        f"{base}/looks/{default_id}/entries",
+        json={"asset_id": _asset(db, author).id, "entry_type": "identity_portrait"},
+        headers=headers,
+    ).json()
+    assert client.get(base, headers=headers).json()["anchor_entry_id"] == portrait["id"]
