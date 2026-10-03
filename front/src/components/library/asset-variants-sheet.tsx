@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 import { LookFillDialog } from '@/components/characters/look-fill-dialog';
+import { matchesPresetFilter } from '@/features/image-assets/matrix';
 import { candidateCount, groupEntries } from '@/components/library/entry-groups';
 import { SceneMatrixDialog } from '@/components/scenes/scene-matrix-dialog';
 import { Button, IconButton } from '@/components/ui/button';
@@ -86,6 +87,7 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
   portraitHref?: string;
 }) {
   const t = useTranslations('assetVariants');
+  const tPresetLabels = useTranslations('remixPage');
   const { notify } = useToast();
   const router = useRouter();
   const base = `/v1/${kind === 'character' ? 'characters' : 'scenes'}/${card.id}`;
@@ -99,13 +101,20 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
   const [creating, setCreating] = useState(false);
   const [matrixOpen, setMatrixOpen] = useState(false);
   const [fillOpen, setFillOpen] = useState(false);
-  // Scene cards have no variant cap (P2-5): past a handful, filter the tabs
-  // by name — matrix variants are named by their presets (黄昏 · 雨 · 战损).
+  // Scene cards have no variant cap (P2-5): past a handful, the tabs get a
+  // filter — per preset axis for scenes (§9.3), by name for looks.
   const [filter, setFilter] = useState('');
-  const visibleVariants =
-    variants.length > VARIANT_FILTER_THRESHOLD && filter.trim()
-      ? variants.filter((variant) => variant.name.includes(filter.trim()))
-      : variants;
+  const [presetFilter, setPresetFilter] = useState<ScenePresets>({});
+  const filtering = variants.length > VARIANT_FILTER_THRESHOLD;
+  const visibleVariants = !filtering
+    ? variants
+    : kind === 'scene'
+      ? variants.filter((variant) =>
+          matchesPresetFilter(variant.presets, presetFilter as Record<string, string>),
+        )
+      : filter.trim()
+        ? variants.filter((variant) => variant.name.includes(filter.trim()))
+        : variants;
 
   const active = variants.find((v) => v.id === activeId) ?? variants[0];
   // The card's face every look is drawn from (P2-2); offered until one is approved.
@@ -188,7 +197,40 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
             </Button>
           </div>
         ) : null}
-        {variants.length > VARIANT_FILTER_THRESHOLD ? (
+        {filtering && kind === 'scene' ? (
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className="mb-1 text-xs font-medium text-muted">{t('filterVariants')}</legend>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {PRESET_AXES.map(({ axis, table }) => {
+                const present = new Set(
+                  variants.map((variant) => (variant.presets as ScenePresets | undefined)?.[axis]),
+                );
+                return (
+                  <Select
+                    key={axis}
+                    label={tPresetLabels(`presets.axis${axis[0]?.toUpperCase()}${axis.slice(1)}`)}
+                    value={presetFilter[axis] ?? ''}
+                    onChange={(event) =>
+                      setPresetFilter((current) => ({
+                        ...current,
+                        [axis]: event.target.value || undefined,
+                      }))
+                    }
+                    options={[
+                      { value: '', label: t('filterAll') },
+                      ...Object.entries(table)
+                        .filter(([key]) => present.has(key as never))
+                        .map(([key, entry]) => ({
+                          value: key,
+                          label: tPresetLabels(`presets.${entry.labelKey}`),
+                        })),
+                    ]}
+                  />
+                );
+              })}
+            </div>
+          </fieldset>
+        ) : filtering ? (
           <TextInput
             label={t('filterVariants')}
             value={filter}
