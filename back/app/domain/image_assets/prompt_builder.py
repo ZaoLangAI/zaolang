@@ -103,13 +103,16 @@ IDENTITY_LOCK_PREFIX = (
 )
 
 # A 换装 sheet with the character's existing sheet attached as reference 1.
+# The prompt still carries the card's own description, which usually names
+# the default look's clothes too (the library joins card + look text), so
+# the prefix says outright which outfit wins.
 OUTFIT_CHANGE_PREFIX = (
     "以参考图1中的人物为准，严格保持其五官、发型发色、肤色、体型与身高比例完全一致，"
-    "仅将服装替换为「{label}」造型："
+    "仅将服装替换为「{label}」造型，角色描述里原有的服装与配饰一律不用："
 )
 OUTFIT_LABEL_SENTENCE = "本图为角色的「{label}」造型。"
 # The target look's own outfit description (P2-3, `params["target_look"]`).
-OUTFIT_DESCRIPTION_SENTENCE = "「{label}」造型的服装与配饰：{description}。"
+OUTFIT_DESCRIPTION_SENTENCE = "「{label}」造型的服装与配饰：{description}（以此替换角色原有服装）。"
 LOOK_DESCRIPTION_SENTENCE = "服装与配饰：{description}。"
 
 

@@ -139,7 +139,19 @@ def test_the_sheet_prompt_carries_the_look_name_and_outfit() -> None:
         has_reference=True,
     )
     assert prompt.startswith(pb.OUTFIT_CHANGE_PREFIX.format(label="婚礼"))
-    assert "「婚礼」造型的服装与配饰：白色缎面婚纱，头纱。" in prompt
+    assert "原有的服装与配饰一律不用" in prompt
+    assert "「婚礼」造型的服装与配饰：白色缎面婚纱，头纱（以此替换角色原有服装）。" in prompt
+
+    # Without the face reference, the outfit sentence alone says which clothes win.
+    no_reference, _ = pb.compose(
+        pb.AssetPass.CHARACTER_SHEET,
+        prompt="林夏，米白色针织开衫",
+        negative=None,
+        params={"target_look": {"name": "婚礼", "description": "白色缎面婚纱"}},
+        has_reference=False,
+    )
+    assert "本图为角色的「婚礼」造型。" in no_reference
+    assert "白色缎面婚纱（以此替换角色原有服装）" in no_reference
 
     default_look, _ = pb.compose(
         pb.AssetPass.CHARACTER_SHEET,
