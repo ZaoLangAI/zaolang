@@ -70,3 +70,14 @@ export function jobStageState(
     reachedKey: STAGES.filter((stage) => reached.has(stage)).join(','),
   };
 }
+
+/**
+ * The `jobPage` title for a job that stopped without a result — what the
+ * stage area says instead of an in-flight caption and a 100% that a failed
+ * event leaves behind. Null while running or after success.
+ */
+export function stoppedTitleKey(status: string): 'failedTitle' | 'cancelledTitle' | null {
+  if (status === 'cancelled') return 'cancelledTitle';
+  if (status === 'failed' || status === 'expired') return 'failedTitle';
+  return null;
+}
