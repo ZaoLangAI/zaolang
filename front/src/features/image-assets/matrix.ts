@@ -97,3 +97,15 @@ export function matrixCellProgress(status: string | undefined): MatrixCellProgre
       return 'queued';
   }
 }
+
+/**
+ * Whether a scene variant's presets match the variant panel's per-axis
+ * filter (§9.3: 按光照 / 天气 / 状态 / 年代过滤). An axis left empty in the
+ * filter matches anything.
+ */
+export function matchesPresetFilter(
+  presets: Partial<Record<string, unknown>> | undefined,
+  filter: Partial<Record<MatrixAxis, string>>,
+): boolean {
+  return MATRIX_AXES.every((axis) => !filter[axis] || presets?.[axis] === filter[axis]);
+}

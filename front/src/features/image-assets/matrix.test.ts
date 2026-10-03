@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { matrixCellCount, matrixCellProgress, matrixGrid } from './matrix';
+import { matchesPresetFilter, matrixCellCount, matrixCellProgress, matrixGrid } from './matrix';
 
 describe('matrixCellCount', () => {
   it('multiplies the axes that have values and ignores the empty ones', () => {
@@ -73,5 +73,15 @@ describe('matrixCellProgress', () => {
     expect(matrixCellProgress('awaiting_input')).toBe('waiting');
     expect(matrixCellProgress('succeeded')).toBe('done');
     expect(matrixCellProgress('expired')).toBe('failed');
+  });
+});
+
+describe('matchesPresetFilter', () => {
+  it('matches every filtered axis and ignores the empty ones', () => {
+    const presets = { lighting: 'dusk', weather: 'rain' };
+    expect(matchesPresetFilter(presets, {})).toBe(true);
+    expect(matchesPresetFilter(presets, { lighting: 'dusk' })).toBe(true);
+    expect(matchesPresetFilter(presets, { lighting: 'dusk', weather: 'snow' })).toBe(false);
+    expect(matchesPresetFilter(undefined, { state: 'ruins' })).toBe(false);
   });
 });
