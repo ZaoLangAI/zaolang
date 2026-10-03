@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { matrixCellCount, matrixGrid } from './matrix';
+import { matrixCellCount, matrixCellProgress, matrixGrid } from './matrix';
 
 describe('matrixCellCount', () => {
   it('multiplies the axes that have values and ignores the empty ones', () => {
@@ -62,5 +62,16 @@ describe('matrixGrid', () => {
       [null],
     ]);
     expect(matrixGrid({}, [])).toBeNull();
+  });
+});
+
+describe('matrixCellProgress', () => {
+  it('maps job statuses onto the dialog badges', () => {
+    expect(matrixCellProgress(undefined)).toBe('queued');
+    expect(matrixCellProgress('queued')).toBe('queued');
+    expect(matrixCellProgress('running')).toBe('running');
+    expect(matrixCellProgress('awaiting_input')).toBe('waiting');
+    expect(matrixCellProgress('succeeded')).toBe('done');
+    expect(matrixCellProgress('expired')).toBe('failed');
   });
 });

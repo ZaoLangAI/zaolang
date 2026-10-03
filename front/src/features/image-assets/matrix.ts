@@ -76,3 +76,24 @@ export function matrixGrid<Cell extends { presets: Partial<Record<string, string
     })),
   };
 }
+
+export type MatrixCellProgress = 'queued' | 'running' | 'waiting' | 'done' | 'failed';
+
+/** A submitted cell's job status as the dialog's per-cell progress. */
+export function matrixCellProgress(status: string | undefined): MatrixCellProgress {
+  switch (status) {
+    case 'succeeded':
+      return 'done';
+    case 'failed':
+    case 'cancelled':
+    case 'expired':
+      return 'failed';
+    case 'awaiting_input':
+      return 'waiting';
+    case 'submitted':
+    case 'running':
+      return 'running';
+    default:
+      return 'queued';
+  }
+}
