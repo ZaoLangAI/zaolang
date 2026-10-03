@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { jobOutputs, partialDelivery } from './job-outputs';
+import { jobOutputs, partialDelivery, reviewCandidatesHref } from './job-outputs';
 
 describe('jobOutputs', () => {
   it('reads the singular fields, which is what an ordinary job sets', () => {
@@ -52,5 +52,23 @@ describe('partialDelivery', () => {
   it('is null for a single-image job and for a job that has not succeeded', () => {
     expect(partialDelivery({ ...job, requested_outputs: 1 })).toBeNull();
     expect(partialDelivery({ ...job, status: 'running' })).toBeNull();
+  });
+});
+
+describe('reviewCandidatesHref', () => {
+  it('opens the filed card’s sheet in its library', () => {
+    expect(reviewCandidatesHref({ asset_kind: 'character', linked_character_id: 'sk_1' })).toBe(
+      '/create/characters?manage=sk_1',
+    );
+    expect(reviewCandidatesHref({ asset_kind: 'scene', linked_scene_id: 'sk_2' })).toBe(
+      '/create/scenes?manage=sk_2',
+    );
+  });
+
+  it('falls back to the library when the job names no card', () => {
+    expect(reviewCandidatesHref({ asset_kind: 'scene' })).toBe('/create/scenes');
+    expect(reviewCandidatesHref({ asset_kind: 'character', linked_scene_id: 'sk_2' })).toBe(
+      '/create/characters',
+    );
   });
 });

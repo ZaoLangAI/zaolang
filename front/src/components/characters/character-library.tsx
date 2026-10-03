@@ -76,7 +76,14 @@ function sheetHref(character: Pick<Character, 'id' | 'name' | 'description'>): s
  * the multi-panel design board generated from the image studio — so what
  * is offered here is a profile a future generation call can be pointed at.
  */
-export function CharacterLibrary({ initial }: { initial: Character[] }) {
+export function CharacterLibrary({
+  initial,
+  manageId,
+}: {
+  initial: Character[];
+  /** Opens this card's looks sheet on arrival (`?manage=`, the studio's 去定稿). */
+  manageId?: string;
+}) {
   const t = useTranslations('characters');
   const tActions = useTranslations('actions');
   const tStates = useTranslations('states');
@@ -110,7 +117,9 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
   const [publishBusy, setPublishBusy] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
-  const [looksTarget, setLooksTarget] = useState<Character | null>(null);
+  const [looksTarget, setLooksTarget] = useState<Character | null>(
+    () => initial.find((character) => character.id === manageId) ?? null,
+  );
 
   const openCreate = () => {
     setEditing(null);

@@ -16,7 +16,12 @@ export async function generateMetadata() {
  * A creator's cast: reusable faces and voice hints so a multi-episode short
  * stays consistent without retyping a description on every draft.
  */
-export default async function CharactersPage() {
+export default async function CharactersPage({
+  searchParams,
+}: {
+  /** `manage`: a card whose looks sheet opens on arrival (the studio's 去定稿). */
+  searchParams: Promise<{ manage?: string }>;
+}) {
   const t = await getTranslations('characters');
   const tActions = await getTranslations('actions');
   if (!(await isSignedIn())) return <SignInPrompt />;
@@ -30,7 +35,7 @@ export default async function CharactersPage() {
     <div className="mx-auto flex w-full max-w-[1160px] flex-col gap-6 px-4 py-6 sm:px-6">
       <GoBackLink fallbackHref="/create">{tActions('back')}</GoBackLink>
       <PageHeading eyebrow={t('eyebrow')} title={t('title')} description={t('subtitle')} />
-      <CharacterLibrary initial={characters} />
+      <CharacterLibrary initial={characters} manageId={(await searchParams).manage} />
     </div>
   );
 }
