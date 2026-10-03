@@ -70,17 +70,38 @@ def eligible_candidates(
     an unbound profile draws from the whole compatible shared pool.
     """
     client = get_redis()
+    return [
+        (endpoint_id, endpoint)
+        for endpoint_id, endpoint in _bound_candidates(config, preferred_ids)
+        if not is_breaker_open(client, endpoint_id)
+        and current_concurrency(client, endpoint_id) < endpoint.max_concurrency
+    ]
+
+
+def saturated_candidates(
+    config: LlmProviderConfig, *, preferred_ids: Sequence[str] = ()
+) -> list[tuple[str, LlmProviderEndpoint]]:
+    """Healthy candidates (breaker closed) whose every slot is taken: busy,
+    not broken — a caller that can afford to wait gets a slot once one of
+    the in-flight calls finishes."""
+    client = get_redis()
+    return [
+        (endpoint_id, endpoint)
+        for endpoint_id, endpoint in _bound_candidates(config, preferred_ids)
+        if not is_breaker_open(client, endpoint_id)
+        and current_concurrency(client, endpoint_id) >= endpoint.max_concurrency
+    ]
+
+
+def _bound_candidates(
+    config: LlmProviderConfig, preferred_ids: Sequence[str]
+) -> list[tuple[str, LlmProviderEndpoint]]:
     ordered = general_candidates(config)
     if preferred_ids:
         rank = {endpoint_id: index for index, endpoint_id in enumerate(preferred_ids)}
         ordered = [pair for pair in ordered if pair[0] in rank]
         ordered.sort(key=lambda pair: rank[pair[0]])
-    return [
-        (endpoint_id, endpoint)
-        for endpoint_id, endpoint in ordered
-        if not is_breaker_open(client, endpoint_id)
-        and current_concurrency(client, endpoint_id) < endpoint.max_concurrency
-    ]
+    return ordered
 
 
 def is_breaker_open(client: redis.Redis, endpoint_id: str) -> bool:

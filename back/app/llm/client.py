@@ -11,6 +11,7 @@ and retried at the job level (see `app.workflows.runner`).
 from __future__ import annotations
 
 import logging
+import random
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -46,6 +47,16 @@ NO_ENDPOINT_ID = "none"
 MAX_TRANSPORT_RETRIES = 1
 CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5
 CIRCUIT_BREAKER_COOLDOWN_SECONDS = 60
+# How long `complete()` waits for a slot when every healthy endpoint is at
+# `max_concurrency`. A batch (a 12-cell scene matrix, a fill wave) puts more
+# jobs on the safety/planner agents at once than a small pool has slots;
+# without waiting the overflow failed outright as "no endpoint configured".
+# Measured locally (glm-5.3-flash, 4 slots, 12 matrix cells): the last cell
+# finished ~6 minutes after submit, so a 90s wait still failed half of them.
+# 420s stays under the image task's 660s soft limit (`workers/tasks.py`).
+CAPACITY_WAIT_SECONDS = 420.0
+# Jittered so waiting workers do not wake in lockstep and re-collide.
+CAPACITY_POLL_SECONDS = (0.5, 1.5)
 
 # A wall-clock ceiling on one streaming attempt, independent of
 # `endpoint.timeout_ms` (which only bounds the *idle* gap between bytes and
@@ -250,6 +261,8 @@ def complete(
 
     provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
     endpoints = failover.eligible_candidates(provider_config, preferred_ids=preferred_endpoint_ids)
+    if not endpoints:
+        endpoints = _wait_for_capacity(provider_config, preferred_endpoint_ids)
 
     last_error: Exception | None = None
     tried_endpoint = False
@@ -300,10 +313,29 @@ def complete(
         # candidate is breaker-open/at capacity). There is no env-level
         # endpoint to fall back to any more — an operator has to configure one
         # at `/admin/models`.
+        if failover.saturated_candidates(provider_config, preferred_ids=preferred_endpoint_ids):
+            raise ProviderTemporaryFailure("LLM 网关繁忙（并发已满），请稍后重试。")
         raise ProviderTemporaryFailure("未配置任何可用的 LLM 网关端点。")
 
     reason = type(last_error).__name__ if last_error else "unknown_error"
     raise ProviderTemporaryFailure(f"LLM 网关不可用（智能体「{agent_name}」）: {reason}")
+
+
+def _wait_for_capacity(
+    config: LlmProviderConfig, preferred_ids: Sequence[str]
+) -> list[tuple[str, LlmProviderEndpoint]]:
+    """Waits up to `CAPACITY_WAIT_SECONDS` for a slot on a healthy endpoint
+    that is only busy. Returns at once (empty) when nothing is merely busy —
+    an empty pool or open breakers will not heal by waiting here."""
+    deadline = time.monotonic() + CAPACITY_WAIT_SECONDS
+    while failover.saturated_candidates(config, preferred_ids=preferred_ids):
+        if time.monotonic() >= deadline:
+            return []
+        time.sleep(random.uniform(*CAPACITY_POLL_SECONDS))
+        endpoints = failover.eligible_candidates(config, preferred_ids=preferred_ids)
+        if endpoints:
+            return endpoints
+    return failover.eligible_candidates(config, preferred_ids=preferred_ids)
 
 
 def _attempt_endpoint(

@@ -255,6 +255,54 @@ def test_circuit_breaker_opens_after_repeated_failures_and_excludes_the_endpoint
     assert call_count == 0
 
 
+def test_a_busy_pool_waits_for_a_slot_instead_of_failing(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A batch can put more agent calls in flight than the pool has slots;
+    the overflow waits for one to free up rather than failing the job."""
+    _seed_endpoint(db, endpoint_id="busy-ep", model="test-llm")
+    client = get_redis()
+    client.set("llmfo:conc:busy-ep", 4)  # the default max_concurrency
+    monkeypatch.setattr(
+        llm_client, "_call_gateway", lambda **kw: _completion_payload(kw["model"], {"ok": True})
+    )
+    waits: list[float] = []
+
+    def _finish_one_call(seconds: float) -> None:
+        waits.append(seconds)
+        client.decr("llmfo:conc:busy-ep")
+
+    monkeypatch.setattr(llm_client.time, "sleep", _finish_one_call)
+
+    result = llm_client.complete(
+        session=db,
+        agent_name="safety",
+        model="test-llm",
+        messages=[{"role": "user", "content": "x"}],
+    )
+
+    assert result.endpoint_id == "busy-ep"
+    low, high = llm_client.CAPACITY_POLL_SECONDS
+    assert len(waits) == 1 and low <= waits[0] <= high
+
+
+def test_a_pool_that_stays_busy_fails_as_busy_not_unconfigured(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_endpoint(db, endpoint_id="busy-ep", model="test-llm")
+    get_redis().set("llmfo:conc:busy-ep", 4)
+    monkeypatch.setattr(llm_client, "CAPACITY_WAIT_SECONDS", 0.0)
+    monkeypatch.setattr(llm_client, "_call_gateway", _always_times_out)
+
+    with pytest.raises(ProviderTemporaryFailure, match="LLM 网关繁忙"):
+        llm_client.complete(
+            session=db,
+            agent_name="safety",
+            model="test-llm",
+            messages=[{"role": "user", "content": "x"}],
+        )
+
+
 def test_every_agent_call_is_recorded(
     db: Session, author: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
