@@ -3805,8 +3805,15 @@
     "matrixSubmitted": "{count} jobs submitted; each image lands in its variant when done.",
     "matrixInsufficient": "Needs {credits} credits; {available} available.",
     "matrixOverSpendLimit": "Needs {credits} credits, over this month's spending limit.",
-    "matrixCellQueued": "Submitted",
     "matrixCellFailed": "Failed",
+    "matrixProgress": {
+      "queued": "Queued",
+      "running": "Generating",
+      "waiting": "Needs answer",
+      "done": "Done",
+      "failed": "Failed"
+    },
+    "matrixProgressSummary": "{done} of {total} done",
     "matrixStatus": {
       "new": "New",
       "exists": "Exists",

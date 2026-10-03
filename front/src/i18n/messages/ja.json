@@ -3805,8 +3805,15 @@
     "matrixSubmitted": "{count} 件のタスクを送信しました。完了すると各バリエーションに表示されます。",
     "matrixInsufficient": "{credits} クレジットが必要です。利用可能：{available}。",
     "matrixOverSpendLimit": "{credits} クレジットが必要で、今月の利用上限を超えています。",
-    "matrixCellQueued": "送信済み",
     "matrixCellFailed": "送信失敗",
+    "matrixProgress": {
+      "queued": "待機中",
+      "running": "生成中",
+      "waiting": "回答待ち",
+      "done": "完了",
+      "failed": "生成失敗"
+    },
+    "matrixProgressSummary": "{total} 件中 {done} 件完了",
     "matrixStatus": {
       "new": "未生成",
       "exists": "あり",

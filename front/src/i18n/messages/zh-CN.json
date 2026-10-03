@@ -3805,8 +3805,15 @@
     "matrixSubmitted": "已提交 {count} 个任务，完成后会出现在对应的变体里。",
     "matrixInsufficient": "需要 {credits} 积分，当前可用 {available}。",
     "matrixOverSpendLimit": "需要 {credits} 积分，超出本月消费上限。",
-    "matrixCellQueued": "已提交",
     "matrixCellFailed": "提交失败",
+    "matrixProgress": {
+      "queued": "排队中",
+      "running": "生成中",
+      "waiting": "待回答",
+      "done": "已完成",
+      "failed": "生成失败"
+    },
+    "matrixProgressSummary": "已完成 {done}/{total}",
     "matrixStatus": {
       "new": "待生成",
       "exists": "已有",

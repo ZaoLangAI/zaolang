@@ -312,6 +312,7 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
           sceneId={card.id}
           open={matrixOpen}
           onClose={() => setMatrixOpen(false)}
+          onProgress={() => void run(() => Promise.resolve())}
         />
       ) : null}
     </Sheet>
