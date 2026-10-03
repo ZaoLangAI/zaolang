@@ -2545,6 +2545,7 @@
     "creditsSettled": "{count} credits settled",
     "creditsRefunded": "{count} credits refunded",
     "partialDelivery": "{delivered} of {requested} images delivered; credits for the rest were refunded",
+    "partialDeliveryRefund": "{delivered} of {requested} images delivered; {refunded} credits for the rest were refunded",
     "failedTitle": "This one did not come out",
     "failedHint": "The held credits are already back in your balance. Adjust the description and try again.",
     "cancelledTitle": "Job cancelled",

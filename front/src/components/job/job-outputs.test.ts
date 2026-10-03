@@ -42,7 +42,15 @@ describe('partialDelivery', () => {
   };
 
   it('reports how many of the priced images a succeeded job delivered', () => {
-    expect(partialDelivery(job)).toEqual({ delivered: 2, requested: 3 });
+    expect(partialDelivery(job)).toEqual({ delivered: 2, requested: 3, refunded: null });
+  });
+
+  it('says how many credits the undelivered images gave back once settled', () => {
+    expect(partialDelivery({ ...job, reserved_credits: 36, actual_credits: 24 })).toEqual({
+      delivered: 2,
+      requested: 3,
+      refunded: 12,
+    });
   });
 
   it('is null once every priced image arrived', () => {

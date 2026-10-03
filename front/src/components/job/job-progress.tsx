@@ -465,7 +465,12 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
 
           {partial ? (
             <p role="status" className="text-sm text-muted">
-              {t('partialDelivery', partial)}
+              {partial.refunded != null
+                ? t('partialDeliveryRefund', { ...partial, refunded: partial.refunded })
+                : t('partialDelivery', {
+                    delivered: partial.delivered,
+                    requested: partial.requested,
+                  })}
             </p>
           ) : null}
 
