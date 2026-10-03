@@ -160,6 +160,46 @@ def test_a_scene_variant_without_its_own_master_falls_back_to_the_anchor(
     assert params["reference_asset_ids"] == [master.id]
 
 
+def test_a_scene_image_with_no_reference_borrows_its_targets_master(
+    db: Session, author: User
+) -> None:
+    scene = scenes_service.create_scene(
+        db, user_id=author.id, name="客厅", description=None, reference_asset_ids=[]
+    )
+    master = _asset(db, author)
+    scenes_service.append_reference_asset(
+        db, user_id=author.id, scene_id=scene.id, asset_id=master.id, view="establishing"
+    )
+    night = av.create_variant(db, scene.skill, name="夜", presets={"lighting": "night_interior"})
+    night_plate = _asset(db, author)
+    av.add_entry(db, scene.skill, night, asset_id=night_plate.id, entry_type="master")
+
+    cell: dict[str, object] = {
+        "asset_kind": "scene",
+        "target_scene_id": scene.id,
+        "scene_lighting": "dusk",
+    }
+    reference_resolver.resolve(db, user_id=author.id, params=cell)
+    assert cell["reference_asset_ids"] == [master.id]
+
+    into_night: dict[str, object] = {
+        "asset_kind": "scene",
+        "target_scene_id": scene.id,
+        "target_variant_id": night.id,
+    }
+    reference_resolver.resolve(db, user_id=author.id, params=into_night)
+    assert into_night["reference_asset_ids"] == [night_plate.id]
+
+    upload = _asset(db, author)
+    explicit: dict[str, object] = {
+        "asset_kind": "scene",
+        "target_scene_id": scene.id,
+        "reference_asset_ids": [upload.id],
+    }
+    reference_resolver.resolve(db, user_id=author.id, params=explicit)
+    assert explicit["reference_asset_ids"] == [upload.id]
+
+
 def test_an_expression_sheet_borrows_the_target_looks_sheet(db: Session, author: User) -> None:
     character, wedding, (_, _, wedding_front) = _character_with_looks(db, author)
     params: dict[str, object] = {

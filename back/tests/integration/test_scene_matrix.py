@@ -147,6 +147,32 @@ def test_a_submit_queues_one_scene_job_per_new_cell_and_replays_on_retry(
     assert len(total_jobs) == 2
 
 
+def test_every_cell_is_drawn_from_the_cards_master_plate(
+    client: TestClient, db: Session, author: User, dispatched: list[str]
+) -> None:
+    """A new cell's variant is still empty, so its job borrows the card's
+    anchor — the master plate whose structure every variant keeps."""
+    credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
+    scene = _scene(db, author)
+    master = _asset(db, author)
+    scenes_service.append_reference_asset(
+        db, user_id=author.id, scene_id=scene.id, asset_id=master.id, view="establishing"
+    )
+
+    response = client.post(
+        _url(scene.id),
+        json={"axes": {"lighting": ["day", "dusk"]}, "dry_run": False},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 200, response.text
+
+    jobs = [db.get(GenerationJob, cell["job_id"]) for cell in response.json()["cells"]]
+    for job in jobs:
+        params = job.request_json  # type: ignore[union-attr]
+        assert params["reference_asset_ids"] == [master.id]
+        assert params["reference_labels"] == [{"asset_id": master.id, "label": "场景「客厅」·主图"}]
+
+
 def test_a_submit_that_does_not_fit_the_balance_queues_nothing(
     client: TestClient, db: Session, author: User, dispatched: list[str]
 ) -> None:

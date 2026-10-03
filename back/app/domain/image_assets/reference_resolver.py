@@ -17,7 +17,9 @@
    portrait it falls back to the default look's sheet for the face, and the
    legend says which image is for the face and which for the clothes (P2-3);
    `params["target_look"]` carries the look's name and outfit description to
-   the prompt builder;
+   the prompt builder; a scene image with no reference but a target scene
+   (a matrix cell, P2-5) borrows that card's anchor master plate, or the
+   target variant's own images;
 3. `params["reference_labels"]`: what each reference *is*
    (`角色「林夏」·婚礼·设定图`), for the prompt's 参考图说明 legend.
 
@@ -64,6 +66,7 @@ def resolve(
     _borrow_expression_reference(session, user_id=user_id, params=params)
     roles = _borrow_identity_reference(session, user_id=user_id, params=params)
     scenes_service.apply_scene_refs(session, user_id=user_id, params=params, hints=hints)
+    _borrow_scene_reference(session, user_id=user_id, params=params)
     _label_references(session, user_id=user_id, params=params, roles=roles)
 
 
@@ -165,6 +168,34 @@ def _borrow_identity_reference(
     if picked:
         params["reference_asset_ids"] = picked
     return {asset_id: role for asset_id, role in roles.items() if asset_id in picked}
+
+
+def _borrow_scene_reference(session: Session, *, user_id: str, params: dict[str, Any]) -> None:
+    """A scene image with no reference at all but a named target — a matrix
+    cell (P2-5), whose new variant is still empty — starts from that card:
+    `target_variant_id`'s own images when given, else the card's anchor, the
+    master plate whose structure every variant keeps (`SCENE_VARIANT_PREFIX`
+    locks reference 1). A stale target is left to write-back's fallback."""
+    if params.get("asset_kind") != "scene" or params.get("reference_asset_ids"):
+        return
+    target_id = params.get("target_scene_id")
+    if not target_id:
+        return
+    try:
+        skill = scenes_service.get_scene(session, user_id=user_id, scene_id=str(target_id)).skill
+    except NotFound:
+        return
+    variant_id = params.get("target_variant_id")
+    variant = asset_variants_service.find_variant(skill, str(variant_id)) if variant_id else None
+    anchor = asset_variants_service.anchor(skill)
+    if variant is not None:
+        picked = asset_variants_service.default_subset(skill, variant)
+    elif anchor is not None and asset_variants_service.is_approved(anchor):
+        picked = [anchor.asset_id]
+    else:
+        picked = asset_variants_service.default_subset(skill)
+    if picked:
+        params["reference_asset_ids"] = picked
 
 
 _CAMERA_LINE = re.compile(r"镜头[：:]\s*([^\n]+)")
