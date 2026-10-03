@@ -147,6 +147,31 @@ def test_a_submit_queues_one_scene_job_per_new_cell_and_replays_on_retry(
     assert len(total_jobs) == 2
 
 
+def test_a_full_matrix_still_submits_after_its_previews(
+    client: TestClient, db: Session, author: User, dispatched: list[str]
+) -> None:
+    """The dialog re-plans on every pick. Dry runs are quotes, so a
+    12-cell submit (one `generation_submit` hit per job, 12 a minute) is
+    not refused for the previews that preceded it."""
+    credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
+    scene = _scene(db, author)
+    axes = {
+        "lighting": ["dawn", "day", "dusk", "night_interior"],
+        "weather": ["clear", "rain", "snow"],
+    }
+
+    for _ in range(3):
+        preview = client.post(_url(scene.id), json={"axes": axes}, headers=auth_header(author))
+        assert preview.status_code == 200, preview.text
+    submit = client.post(
+        _url(scene.id), json={"axes": axes, "dry_run": False}, headers=auth_header(author)
+    )
+
+    assert submit.status_code == 200, submit.text
+    assert submit.json()["submitted"] == 12
+    assert len(dispatched) == 12
+
+
 def test_a_submit_that_does_not_fit_the_balance_queues_nothing(
     client: TestClient, db: Session, author: User, dispatched: list[str]
 ) -> None:

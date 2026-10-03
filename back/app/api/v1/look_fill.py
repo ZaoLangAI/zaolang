@@ -8,7 +8,9 @@ when that total does not fit, then submits only the *next wave* — one job —
 through the ordinary submit (quote, reserve, commit, enqueue). The client
 calls again once it finishes: the plan is recomputed from the card, so the
 call is naturally idempotent and resumable. The job's idempotency key is
-derived from the request's and the slots it fills.
+derived from the request's and the slots it fills. Only a submit counts
+against `generation_submit` (one hit per job); a dry run is a quote and
+counts as an ordinary write.
 """
 
 from __future__ import annotations
@@ -16,9 +18,10 @@ from __future__ import annotations
 import hashlib
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
-from app.api.deps import CurrentUser, DbSession, IdempotencyKey, rate_limited
+from app.api import rate_limit
+from app.api.deps import CurrentUser, DbSession, IdempotencyKey, client_identity, rate_limited
 from app.api.schemas.asset_variants import (
     LookFillLineView,
     LookFillRequest,
@@ -47,10 +50,11 @@ def fill_character_look(
     card_id: str,
     look_id: str,
     payload: LookFillRequest,
+    request: Request,
     user: CurrentUser,
     session: DbSession,
     idempotency_key: IdempotencyKey,
-    _: Annotated[None, Depends(rate_limited("generation_submit"))],
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> LookFillResponse:
     character = characters_service.get_character(session, user_id=user.id, character_id=card_id)
     look = asset_variants_service.find_variant(character.skill, look_id)
@@ -95,6 +99,7 @@ def fill_character_look(
                 required=total,
                 remaining=remaining,
             )
+        rate_limit.enforce("generation_submit", client_identity(request, user))
         line = lines[0]
         params = GenerationParams.model_validate(line.params).model_dump()
         token = hashlib.sha1(f"{look.id}:{','.join(line.slots)}".encode()).hexdigest()[:12]
