@@ -8,7 +8,7 @@ import { useSession } from '@/components/auth/session-provider';
 import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
 import { PromoteJobDialog } from '@/components/job/promote-job-dialog';
 import { STAGES, stageLabelKey, type Stage } from '@/components/job/job-stages';
-import { jobStageState } from '@/components/job/job-stage-state';
+import { jobStageState, stoppedTitleKey } from '@/components/job/job-stage-state';
 import { DevicePreview } from '@/components/media/device-preview';
 import { DownloadAssetButton } from '@/components/media/download-asset-button';
 import { LinkEpisodeDialog } from '@/components/studio/link-episode-dialog';
@@ -101,6 +101,8 @@ export function InlineVideoResult({
     job.status,
     events,
   );
+  // A failed/cancelled job is not "安全审核中" at 100%: say it stopped.
+  const stoppedTitle = stoppedTitleKey(job.status);
   const latestEvent = events[events.length - 1];
   const showAwaitingPanel = awaitingInput && !job.cancel_requested;
 
@@ -206,13 +208,17 @@ export function InlineVideoResult({
               <IconSparkle
                 className={cn('size-5 text-amber', !reduced && !finished && 'animate-pulse')}
               />
-              <p
-                aria-live="polite"
-                className="tabular text-4xl font-semibold tracking-tight text-text"
-              >
-                {job.progress}%
+              {stoppedTitle ? null : (
+                <p
+                  aria-live="polite"
+                  className="tabular text-4xl font-semibold tracking-tight text-text"
+                >
+                  {job.progress}%
+                </p>
+              )}
+              <p className="text-sm text-text">
+                {stoppedTitle ? t(stoppedTitle) : t(stageLabelKey(displayStage, job.operation))}
               </p>
-              <p className="text-sm text-text">{t(stageLabelKey(displayStage, job.operation))}</p>
               {latestEvent?.message ? (
                 <p className="max-w-md text-sm text-muted">{latestEvent.message}</p>
               ) : null}

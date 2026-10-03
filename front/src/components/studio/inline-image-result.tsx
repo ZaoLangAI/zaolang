@@ -12,7 +12,7 @@ import {
   stageLabelKey,
   type Stage,
 } from '@/components/job/job-stages';
-import { jobStageState } from '@/components/job/job-stage-state';
+import { jobStageState, stoppedTitleKey } from '@/components/job/job-stage-state';
 import { jobOutputs, partialDelivery } from '@/components/job/job-outputs';
 import { DevicePreview } from '@/components/media/device-preview';
 import { OutputGallery } from '@/components/media/output-gallery';
@@ -135,6 +135,8 @@ export function InlineImageResult({
     job.status,
     events,
   );
+  // A failed/cancelled job is not "安全审核中" at 100%: say it stopped.
+  const stoppedTitle = stoppedTitleKey(job.status);
   const latestEvent = events[events.length - 1];
   const showAwaitingPanel = awaitingInput && !job.cancel_requested;
 
@@ -278,14 +280,16 @@ export function InlineImageResult({
               <IconSparkle
                 className={cn('size-5 text-amber', !reduced && !finished && 'animate-pulse')}
               />
-              <p
-                aria-live="polite"
-                className="tabular text-4xl font-semibold tracking-tight text-text"
-              >
-                {job.progress}%
-              </p>
+              {stoppedTitle ? null : (
+                <p
+                  aria-live="polite"
+                  className="tabular text-4xl font-semibold tracking-tight text-text"
+                >
+                  {job.progress}%
+                </p>
+              )}
               <p aria-live="polite" className="text-sm text-text">
-                {t(`funCaptions.${displayStage}.${captionIndex}`)}
+                {stoppedTitle ? t(stoppedTitle) : t(`funCaptions.${displayStage}.${captionIndex}`)}
               </p>
               {latestEvent?.message ? (
                 <p className="max-w-md text-sm text-muted">{latestEvent.message}</p>

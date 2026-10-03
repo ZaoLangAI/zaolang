@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { jobStageState } from './job-stage-state';
+import { jobStageState, stoppedTitleKey } from './job-stage-state';
 
 const ev = (...types: string[]) => types.map((event_type) => ({ event_type }));
 
@@ -58,5 +58,15 @@ describe('jobStageState', () => {
     for (const status of ['queued', 'running', 'awaiting_input']) {
       expect(jobStageState(status, []).finished).toBe(false);
     }
+  });
+});
+
+describe('stoppedTitleKey', () => {
+  it('titles a job that stopped without a result, and nothing else', () => {
+    expect(stoppedTitleKey('failed')).toBe('failedTitle');
+    expect(stoppedTitleKey('expired')).toBe('failedTitle');
+    expect(stoppedTitleKey('cancelled')).toBe('cancelledTitle');
+    expect(stoppedTitleKey('running')).toBeNull();
+    expect(stoppedTitleKey('succeeded')).toBeNull();
   });
 });
