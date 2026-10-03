@@ -190,14 +190,48 @@ export function findCompletionJobFor(
 
 const SHEET_VIEWS = ['front', 'side', 'back'] as const;
 
+/** `asset_variants.service._SHEET_ORDER`: a look's sheet, then its side and back views. */
+const SHEET_ORDER: Record<string, number> = { front: 0, side: 1, back: 2 };
+
 /**
- * What a job sends for this character when nothing was picked — mirrors the
- * backend's `characters.service.default_reference_asset_ids`: the default
- * look's unlabelled front/side/back, else the oldest unlabelled entries,
- * else the oldest entries; at most three. Named outfits and expression
- * sheets only go in when picked (`character_ref_selection`).
+ * What a job sends for this character when nothing was picked — mirrors
+ * the backend's `asset_variants.service.default_subset` (no look named, no
+ * shot hint): the card's anchor when it is an approved 定妆照 or the default
+ * look's own image, then the default look's sheet and front/side/back
+ * views, else its other non-expression images; at most three. Named
+ * outfits and expression sheets only go in when picked
+ * (`character_ref_selection`). Without `looks` (an older payload) it falls
+ * back to the default look's unlabelled `reference_assets` views.
  */
 export function defaultCharacterReferenceIds(character: Character): string[] {
+  const looks = character.looks ?? [];
+  if (looks.length === 0) return legacyDefaultReferenceIds(character);
+  const isApproved = (entry: AssetEntry) => entry.status !== 'candidate';
+  const defaultLook = looks.find((look) => look.is_default);
+  const own = (defaultLook?.entries ?? []).filter(isApproved);
+  const anchor = looks
+    .flatMap((look) => look.entries ?? [])
+    .find((entry) => entry.id === character.anchor_entry_id && isApproved(entry));
+  const lead =
+    anchor && (anchor.entry_type === 'identity_portrait' || own.includes(anchor)) ? [anchor] : [];
+  const sheets = own
+    .filter((entry) => entry.entry_type === 'character_sheet' || entry.entry_type === 'view')
+    .sort(
+      (a, b) =>
+        (SHEET_ORDER[a.entry_type === 'character_sheet' ? 'front' : (a.view ?? '')] ?? 3) -
+        (SHEET_ORDER[b.entry_type === 'character_sheet' ? 'front' : (b.view ?? '')] ?? 3),
+    );
+  const pool = sheets.length
+    ? sheets
+    : own.filter((entry) => entry.entry_type !== 'expression_sheet');
+  let ordered = [...lead, ...pool];
+  if (ordered.length === 0) {
+    ordered = looks.flatMap((look) => look.entries ?? []).filter(isApproved);
+  }
+  return [...new Set(ordered.map((entry) => entry.asset_id))].slice(0, 3);
+}
+
+function legacyDefaultReferenceIds(character: Character): string[] {
   const entries = (character.reference_assets ?? []).filter((asset) => asset.asset_id);
   const sheet = SHEET_VIEWS.flatMap((view) =>
     entries.filter((asset) => asset.view === view && !asset.label?.trim()),
