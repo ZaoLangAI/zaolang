@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   draftReturnParams,
   readDraftReturnContext,
+  resumedTargetCard,
   sanitizeReturnTo,
   studioSessionKey,
 } from './studio-session';
@@ -225,5 +226,25 @@ describe('studioSessionKey and the identity portrait', () => {
       characterPortrait: '1',
     });
     expect(portrait).not.toBe(sheet);
+  });
+});
+
+describe('resumedTargetCard', () => {
+  it('re-targets the card a resumed job filed into, by its asset kind', () => {
+    expect(resumedTargetCard({ asset_kind: 'scene', linked_scene_id: 'sk_s' })).toEqual({
+      characterId: null,
+      sceneId: 'sk_s',
+    });
+    expect(
+      resumedTargetCard({
+        asset_kind: 'character',
+        linked_character_id: 'sk_c',
+        linked_scene_id: 'x',
+      }),
+    ).toEqual({ characterId: 'sk_c', sceneId: null });
+    expect(resumedTargetCard({ asset_kind: 'general', linked_scene_id: 'sk_s' })).toEqual({
+      characterId: null,
+      sceneId: null,
+    });
   });
 });
