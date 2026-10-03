@@ -3234,7 +3234,8 @@
     "assetKindPortraitHint": "Generates a front head-and-shoulders identity portrait; once approved it is the character's anchor and every look keeps this face.",
     "referenceEmotionLabel": "Reference emotion (optional)",
     "referenceEmotionNone": "Not set",
-    "outfitChangeHint": "Outfit change: “{name}” — the face is locked to the identity portrait; the outfit follows this look's description and outfit references."
+    "outfitChangeHint": "Outfit change: “{name}” — the face is locked to the identity portrait; the outfit follows this look's description and outfit references.",
+    "borrowedReferencesLabel": "References used automatically (when nothing is attached)"
   },
   "scenes": {
     "eyebrow": "Scene library",

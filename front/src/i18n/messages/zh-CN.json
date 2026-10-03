@@ -3234,7 +3234,8 @@
     "assetKindPortraitHint": "生成一张正面头肩定妆照，定稿后作为该角色的身份锚点，所有造型都以这张脸为准。",
     "referenceEmotionLabel": "参考情绪（可选）",
     "referenceEmotionNone": "不指定",
-    "outfitChangeHint": "换装：「{name}」——以定妆照锁定面部，按该造型的服装描述与服装参考生成。"
+    "outfitChangeHint": "换装：「{name}」——以定妆照锁定面部，按该造型的服装描述与服装参考生成。",
+    "borrowedReferencesLabel": "将自动使用的参考图（未附加图片时）"
   },
   "scenes": {
     "eyebrow": "场景库",

@@ -1,4 +1,4 @@
-import type { Character, GenerationJob } from '@/lib/api/types';
+import type { AssetEntry, Character, GenerationJob } from '@/lib/api/types';
 import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
 
 type CharacterReferenceAsset = NonNullable<Character['reference_assets']>[number];
@@ -205,4 +205,45 @@ export function defaultCharacterReferenceIds(character: Character): string[] {
   const unlabelled = entries.filter((asset) => !asset.label?.trim());
   const pool = sheet.length ? sheet : unlabelled.length ? unlabelled : entries;
   return pool.slice(0, 3).map((asset) => asset.asset_id);
+}
+
+/** Most images the backend borrows for a sheet/portrait job (`MAX_BORROWED_REFERENCES`). */
+const MAX_BORROWED_REFERENCES = 3;
+
+const approved = (entries: AssetEntry[] | undefined, type: AssetEntry['entry_type']) =>
+  (entries ?? []).filter((entry) => entry.entry_type === type && entry.status !== 'candidate');
+
+/**
+ * What a character sheet / identity portrait job borrows on the backend when
+ * it is submitted with no reference image — mirrors
+ * `reference_resolver._borrow_identity_reference` (P2-2, P2-3): the card's
+ * approved identity portrait (定妆照); for a 换装 (`lookId` is a non-default
+ * look) also that look's approved sheet and its `outfit_detail` uploads,
+ * with the default look's sheet standing in for the face when there is no
+ * portrait. Empty when the backend would borrow nothing, so the studio
+ * keeps attaching the card's sheet itself.
+ */
+export function borrowedCharacterReferences(
+  character: Character,
+  lookId?: string | null,
+): AssetEntry[] {
+  const looks = character.looks ?? [];
+  const defaultLook = looks.find((look) => look.is_default);
+  const look =
+    (lookId ? looks.find((candidate) => candidate.id === lookId) : undefined) ?? defaultLook;
+  const portrait = approved(defaultLook?.entries, 'identity_portrait')[0];
+  const outfitChange = Boolean(look && !look.is_default);
+  const picked: AssetEntry[] = portrait ? [portrait] : [];
+  if (outfitChange) {
+    const own = approved(look?.entries, 'character_sheet');
+    picked.push(...own);
+    if (!portrait && own.length === 0) {
+      picked.push(...approved(defaultLook?.entries, 'character_sheet').slice(0, 1));
+    }
+    picked.push(...approved(look?.entries, 'outfit_detail'));
+  }
+  const seen = new Set<string>();
+  return picked
+    .filter((entry) => !seen.has(entry.asset_id) && Boolean(seen.add(entry.asset_id)))
+    .slice(0, MAX_BORROWED_REFERENCES);
 }

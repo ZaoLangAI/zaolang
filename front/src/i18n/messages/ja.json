@@ -3234,7 +3234,8 @@
     "assetKindPortraitHint": "正面・胸から上のメイク写真を生成します。確定後はキャラクターの基準となり、すべての衣装がこの顔に合わせられます。",
     "referenceEmotionLabel": "参考の感情（任意）",
     "referenceEmotionNone": "指定なし",
-    "outfitChangeHint": "衣装替え：「{name}」— 顔はメイク写真に合わせ、この衣装の説明と参考画像で生成します。"
+    "outfitChangeHint": "衣装替え：「{name}」— 顔はメイク写真に合わせ、この衣装の説明と参考画像で生成します。",
+    "borrowedReferencesLabel": "自動で使う参考画像（画像を添付しない場合）"
   },
   "scenes": {
     "eyebrow": "シーンライブラリ",
