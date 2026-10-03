@@ -111,3 +111,19 @@ export function draftReturnParams(input: {
     ...(input.returnLinkLabel ? { return_link_label: input.returnLinkLabel } : {}),
   };
 }
+
+/**
+ * The library card a resumed image job filed into (`linked_*_id`, set on
+ * write-back), matched to its asset kind — what the studio re-selects as
+ * the target when a draft is reopened.
+ */
+export function resumedTargetCard(job: {
+  asset_kind?: string | null;
+  linked_character_id?: string | null;
+  linked_scene_id?: string | null;
+}): { characterId: string | null; sceneId: string | null } {
+  return {
+    characterId: job.asset_kind === 'character' ? (job.linked_character_id ?? null) : null,
+    sceneId: job.asset_kind === 'scene' ? (job.linked_scene_id ?? null) : null,
+  };
+}

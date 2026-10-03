@@ -43,7 +43,7 @@ import {
 import { sceneHeroAsset } from '@/lib/scenes';
 import { firstSkillReferenceAssetId } from '@/lib/skill-mention';
 import { formatCount, formatDuration } from '@/lib/format';
-import { draftReturnParams } from '@/lib/studio-session';
+import { draftReturnParams, resumedTargetCard } from '@/lib/studio-session';
 import type { Asset } from '@/lib/upload';
 import { useGenerationModels } from '@/lib/use-generation-models';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
@@ -264,6 +264,11 @@ export function ImageGenerationStudio({
     if (resumedJob.data.asset_kind && ASSET_KINDS.includes(resumedJob.data.asset_kind)) {
       setAssetKind(resumedJob.data.asset_kind);
     }
+    // The card the job filed into, so another version files there too —
+    // without it a resumed scene/character draft fell back to 不关联.
+    const linked = resumedTargetCard(resumedJob.data);
+    if (linked.characterId && !targetCharacterId) setTargetCharacterId(linked.characterId);
+    if (linked.sceneId && !targetSceneId) setTargetSceneId(linked.sceneId);
     const prompt = promptFromVersion(resumedJob.data);
     if (prompt) setPrompt(prompt);
   }
