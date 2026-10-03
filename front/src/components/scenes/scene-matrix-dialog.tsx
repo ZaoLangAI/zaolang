@@ -140,6 +140,22 @@ export function SceneMatrixDialog({
   }, [unfinishedKey]);
   const doneCount = jobIds.filter((id) => matrixCellProgress(statuses[id]) === 'done').length;
 
+  // Reopening after every submitted cell has finished starts from the card
+  // as it is now: the last submit's badges would be stale, and a fresh dry
+  // run shows the new variants as 已有 (or lets a failed cell be retried).
+  // While jobs are still running the progress view stays.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open && result && unfinished.length === 0) {
+      setResult(null);
+      setPlan(null);
+      setStatuses({});
+      setSubmitError(null);
+      setPage(0);
+    }
+  }
+
   const current = planned && plan?.key === axesKey ? plan.response : null;
   const shown = result ?? current;
   const pending = planned && !result && !current && !planError;
