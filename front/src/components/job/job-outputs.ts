@@ -55,3 +55,19 @@ export function partialDelivery(job: {
   const delivered = jobOutputs(job).assetIds.length;
   return delivered > 0 && delivered < requested ? { delivered, requested } : null;
 }
+
+/**
+ * Where 去定稿 goes for a job whose images were filed as candidates (P2-1):
+ * its card's library page with that card's looks / variants sheet open
+ * (`?manage=`), else just the library.
+ */
+export function reviewCandidatesHref(job: {
+  asset_kind?: string | null;
+  linked_character_id?: string | null;
+  linked_scene_id?: string | null;
+}): string {
+  const scene = job.asset_kind === 'scene';
+  const cardId = scene ? job.linked_scene_id : job.linked_character_id;
+  const base = scene ? '/create/scenes' : '/create/characters';
+  return cardId ? `${base}?manage=${encodeURIComponent(cardId)}` : base;
+}

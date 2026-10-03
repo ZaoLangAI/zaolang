@@ -101,7 +101,14 @@ function referenceIdsForSave(scene: Scene | null, heroId: string | null): string
  * historical stills stay on a read-only strip — so a future generation
  * call (or a linked script scene heading) can be pointed at it.
  */
-export function SceneLibrary({ initial }: { initial: Scene[] }) {
+export function SceneLibrary({
+  initial,
+  manageId,
+}: {
+  initial: Scene[];
+  /** Opens this card's variants sheet on arrival (`?manage=`, the studio's 去定稿). */
+  manageId?: string;
+}) {
   const t = useTranslations('scenes');
   const tActions = useTranslations('actions');
   const tStates = useTranslations('states');
@@ -127,7 +134,9 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
   const [publishBusy, setPublishBusy] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
-  const [variantsTarget, setVariantsTarget] = useState<Scene | null>(null);
+  const [variantsTarget, setVariantsTarget] = useState<Scene | null>(
+    () => initial.find((scene) => scene.id === manageId) ?? null,
+  );
   // `Sheet` (bottom drawer) below `lg`, `Dialog` (centred) at/above it —
   // mirrors `character-library.tsx` and `generation-studio-shell.tsx`'s own
   // `lg`-gated Sheet. Safe pre-hydration: `sheetOpen` only ever flips true

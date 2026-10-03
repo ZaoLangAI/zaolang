@@ -17,7 +17,12 @@ export async function generateMetadata() {
  * whose reference stills) should stay consistent across a multi-episode
  * short without retyping a description on every scene heading.
  */
-export default async function ScenesPage() {
+export default async function ScenesPage({
+  searchParams,
+}: {
+  /** `manage`: a card whose variants sheet opens on arrival (the studio's 去定稿). */
+  searchParams: Promise<{ manage?: string }>;
+}) {
   const t = await getTranslations('scenes');
   const tActions = await getTranslations('actions');
   if (!(await isSignedIn())) return <SignInPrompt />;
@@ -31,7 +36,7 @@ export default async function ScenesPage() {
     <div className="mx-auto flex w-full max-w-[1160px] flex-col gap-6 px-4 py-6 sm:px-6">
       <GoBackLink fallbackHref="/create">{tActions('back')}</GoBackLink>
       <PageHeading eyebrow={t('eyebrow')} title={t('title')} description={t('subtitle')} />
-      <SceneLibrary initial={scenes} />
+      <SceneLibrary initial={scenes} manageId={(await searchParams).manage} />
     </div>
   );
 }
