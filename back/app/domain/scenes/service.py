@@ -360,12 +360,7 @@ def append_reference_asset(
         view=entry_view,
         source_job_id=source_job_id,
     )
-    if (
-        entry_type == AssetEntryType.MASTER
-        and asset_variants_service.is_approved(entry)
-        and (asset_variants_service.anchor(skill) is None or variant.is_default)
-    ):
-        asset_variants_service.set_anchor(session, skill, entry)
+    asset_variants_service.claim_anchor(session, skill, entry)
     _promote_master(session, skill)
     return SceneView(skill)
 

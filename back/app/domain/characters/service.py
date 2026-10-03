@@ -472,17 +472,7 @@ def append_reference_asset(
         expressions=expressions,
         source_job_id=source_job_id,
     )
-    if portrait:
-        asset_variants_service.prefer_portrait_anchor(session, skill, entry)
-    # The anchor is the default look's sheet: another outfit's sheet must
-    # never become the identity every job leads with.
-    elif (
-        asset_variants_service.anchor(skill) is None
-        and asset_variants_service.is_approved(entry)
-        and entry_type == AssetEntryType.CHARACTER_SHEET
-        and variant.is_default
-    ):
-        asset_variants_service.set_anchor(session, skill, entry)
+    asset_variants_service.claim_anchor(session, skill, entry)
     return CharacterView(skill)
 
 
