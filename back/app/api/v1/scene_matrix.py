@@ -8,8 +8,10 @@ uses, summed, plus the balance and monthly-cap checks `quote:batch` does. A
 submit refuses up front when the total does not fit, so a short balance never
 leaves half a matrix queued; each cell then goes through the ordinary submit
 (quote, reserve, commit, enqueue) with its own idempotency key derived from
-the request's, so a retried request replays instead of double-charging. It
-counts one `generation_submit` hit per job.
+the request's, so a retried request replays instead of double-charging. A
+submit counts one `generation_submit` hit per job; a dry run is only a quote
+(the dialog re-plans on every pick) and counts as an ordinary write, or a
+full 12-cell matrix could never be submitted after its own preview.
 """
 
 from __future__ import annotations
@@ -51,7 +53,7 @@ def scene_variant_matrix(
     user: CurrentUser,
     session: DbSession,
     idempotency_key: IdempotencyKey,
-    _: Annotated[None, Depends(rate_limited("generation_submit"))],
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> SceneMatrixResponse:
     skill = scenes_service.get_scene(session, user_id=user.id, scene_id=card_id).skill
     cells = matrix.plan(skill, payload.axes.model_dump())
@@ -85,9 +87,8 @@ def scene_variant_matrix(
                 required=total,
                 remaining=remaining,
             )
-        # The dependency counted this request once; every further job counts too.
         identity = client_identity(request, user)
-        for _cell in new_cells[1:]:
+        for _cell in new_cells:
             rate_limit.enforce("generation_submit", identity)
 
         prompt = (payload.prompt or "").strip() or matrix.default_prompt(skill)

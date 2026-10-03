@@ -97,3 +97,20 @@ def test_someone_elses_look_is_a_404(client: TestClient, db: Session, author: Us
     assert client.post(_url(character), json={}, headers=auth_header(stranger)).status_code == 404
     other = f"/v1/characters/{character['id']}/looks/skv_missing:fill"
     assert client.post(other, json={}, headers=auth_header(author)).status_code == 404
+
+
+def test_dry_runs_do_not_spend_the_submit_budget(
+    client: TestClient, db: Session, author: User, dispatched: list[str]
+) -> None:
+    """The dialog quotes on open and between waves; only a submitted job
+    counts against `generation_submit` (12 a minute)."""
+    credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
+    character = _character(client, author)
+
+    for _ in range(12):
+        quote = client.post(_url(character), json={}, headers=auth_header(author))
+        assert quote.status_code == 200, quote.text
+    submit = client.post(_url(character), json={"dry_run": False}, headers=auth_header(author))
+
+    assert submit.status_code == 200, submit.text
+    assert len(dispatched) == 1
