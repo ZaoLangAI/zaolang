@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GenerationJob } from '@/lib/api/types';
+import type { AssetEntry, AssetVariant, GenerationJob } from '@/lib/api/types';
 
 import {
+  borrowedCharacterReferences,
   CHARACTER_SHEET_PROMPT_HINT,
   characterImageStudioHref,
   characterSheetAsset,
@@ -210,5 +211,52 @@ describe('defaultCharacterReferenceIds', () => {
         reference_assets: [{ asset_id: 'a', view: 'general', label: '婚礼' }],
       } as Character),
     ).toEqual(['a']);
+  });
+});
+
+function entry(id: string, entry_type: AssetEntry['entry_type'], status = 'approved'): AssetEntry {
+  return { id, asset_id: id, entry_type, status, is_anchor: false } as AssetEntry;
+}
+
+function look(id: string, is_default: boolean, entries: AssetEntry[]): AssetVariant {
+  return { id, name: id, is_default, sort_order: 0, entries } as AssetVariant;
+}
+
+describe('borrowedCharacterReferences', () => {
+  const portrait = entry('portrait', 'identity_portrait');
+  const sheet = entry('sheet', 'character_sheet');
+  const outfit = entry('outfit', 'outfit_detail');
+
+  it('is the approved portrait for the default look, nothing without one', () => {
+    const withPortrait = { looks: [look('default', true, [portrait, sheet])] } as Character;
+    expect(borrowedCharacterReferences(withPortrait).map((e) => e.id)).toEqual(['portrait']);
+    const candidateOnly = {
+      looks: [look('default', true, [entry('p2', 'identity_portrait', 'candidate'), sheet])],
+    } as Character;
+    expect(borrowedCharacterReferences(candidateOnly)).toEqual([]);
+  });
+
+  it('adds the look’s own sheet and outfit references for a 换装', () => {
+    const character = {
+      looks: [
+        look('default', true, [portrait, sheet]),
+        look('wedding', false, [entry('wedding_sheet', 'character_sheet'), outfit]),
+      ],
+    } as Character;
+    expect(borrowedCharacterReferences(character, 'wedding').map((e) => e.id)).toEqual([
+      'portrait',
+      'wedding_sheet',
+      'outfit',
+    ]);
+  });
+
+  it('falls back to the default sheet for the face when there is no portrait', () => {
+    const character = {
+      looks: [look('default', true, [sheet]), look('wedding', false, [outfit])],
+    } as Character;
+    expect(borrowedCharacterReferences(character, 'wedding').map((e) => e.id)).toEqual([
+      'sheet',
+      'outfit',
+    ]);
   });
 });

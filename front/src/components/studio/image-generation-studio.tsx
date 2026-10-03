@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useLocale, useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -34,7 +35,11 @@ import type {
   Scene,
   WorkDetail,
 } from '@/lib/api/types';
-import { characterSheetAsset, findCompletionJobFor } from '@/lib/characters';
+import {
+  borrowedCharacterReferences,
+  characterSheetAsset,
+  findCompletionJobFor,
+} from '@/lib/characters';
 import { sceneHeroAsset } from '@/lib/scenes';
 import { firstSkillReferenceAssetId } from '@/lib/skill-mention';
 import { formatCount, formatDuration } from '@/lib/format';
@@ -157,6 +162,7 @@ export function ImageGenerationStudio({
   const t = useTranslations('remixPage');
   const tCredits = useTranslations('credits');
   const tStates = useTranslations('states');
+  const tVariants = useTranslations('assetVariants');
   const locale = useLocale() as Locale;
   const { status: sessionStatus } = useSession();
   const { notify } = useToast();
@@ -480,7 +486,16 @@ export function ImageGenerationStudio({
     const target = (charactersResource.data ?? []).find(
       (character) => character.id === initialTargetCharacterId,
     );
-    const sheet = target ? characterSheetAsset(target) : undefined;
+    if (!target) return;
+    // A card with an approved 定妆照, or a 换装 into another look, is drawn
+    // from what the backend borrows (portrait + that look's outfit images,
+    // P2-2/P2-3). An attached sheet would replace all of that — and wear the
+    // default look's clothes — so leave `uploads` empty and preview instead.
+    if (borrowedCharacterReferences(target, initialTargetVariantId).length > 0) {
+      characterSheetSeededRef.current = true;
+      return;
+    }
+    const sheet = characterSheetAsset(target);
     if (!sheet?.asset_id) return;
     characterSheetSeededRef.current = true;
     void api
@@ -489,7 +504,14 @@ export function ImageGenerationStudio({
       .catch(() => {
         characterSheetSeededRef.current = false;
       });
-  }, [initialDraft, initialTargetCharacterId, charactersResource.data, source, uploads.length]);
+  }, [
+    initialDraft,
+    initialTargetCharacterId,
+    initialTargetVariantId,
+    charactersResource.data,
+    source,
+    uploads.length,
+  ]);
   const scenesResource = useResource<Scene[]>(
     sessionStatus === 'authenticated' ? '/v1/scenes' : null,
   );
@@ -541,6 +563,12 @@ export function ImageGenerationStudio({
   // A non-default look is a 换装: the backend locks the face to the identity
   // portrait and draws this look's outfit description (P2-3).
   const targetOutfitLook = targetLooks.find((look) => look.id === targetLookId && !look.is_default);
+  const targetCharacter = characters.find((c) => c.id === targetCharacterId);
+  // With nothing attached, the references the backend will borrow (P2-3 §7.3).
+  const borrowedReferences =
+    targetCharacter && uploads.length === 0 && expressions.length === 0
+      ? borrowedCharacterReferences(targetCharacter, targetLookId)
+      : [];
   const targetSceneVariantId = targetSceneVariants.some((v) => v.id === targetVariantId)
     ? targetVariantId
     : '';
@@ -760,6 +788,31 @@ export function ImageGenerationStudio({
               <p className="text-[11px] text-muted" role="status">
                 {t('outfitChangeHint', { name: targetOutfitLook.name })}
               </p>
+            ) : null}
+            {borrowedReferences.length > 0 ? (
+              <div className="flex flex-col gap-1.5">
+                <p className="text-[11px] text-muted">{t('borrowedReferencesLabel')}</p>
+                <ul className="flex flex-wrap gap-2">
+                  {borrowedReferences.map((entry) => (
+                    <li key={entry.id} className="flex w-16 flex-col items-center gap-1">
+                      <span className="relative size-16 overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
+                        {entry.url ? (
+                          <Image
+                            src={entry.url}
+                            alt=""
+                            fill
+                            sizes="64px"
+                            className="object-cover"
+                          />
+                        ) : null}
+                      </span>
+                      <span className="text-[10px] text-muted">
+                        {tVariants(`type.${entry.entry_type}`)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ) : null}
             <CharacterPresetFields
               portrait={portrait}
