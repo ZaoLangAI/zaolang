@@ -21,6 +21,17 @@ export interface ReferencePick {
   assetIds?: string[];
 }
 
+/** Entry types with their own `assetVariants.type.*` caption. */
+const ENTRY_TYPE_CAPTIONS = {
+  identity_portrait: true,
+  view: true,
+  expression_sheet: true,
+  pose: true,
+  outfit_detail: true,
+  prop: true,
+  shot: true,
+} as const;
+
 /** Most images one character/scene may contribute (`asset_ids` max). */
 const MAX_PICKED = 4;
 
@@ -45,6 +56,7 @@ export function ReferenceImagePicker({
   onChange: (next: ReferencePick | undefined) => void;
 }) {
   const t = useTranslations('remixPage');
+  const tTypes = useTranslations('assetVariants');
   const fallback = variants.find((v) => v.is_default) ?? variants[0];
   const shown = variants.find((v) => v.id === value?.variantId) ?? fallback;
   const entries = shown?.entries ?? [];
@@ -99,7 +111,7 @@ export function ReferenceImagePicker({
         {entries.map((entry) => {
           const checked = checkedIds.includes(entry.asset_id);
           const disabled = !checked && checkedIds.length >= MAX_PICKED;
-          const caption = referenceCaption(entry, t);
+          const caption = referenceCaption(entry, t, tTypes);
           return (
             <label
               key={entry.id}
@@ -132,9 +144,12 @@ export function ReferenceImagePicker({
   );
 }
 
+/** What a thumbnail is: its label, a view name, else its entry type
+ * (定妆照 / 表情合集 / 服装细节 …) — never a bare 参考图 for a typed entry. */
 function referenceCaption(
   entry: PickableReference,
   t: ReturnType<typeof useTranslations<'remixPage'>>,
+  tTypes: ReturnType<typeof useTranslations<'assetVariants'>>,
 ): string {
   const label = entry.label?.trim();
   if (label) return label;
@@ -150,6 +165,9 @@ function referenceCaption(
   }
   if (entry.view === 'side') return t('referenceViewSide');
   if (entry.view === 'back') return t('referenceViewBack');
+  if (entry.entry_type && entry.entry_type !== 'other' && entry.entry_type in ENTRY_TYPE_CAPTIONS) {
+    return tTypes(`type.${entry.entry_type as keyof typeof ENTRY_TYPE_CAPTIONS}`);
+  }
   return t('referenceViewOther');
 }
 
