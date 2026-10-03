@@ -111,18 +111,10 @@ describe('skill mention filters', () => {
     );
   });
 
-  it('reads the first nested reference still, else the cover', () => {
-    expect(
-      firstSkillReferenceAssetId({
-        prompt_suffix: 'turnaround',
-        character: { reference_assets: [{ asset_id: 'ast_front', view: 'front' }] },
-      }),
-    ).toBe('ast_front');
-    expect(firstSkillReferenceAssetId({ prompt_suffix: 'cover' }, 'ast_cover')).toBe('ast_cover');
-  });
-
-  it('prefers the card anchor from the skill detail', () => {
-    expect(firstSkillReferenceAssetId({}, 'ast_cover', 'ast_anchor')).toBe('ast_anchor');
+  it('uses the card anchor from the skill detail, else the cover', () => {
+    expect(firstSkillReferenceAssetId('ast_cover', 'ast_anchor')).toBe('ast_anchor');
+    expect(firstSkillReferenceAssetId('ast_cover')).toBe('ast_cover');
+    expect(firstSkillReferenceAssetId(null, null)).toBeUndefined();
   });
 
   it('filters the open menu by title query', () => {

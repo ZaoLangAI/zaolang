@@ -332,7 +332,6 @@ def create_character(
             CHARACTER_PARAMS_KEY: {
                 "description": clean_description,
                 "voice_description": (voice_description or "").strip() or None,
-                "reference_assets": [],
             }
         },
         cover_asset_id=None,

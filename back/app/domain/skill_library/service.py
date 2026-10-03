@@ -112,10 +112,10 @@ def ensure_catalog_skills(session: Session, *, owner_user_id: str) -> list[Creat
     backfilled from `catalog.py`'s shipped cover, but a row that already
     carries one — whether from an earlier run of this same backfill or an
     operator's own re-cover — is never touched (see `_ensure_seeded_cover`).
-    Character/scene image-asset rows also get that same still copied into
-    `params_json["character"|"scene"]["reference_assets"]` once the list is
-    still empty (`_ensure_seeded_reference`); a non-empty list is left
-    alone so an operator who replaced the demo still survives `make seed`.
+    Character/scene image-asset rows also get that same still filed as the
+    default look's sheet / master plate once the card has no image yet
+    (`_ensure_seeded_reference`); a card with images is left alone so an
+    operator who replaced the demo still survives `make seed`.
     """
     existing = {
         row.title: row

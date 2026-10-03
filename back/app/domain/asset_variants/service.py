@@ -6,22 +6,20 @@ truth. Two read shapes come out of them:
 - the structured one (variants → entries) for the P1 API and the resolver;
 - `project(skill)`: the flat, P0-shaped `reference_assets` list
   (`{asset_id, view, label, created_at}`) every existing reader expects —
-  `CharacterView`/`SceneView`, the admin views, iOS. `sync_mirror` writes that
-  same projection back into `params_json[...]["reference_assets"]` after each
-  change, so code that still reads the raw JSON (canvas thumbnails, the
-  front's `firstSkillReferenceAssetId`, the skill detail `params`) stays right
-  until it moves over, and the P1 migration's downgrade loses nothing.
+  `CharacterView`/`SceneView`, the admin views, iOS. It is computed on read;
+  nothing is stored in `params_json` any more (the P1 JSON mirror was
+  dropped by migration B, `…_drop_reference_assets_mirror`).
 
 Every mutation goes through the relationships (`skill.asset_variants`,
 `variant.entries`) so the in-memory collections stay consistent within a
-request, and ends with `sync_mirror`.
+request, and flushes.
 
 Candidates (P2-1): a generated image filed into a *slot* that already holds
 an approved image — a look's front sheet, one side/back view, one set of
 expressions, the card's identity portrait, a variant's master plate — is
 kept as a `candidate` beside it instead of replacing it (`file_generated`).
 `approve_entry` swaps the two. Every read meant for someone other than the
-owner's own editor (the flat projection, the mirror, defaults, thumbnails,
+owner's own editor (the flat projection, defaults, thumbnails,
 an unlocked card's detail) sees approved entries only, and the entry caps
 count approved entries only — candidates are kept until the owner deletes
 them.
@@ -56,11 +54,6 @@ MAX_VARIANTS_PER_SKILL = 12
 MAX_ENTRIES_PER_VARIANT = 24
 MAX_ENTRIES_PER_SKILL = 120
 MAX_VARIANT_NAME_LEN = 40
-
-_MIRROR_KEY = {
-    CreationSkillCategory.CHARACTER.value: "character",
-    CreationSkillCategory.SCENE_ASSET.value: "scene",
-}
 
 
 def is_character(skill: CreationSkill) -> bool:
@@ -181,22 +174,6 @@ def moderation_texts(skill: CreationSkill) -> list[str]:
 # ---- writes -----------------------------------------------------------------
 
 
-def sync_mirror(session: Session, skill: CreationSkill) -> None:
-    """Writes `project(skill)` (P0 keys only) into the JSON mirror. A new
-    dict is assigned so the JSONB column is marked dirty (DM invariant 11)."""
-    key = _MIRROR_KEY.get(skill.category)
-    if key is None:
-        return
-    current = dict(skill.params_json or {})
-    nested = dict(current.get(key) or {}) if isinstance(current.get(key), dict) else {}
-    nested["reference_assets"] = [
-        {k: item[k] for k in ("asset_id", "view", "label", "created_at")} for item in project(skill)
-    ]
-    skill.params_json = {**current, key: nested}
-    # Flushed so a later `expire`/refresh in the same request can't drop it.
-    session.flush()
-
-
 def ensure_default(session: Session, skill: CreationSkill) -> SkillAssetVariant:
     existing = find_default(skill)
     if existing is not None:
@@ -269,7 +246,6 @@ def create_variant(
     )
     skill.asset_variants.append(variant)
     session.flush()
-    sync_mirror(session, skill)
     return variant
 
 
@@ -323,7 +299,6 @@ def update_variant(
             session.flush()
         variant.is_default = True
     session.flush()
-    sync_mirror(session, skill)
     return variant
 
 
@@ -334,7 +309,6 @@ def delete_variant(session: Session, skill: CreationSkill, variant: SkillAssetVa
         )
     skill.asset_variants.remove(variant)
     session.flush()
-    sync_mirror(session, skill)
 
 
 def _check_entry_type(skill: CreationSkill, entry_type: str) -> None:
@@ -482,15 +456,13 @@ def approve_entry(
     entry.status = AssetEntryStatus.APPROVED.value
     session.flush()
     if moves_anchor:
-        set_anchor(session, skill, entry, sync=False)
-    prefer_portrait_anchor(session, skill, entry, sync=False)
-    sync_mirror(session, skill)
+        set_anchor(session, skill, entry)
+    prefer_portrait_anchor(session, skill, entry)
+    session.flush()
     return entry
 
 
-def prefer_portrait_anchor(
-    session: Session, skill: CreationSkill, entry: SkillAssetEntry, *, sync: bool = True
-) -> None:
+def prefer_portrait_anchor(session: Session, skill: CreationSkill, entry: SkillAssetEntry) -> None:
     """An approved identity portrait (定妆照) is the anchor of choice: it
     takes over from no anchor or from a sheet (the P1 automatic anchor), but
     never from another portrait — the owner can still re-anchor by hand."""
@@ -498,7 +470,7 @@ def prefer_portrait_anchor(
         return
     current = anchor(skill)
     if current is None or current.entry_type == AssetEntryType.CHARACTER_SHEET:
-        set_anchor(session, skill, entry, sync=sync)
+        set_anchor(session, skill, entry)
 
 
 def add_entry(
@@ -512,7 +484,6 @@ def add_entry(
     label: str | None = None,
     expressions: list[str] | None = None,
     source_job_id: str | None = None,
-    sync: bool = True,
     status: str = AssetEntryStatus.APPROVED.value,
 ) -> SkillAssetEntry:
     """Files `asset_id` under `variant`. Re-adding an asset already in that
@@ -541,15 +512,12 @@ def add_entry(
     if source_job_id:
         existing.source_job_id = source_job_id
     session.flush()
-    if sync:
-        sync_mirror(session, skill)
     return existing
 
 
 def remove_entry(session: Session, skill: CreationSkill, entry: SkillAssetEntry) -> None:
     entry.variant.entries.remove(entry)
     session.flush()
-    sync_mirror(session, skill)
 
 
 def remove_asset(session: Session, skill: CreationSkill, asset_id: str) -> int:
@@ -560,13 +528,10 @@ def remove_asset(session: Session, skill: CreationSkill, asset_id: str) -> int:
             variant.entries.remove(entry)
             removed += 1
     session.flush()
-    sync_mirror(session, skill)
     return removed
 
 
-def set_anchor(
-    session: Session, skill: CreationSkill, entry: SkillAssetEntry | None, *, sync: bool = True
-) -> None:
+def set_anchor(session: Session, skill: CreationSkill, entry: SkillAssetEntry | None) -> None:
     """Moves the card's single anchor to `entry` (or clears it). Only an
     approved image can be the identity every job leads with (422)."""
     if entry is not None and not is_approved(entry):
@@ -579,8 +544,6 @@ def set_anchor(
     if entry is not None:
         entry.is_anchor = True
         session.flush()
-    if sync:
-        sync_mirror(session, skill)
 
 
 def set_members(session: Session, skill: CreationSkill, asset_ids_in_order: list[str]) -> None:
@@ -610,14 +573,12 @@ def set_members(session: Session, skill: CreationSkill, asset_ids_in_order: list
                 default,
                 asset_id=asset_id,
                 entry_type=AssetEntryType.OTHER.value,
-                sync=False,
             )
     for order, asset_id in enumerate(wanted):
         for entry in default.entries:
             if entry.asset_id == asset_id:
                 entry.sort_order = order
     session.flush()
-    sync_mirror(session, skill)
 
 
 def is_identity_portrait(session: Session, asset_id: str) -> bool:
@@ -889,7 +850,7 @@ def update_entry(
     session.flush()
     if status == AssetEntryStatus.APPROVED and not is_approved(entry):
         return approve_entry(session, skill, entry)
-    sync_mirror(session, skill)
+    session.flush()
     return entry
 
 

@@ -131,13 +131,12 @@ class CatalogSkill:
                 "character": {
                     "description": self.description,
                     "voice_description": None,
-                    "reference_assets": [],
                 },
             }
         if self.category == CreationSkillCategory.SCENE_ASSET:
             return {
                 **flat,
-                "scene": {"description": self.description, "reference_assets": []},
+                "scene": {"description": self.description},
             }
         return flat
 

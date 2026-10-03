@@ -126,26 +126,13 @@ export function creationStudioHref(
 
 /** The still an image-asset recipe should hang on the image studio's
  * reference rail: the card's anchor (`anchor_asset_id` on the skill
- * detail), else a legacy nested `reference_assets` entry (older API), else
- * the cover. */
+ * detail), else the cover. The skill detail's `params` no longer carries a
+ * `reference_assets` copy (P2-8 dropped the JSON mirror). */
 export function firstSkillReferenceAssetId(
-  params: Record<string, unknown>,
   coverAssetId?: string | null,
   anchorAssetId?: string | null,
 ): string | undefined {
-  if (anchorAssetId) return anchorAssetId;
-  for (const nestKey of ['character', 'scene'] as const) {
-    const bundle = params[nestKey];
-    if (!bundle || typeof bundle !== 'object' || Array.isArray(bundle)) continue;
-    const refs = (bundle as { reference_assets?: unknown }).reference_assets;
-    if (!Array.isArray(refs)) continue;
-    for (const ref of refs) {
-      if (!ref || typeof ref !== 'object' || Array.isArray(ref)) continue;
-      const assetId = (ref as { asset_id?: unknown }).asset_id;
-      if (typeof assetId === 'string' && assetId) return assetId;
-    }
-  }
-  return coverAssetId || undefined;
+  return anchorAssetId || coverAssetId || undefined;
 }
 
 export function filterMentionSkills(

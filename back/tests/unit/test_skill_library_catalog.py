@@ -7,6 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.asset_variants import service as asset_variants_service
+from app.domain.characters import service as characters_service
+from app.domain.scenes import service as scenes_service
 from app.domain.skill_library import catalog as skill_catalog
 from app.domain.skill_library import service as skill_library_service
 from app.models import Asset, CreationSkill, User
@@ -182,9 +184,9 @@ def test_asset_catalog_entries_are_image_only_recipes() -> None:
         assert params["prompt_suffix"] == item.prompt_suffix
         assert params["aspect_ratio"] == item.aspect_ratio
         if item.category == CreationSkillCategory.CHARACTER:
-            assert params["character"]["reference_assets"] == []
+            assert "reference_assets" not in params["character"]
         elif item.category == CreationSkillCategory.SCENE_ASSET:
-            assert params["scene"]["reference_assets"] == []
+            assert "reference_assets" not in params["scene"]
         else:
             assert "character" not in params
             assert "scene" not in params
@@ -192,8 +194,8 @@ def test_asset_catalog_entries_are_image_only_recipes() -> None:
 
 def test_seeded_character_and_scene_assets_get_a_reference_still(db: Session, author: User) -> None:
     """After `ensure_catalog_skills`, a character/scene recipe's cover is
-    also the first `reference_assets` still — the plaza card and a later
-    `@` apply share it."""
+    also the first reference still (the default look's sheet / master
+    plate) — the plaza card and a later `@` apply share it."""
     skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
     db.commit()
 
@@ -204,12 +206,12 @@ def test_seeded_character_and_scene_assets_get_a_reference_still(db: Session, au
     for row in seeded:
         assert row.cover_asset_id is not None, row.title
         if row.category == CreationSkillCategory.CHARACTER:
-            refs = (row.params_json.get("character") or {}).get("reference_assets") or []
+            refs = characters_service.CharacterView(row).reference_assets
             assert refs, row.title
             assert refs[0]["asset_id"] == row.cover_asset_id
             assert refs[0]["view"] == "front"
         elif row.category == CreationSkillCategory.SCENE_ASSET:
-            refs = (row.params_json.get("scene") or {}).get("reference_assets") or []
+            refs = scenes_service.SceneView(row).reference_assets
             assert refs, row.title
             assert refs[0]["asset_id"] == row.cover_asset_id
             assert refs[0]["view"] == "establishing"
