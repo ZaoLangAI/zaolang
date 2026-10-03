@@ -49,11 +49,19 @@ export function partialDelivery(job: {
   requested_outputs?: number | null;
   output_asset_id?: string | null;
   output_asset_ids?: string[] | null;
-}): { delivered: number; requested: number } | null {
+  reserved_credits?: number | null;
+  actual_credits?: number | null;
+}): { delivered: number; requested: number; refunded: number | null } | null {
   const requested = job.requested_outputs ?? 1;
   if (job.status !== 'succeeded' || requested <= 1) return null;
   const delivered = jobOutputs(job).assetIds.length;
-  return delivered > 0 && delivered < requested ? { delivered, requested } : null;
+  if (delivered <= 0 || delivered >= requested) return null;
+  // What the undelivered images gave back: the reservation less the capture.
+  const refunded =
+    job.reserved_credits != null && job.actual_credits != null
+      ? Math.max(0, job.reserved_credits - job.actual_credits)
+      : null;
+  return { delivered, requested, refunded };
 }
 
 /**

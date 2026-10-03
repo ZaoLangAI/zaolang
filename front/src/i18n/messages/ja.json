@@ -2545,6 +2545,7 @@
     "creditsSettled": "{count} クレジットを精算",
     "creditsRefunded": "{count} クレジットを返却",
     "partialDelivery": "{requested} 枚中 {delivered} 枚を納品しました。残りの分のクレジットは返却済みです",
+    "partialDeliveryRefund": "{requested} 枚中 {delivered} 枚を納品しました。残りの分の {refunded} クレジットは返却済みです",
     "failedTitle": "今回は生成できませんでした",
     "failedHint": "保留していたクレジットは返却済みです。説明を調整して再試行してください。",
     "cancelledTitle": "ジョブをキャンセルしました",

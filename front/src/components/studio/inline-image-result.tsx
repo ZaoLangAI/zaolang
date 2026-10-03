@@ -375,7 +375,9 @@ export function InlineImageResult({
 
       {partial ? (
         <p role="status" className="text-sm text-muted">
-          {t('partialDelivery', partial)}
+          {partial.refunded != null
+            ? t('partialDeliveryRefund', { ...partial, refunded: partial.refunded })
+            : t('partialDelivery', { delivered: partial.delivered, requested: partial.requested })}
         </p>
       ) : null}
       {job.status === 'succeeded' && job.candidate_entries > 0 ? (

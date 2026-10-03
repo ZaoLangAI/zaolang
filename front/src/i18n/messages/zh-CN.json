@@ -2545,6 +2545,7 @@
     "creditsSettled": "实际结算 {count} 积分",
     "creditsRefunded": "已退还 {count} 积分",
     "partialDelivery": "已交付 {delivered}/{requested} 张，未完成部分的积分已退回",
+    "partialDeliveryRefund": "已交付 {delivered}/{requested} 张，未完成部分已退回 {refunded} 积分",
     "failedTitle": "这次没能生成出来",
     "failedHint": "预扣的积分已经退回，你可以调整描述后重试。",
     "cancelledTitle": "任务已取消",
