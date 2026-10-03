@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GenerationJob } from '@/lib/api/types';
+import type { AssetEntry, AssetVariant, GenerationJob } from '@/lib/api/types';
 
 import {
   CHARACTER_SHEET_PROMPT_HINT,
@@ -194,6 +194,36 @@ describe('defaultCharacterReferenceIds', () => {
       ],
     } as Character;
     expect(defaultCharacterReferenceIds(character)).toEqual(['front', 'back']);
+  });
+
+  it('leads with an identity-portrait anchor, then the default look’s sheet and views', () => {
+    const entry = (id: string, entry_type: AssetEntry['entry_type'], view?: string) =>
+      ({ id, asset_id: id, entry_type, view, status: 'approved' }) as AssetEntry;
+    const look = (id: string, is_default: boolean, entries: AssetEntry[]) =>
+      ({ id, name: id, is_default, sort_order: 0, entries }) as AssetVariant;
+    const defaultLook = look('default', true, [
+      entry('back', 'view', 'back'),
+      entry('smile', 'expression_sheet'),
+      entry('portrait', 'identity_portrait'),
+      entry('side', 'view', 'side'),
+      { ...entry('old_sheet', 'character_sheet'), status: 'candidate' } as AssetEntry,
+      entry('sheet', 'character_sheet', 'front'),
+    ]);
+    const wedding = look('wedding', false, [entry('wedding_sheet', 'character_sheet', 'front')]);
+
+    expect(
+      defaultCharacterReferenceIds({
+        looks: [defaultLook, wedding],
+        anchor_entry_id: 'portrait',
+      } as Character),
+    ).toEqual(['portrait', 'sheet', 'side']);
+    // A sheet anchor in another look never leads; the default look's own does.
+    expect(
+      defaultCharacterReferenceIds({
+        looks: [defaultLook, wedding],
+        anchor_entry_id: 'wedding_sheet',
+      } as Character),
+    ).toEqual(['sheet', 'side', 'back']);
   });
 
   it('falls back to unlabelled uploads, then to anything', () => {
