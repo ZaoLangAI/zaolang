@@ -7,12 +7,14 @@ import { ChipGroup } from '@/components/studio/asset-preset-fields';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Badge, ErrorNotice } from '@/components/ui/primitives';
+import { cn } from '@/lib/cn';
 import {
   MATRIX_AXES,
   MAX_MATRIX_AXIS_VALUES,
   MAX_MATRIX_CELLS,
   type MatrixAxis,
   matrixCellCount,
+  matrixGrid,
 } from '@/features/image-assets/matrix';
 import {
   keysOf,
@@ -64,6 +66,7 @@ export function SceneMatrixDialog({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SceneMatrixResponse | null>(null);
+  const [page, setPage] = useState(0);
   const url = `/v1/scenes/${sceneId}/variants:matrix`;
   const count = matrixCellCount(axes);
   const tooMany = count > MAX_MATRIX_CELLS;
@@ -96,9 +99,12 @@ export function SceneMatrixDialog({
   const shown = result ?? current;
   const pending = planned && !result && !current && !planError;
   const newCount = shown?.cells.filter((cell) => cell.status === 'new').length ?? 0;
+  const grid = shown ? matrixGrid(axes, shown.cells) : null;
+  const shownPage = grid?.pages[Math.min(page, grid.pages.length - 1)];
 
   const toggle = (axis: MatrixAxis, value: string) => {
     setResult(null);
+    setPage(0);
     setAxes((current) => ({
       ...current,
       [axis]: current[axis].includes(value)
@@ -107,13 +113,25 @@ export function SceneMatrixDialog({
     }));
   };
 
-  const cellLabel = (cell: SceneMatrixCell) =>
-    MATRIX_AXES.filter((axis) => cell.presets[axis])
-      .map((axis) => {
-        const entry = TABLES[axis][cell.presets[axis] as string];
-        return entry ? tPresets(`presets.${entry.labelKey}`) : cell.presets[axis];
-      })
+  const valueLabel = (axis: MatrixAxis, value: string) => {
+    const entry = TABLES[axis][value];
+    return entry ? tPresets(`presets.${entry.labelKey}`) : value;
+  };
+  const presetsLabel = (presets: Partial<Record<MatrixAxis, string | null>>) =>
+    MATRIX_AXES.filter((axis) => presets[axis])
+      .map((axis) => valueLabel(axis, presets[axis] as string))
       .join(' · ');
+
+  const cellBadge = (cell: SceneMatrixCell) =>
+    cell.error ? (
+      <Badge tone="danger">{t('matrixCellFailed')}</Badge>
+    ) : cell.job_id ? (
+      <Badge tone="success">{t('matrixCellQueued')}</Badge>
+    ) : (
+      <Badge tone={cell.status === 'new' ? 'primary' : 'neutral'}>
+        {t(`matrixStatus.${cell.status}`)}
+      </Badge>
+    );
 
   const submit = async () => {
     setBusy(true);
@@ -187,25 +205,66 @@ export function SceneMatrixDialog({
 
         {shown ? (
           <>
-            <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-              {shown.cells.map((cell) => (
-                <li
-                  key={JSON.stringify(cell.presets)}
-                  className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-border px-2.5 py-1.5 text-xs"
-                >
-                  <span className="truncate text-text">{cellLabel(cell)}</span>
-                  {cell.error ? (
-                    <Badge tone="danger">{t('matrixCellFailed')}</Badge>
-                  ) : cell.job_id ? (
-                    <Badge tone="success">{t('matrixCellQueued')}</Badge>
-                  ) : (
-                    <Badge tone={cell.status === 'new' ? 'primary' : 'neutral'}>
-                      {t(`matrixStatus.${cell.status}`)}
-                    </Badge>
-                  )}
-                </li>
-              ))}
-            </ul>
+            {grid && grid.pages.length > 1 ? (
+              <div role="tablist" className="flex flex-wrap gap-1.5">
+                {grid.pages.map((candidate, index) => (
+                  <button
+                    key={presetsLabel(candidate.presets)}
+                    type="button"
+                    role="tab"
+                    aria-selected={candidate === shownPage}
+                    onClick={() => setPage(index)}
+                    className={cn(
+                      'rounded-[var(--radius-sm)] border px-2.5 py-1 text-xs transition-colors',
+                      candidate === shownPage
+                        ? 'border-primary bg-primary/10 text-text'
+                        : 'border-border text-muted hover:text-text',
+                    )}
+                  >
+                    {presetsLabel(candidate.presets)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {grid && shownPage ? (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-xs">
+                  {grid.colAxis ? (
+                    <thead>
+                      <tr>
+                        <th className="p-1.5" />
+                        {grid.colValues.map((value) => (
+                          <th
+                            key={value}
+                            scope="col"
+                            className="p-1.5 text-left font-medium text-muted"
+                          >
+                            {valueLabel(grid.colAxis as MatrixAxis, value)}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                  ) : null}
+                  <tbody>
+                    {shownPage.rows.map((row, rowIndex) => {
+                      const rowValue = grid.rowValues[rowIndex] ?? '';
+                      return (
+                        <tr key={rowValue} className="border-t border-border">
+                          <th scope="row" className="p-1.5 text-left font-medium text-muted">
+                            {valueLabel(grid.rowAxis, rowValue)}
+                          </th>
+                          {row.map((cell, colIndex) => (
+                            <td key={grid.colValues[colIndex] ?? colIndex} className="p-1.5">
+                              {cell ? cellBadge(cell) : <span className="text-muted">—</span>}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
             {result ? (
               <p className="text-xs text-muted" role="status">
                 {t('matrixSubmitted', { count: result.submitted })}
