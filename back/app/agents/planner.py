@@ -276,7 +276,9 @@ ASSET_PLAN_SYSTEM_PROMPT = f"""你是造浪平台的图片资产规划器，
 - 当 source_params.character_outfit_label 或 source_params.target_look 存在时，
   intent 描述的是该造型的服装
   （target_look.description 是用户写的服装描述，已写入 intent），
-  prompt_enhancements 不得改变人物五官与发型，也不得改写已给定的服装，只补充面料与配饰细节
+  prompt_enhancements 不得改变人物五官与发型，也不得改写已给定的服装，只补充面料与配饰细节；
+  intent 里角色描述自带的原有穿着（例如"穿米白色针织开衫"）不属于这个造型，
+  prompt_enhancements 不得再提到它
 - subject_name 是这个角色/场景适合作为库内条目名称的简短命名（4-12 个字），
   没有更具体的名字时可以用一个概括性的称呼（例如"神秘女侦探"），但不要留空
 - negative_prompt_suggestions 给出会破坏该用途可用性的反面描述
