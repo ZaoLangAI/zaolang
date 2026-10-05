@@ -10,7 +10,7 @@ from pydantic import Field, ValidationError, model_validator
 
 from app.api.schemas.asset_variants import CameraPose
 from app.api.schemas.common import ApiModel
-from app.domain.blocking.vocabulary import ShotSize
+from app.domain.blocking.vocabulary import CameraHeight, CameraSide, ShotSize
 from app.domain.image_assets import camera as camera_vocab
 from app.domain.image_assets.camera import MAX_CAMERA_POSES
 from app.domain.image_assets.vocabulary import (
@@ -564,6 +564,11 @@ class GenerationParams(ApiModel):
     # turnaround. Unset shot → read from the prompt's 「镜头：」 line.
     reference_shot_size: ShotSize | None = None
     reference_emotion: CharacterExpression | None = None
+    # AC-3: the side / height the shot sees its subject from (a 白膜 shot's
+    # own camera) — library references are ranked by how close their camera
+    # pose is to it. Unset → read from the prompt's 「镜头：」 line.
+    reference_camera_side: CameraSide | None = None
+    reference_camera_height: CameraHeight | None = None
     # `asset_kind=scene` only: one preset per axis for a single scene image.
     scene_lighting: SceneLighting | None = None
     scene_weather: SceneWeather | None = None

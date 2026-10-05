@@ -3,7 +3,7 @@ import { locateBreakpoint } from '@/features/script/script-breakpoint';
 import { breakpointSegmentPrompt } from '@/features/script/script-prompts';
 import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
 
-import type { BlockingDocument } from './types';
+import type { BlockingDocument, CameraHeight, CameraSide, ShotSize } from './types';
 
 /**
  * One segment's video job, planned from the blockout rather than from the
@@ -21,6 +21,13 @@ export interface SegmentVideoPlan {
   /** Cast on set with no linked character asset — the clip still generates,
    * but that person's look comes from the prompt only. */
   unlinkedCast: string[];
+  /** The segment's opening shot camera — the backend ranks each linked
+   * card's library images by how close their angle is to it (AC-3). */
+  referenceCamera: {
+    reference_shot_size: ShotSize;
+    reference_camera_side: CameraSide;
+    reference_camera_height: CameraHeight;
+  } | null;
 }
 
 /** Model-facing colour names — prompt text, like the rest of
@@ -69,6 +76,7 @@ export function planSegmentVideo(
   const body = breakpointSegmentPrompt(located.scene, located.blockIndex);
   const prompt = (legend ? `${legend}\n${body}` : body).slice(0, STUDIO_PROMPT_MAX_LENGTH);
 
+  const opening = segment.camera_override ? null : (segment.shots ?? [])[0];
   return {
     key: segment.key,
     heading: segment.heading,
@@ -77,6 +85,13 @@ export function planSegmentVideo(
     sceneId: located.scene.ref_id,
     prompt,
     unlinkedCast,
+    referenceCamera: opening
+      ? {
+          reference_shot_size: opening.size,
+          reference_camera_side: opening.side,
+          reference_camera_height: opening.height,
+        }
+      : null,
   };
 }
 

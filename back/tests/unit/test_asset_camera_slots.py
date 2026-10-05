@@ -83,9 +83,7 @@ def test_a_posed_side_view_competes_with_an_old_side_view(db: Session, author: U
     assert projected[other_side.asset_id]["camera"]["azimuth"] == 270
 
 
-def test_posed_scene_shots_are_slots_and_unposed_ones_accumulate(
-    db: Session, author: User
-) -> None:
+def test_posed_scene_shots_are_slots_and_unposed_ones_accumulate(db: Session, author: User) -> None:
     scene = scenes_service.create_scene(
         db, user_id=author.id, name="客厅", description=None, reference_asset_ids=[]
     )

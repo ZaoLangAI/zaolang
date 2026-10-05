@@ -137,3 +137,72 @@ def test_an_explicit_pick_is_never_reordered(db: Session, author: User) -> None:
     }
     reference_resolver.resolve(db, user_id=author.id, params=params)
     assert params["reference_asset_ids"] == [side.asset_id, sheet.asset_id]
+
+
+# --- AC-3: ranking by camera angle -------------------------------------------
+
+
+def test_a_back_shot_leads_with_the_back_view(db: Session, author: User) -> None:
+    skill, sheet, side, back, *_ = _character(db, author)
+    hints = av.ReferenceHints(shot="full", side="back")
+    assert av.default_subset(skill, hints=hints) == [back.asset_id, sheet.asset_id, side.asset_id]
+
+
+def test_a_left_shot_prefers_a_posed_left_view(db: Session, author: User) -> None:
+    skill, sheet, _side, _back, *_ = _character(db, author)
+    left = _add(
+        db,
+        author,
+        skill,
+        AssetEntryType.VIEW.value,
+        view="side",
+        camera={"azimuth": 270, "elevation": 0, "distance": "medium"},
+    )
+    picked = av.default_subset(skill, hints=av.ReferenceHints(side="left"))
+    assert picked[0] == left.asset_id
+    assert sheet.asset_id in picked
+
+
+def test_a_close_shot_from_the_front_still_leads_with_the_face(db: Session, author: User) -> None:
+    skill, sheet, _side, _back, portrait, _angry = _character(db, author)
+    picked = av.default_subset(skill, hints=av.ReferenceHints(shot="close", side="front"))
+    assert picked[:2] == [portrait.asset_id, sheet.asset_id]
+    behind = av.default_subset(skill, hints=av.ReferenceHints(shot="close", side="back"))
+    assert behind[0] != portrait.asset_id
+
+
+def test_a_reverse_scene_shot_leads_with_the_reverse_plate(db: Session, author: User) -> None:
+    skill = scenes_service.create_scene(
+        db, user_id=author.id, name="客厅", description=None, reference_asset_ids=[]
+    ).skill
+    master = _add(db, author, skill, AssetEntryType.MASTER.value)
+    _add(db, author, skill, AssetEntryType.SHOT.value, view="detail")
+    reverse = _add(
+        db,
+        author,
+        skill,
+        AssetEntryType.SHOT.value,
+        view="reverse",
+        camera={"azimuth": 180, "elevation": 0, "distance": "medium"},
+    )
+    assert av.default_subset(skill, hints=av.ReferenceHints(side="back")) == [
+        reverse.asset_id,
+        master.asset_id,
+    ]
+
+
+def test_the_prompts_camera_line_names_the_side(db: Session, author: User) -> None:
+    skill, _sheet, side, back, *_ = _character(db, author)
+    params = {
+        "prompt": "林夏走出门。\n镜头：全景，背影，缓慢推进",
+        "character_ids": [skill.id],
+    }
+    reference_resolver.resolve(db, user_id=author.id, params=params)
+    assert params["reference_asset_ids"][0] == back.asset_id
+    explicit = {
+        "prompt": "x",
+        "character_ids": [skill.id],
+        "reference_camera_side": "right",
+    }
+    reference_resolver.resolve(db, user_id=author.id, params=explicit)
+    assert explicit["reference_asset_ids"][0] == side.asset_id

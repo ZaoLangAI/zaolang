@@ -64,9 +64,12 @@ def resolve(
     extra = params.get("extra")
     if isinstance(extra, dict) and "camera_pose" in extra:
         params["extra"] = {k: v for k, v in extra.items() if k != "camera_pose"}
+    cue = _prompt_camera_cue(params)
     hints = asset_variants_service.ReferenceHints(
-        shot=shot_hint or params.get("reference_shot_size") or _prompt_shot_size(params),
+        shot=shot_hint or params.get("reference_shot_size") or (cue.size if cue else None),
         emotion=emotion_hint or params.get("reference_emotion"),
+        side=params.get("reference_camera_side") or (cue.side if cue else None),
+        height=params.get("reference_camera_height") or (cue.height if cue else None),
     )
     source_roles, foreign_labels = _source_entry_reference(session, user_id=user_id, params=params)
     characters_service.apply_character_refs(session, user_id=user_id, params=params, hints=hints)
@@ -297,11 +300,14 @@ def _borrow_scene_reference(session: Session, *, user_id: str, params: dict[str,
 _CAMERA_LINE = re.compile(r"镜头[：:]\s*([^\n]+)")
 
 
-def _prompt_shot_size(params: dict[str, Any]) -> str | None:
-    """The shot size named in the prompt's 「镜头：」 line, if any. Only that
-    line — 「特写」 elsewhere in a description says nothing about framing."""
+def _prompt_camera_cue(params: dict[str, Any]) -> camera_language.CameraCue | None:
+    """The prompt's 「镜头：」 line read as camera language — shot size, and
+    the side / height it sees the subject from (AC-3). Only that line —
+    「特写」 or 「背影」 elsewhere in a description says nothing about the
+    camera."""
     match = _CAMERA_LINE.search(str(params.get("prompt") or ""))
-    return camera_language.parse_camera_text(match.group(1)).size if match else None
+    return camera_language.parse_camera_text(match.group(1)) if match else None
+
 
 
 def _approved_of(variant: Any, entry_type: AssetEntryType) -> list[Any]:

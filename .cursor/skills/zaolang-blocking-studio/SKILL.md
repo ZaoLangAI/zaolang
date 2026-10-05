@@ -25,7 +25,7 @@ Not here → `zaolang-editor-drama` (scripts, turns), `zaolang-media-assets` (re
 | `front/src/features/blocking/compiler/` | pure `compileBlocking`; `camera.ts`, `obstacles.ts` (A*), `tracks.ts`, `quality.ts` metrics |
 | `front/src/features/blocking/engine/` | plain three.js (no r3f): player, mannequin/poses, stage, drag `editor.ts` |
 | `front/src/features/blocking/export/render-segment.ts` | segment → clip: WebCodecs+mediabunny, else MediaRecorder |
-| `front/src/features/blocking/video-plan.ts` | `planSegmentVideos` (segment duration, linked cast/scene, prompt via `breakpointSegmentPrompt`), `castLegend` (mannequin colour → character) |
+| `front/src/features/blocking/video-plan.ts` | `planSegmentVideos` (segment duration, linked cast/scene, prompt via `breakpointSegmentPrompt`), `castLegend` (mannequin colour → character); `referenceCamera` sends the opening shot's size/side/height as `reference_shot_size`/`reference_camera_side`/`reference_camera_height` so linked cards lead with the matching angle (AC-3) |
 | `front/src/features/blocking/use-blocking-video.ts` | render → upload `generation_reference` → `text_to_video`, `reference_mode: 'input_references'`, `reference_video_role: 'motion_guide'`, with `link_episode_id`/`link_breakpoint_key` |
 
 ## Invariants

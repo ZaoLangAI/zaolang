@@ -113,6 +113,15 @@ describe('planSegmentVideo', () => {
     expect(castLegend(document, '便利店#0')).toBe('参考视频中红色人偶是林夏。');
   });
 
+  it('passes the opening shot camera so references match its angle', () => {
+    const plan = planSegmentVideo(document, script, '便利店#1')!;
+    expect(plan.referenceCamera).toEqual({
+      reference_shot_size: shot.size,
+      reference_camera_side: shot.side,
+      reference_camera_height: shot.height,
+    });
+  });
+
   it('skips keys the script or blockout no longer has', () => {
     expect(planSegmentVideos(document, script, ['便利店#0', '便利店#9'])).toHaveLength(1);
   });
