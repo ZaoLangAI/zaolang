@@ -26,6 +26,13 @@ Paths below are relative to `ios/App/Sources/` unless they start with `ios/`.
 - Divergence: iOS always requests `[.side, .back]`, even when one already exists; web's `missingReferenceViews` asks only for the missing subset.
 - Reference-image editing and publishing characters/scenes are web-only.
 
+## Character library (`CharacterLibrary/CharacterDetailViewModel.swift`)
+- `approve(_:)` → `POST /v1/characters/{id}/entries/{entry_id}:approve` (`APIClient+AssetLibrary.swift:approveCharacterEntry`); only candidates show the button (entry viewer sheet).
+- `makeDefault(_:)` → voice `PATCH {make_default: true}`.
+- `previewQuote` sends `dry_run: true`; `generatePreview` reuses one `IdempotencyKeyStore` key per voice (`voice-preview-<voice id>`) until the submit succeeds, then polls `fetchGenerationJob` every 3s and reloads the graph (the backend lands the audio as `preview`).
+- `saveProfile` PATCHes only name / description / voice_description — never `reference_asset_ids` (that would drop approved images via `set_members`).
+- `describe()` returns a draft from linked scripts; the sheet fills the form and saving persists it. The button shows only when `script-links` is non-empty.
+
 ## Job detail (`Create/JobDetailViewModel.swift`)
 - `start()` = one `refresh()`, then `startPolling()` (every 5s) and `startSSE()` in parallel. A dropped stream needs no handling — polling realigns within 5s. A terminal stage event triggers one `refresh()` for fields the stream omits (output URL, actual credits).
 - `applyStreamEvent`: `eventType == "thinking"` frames only append to `liveThinking` (reset when `nodeId` changes) and never touch `lastAppliedSequence`; stage frames apply only when `sequence > lastAppliedSequence`. Undecodable frames are dropped in `jobEvents`, never ending the stream.
