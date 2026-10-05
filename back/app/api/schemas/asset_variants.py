@@ -28,6 +28,11 @@ from app.domain.image_assets.vocabulary import (
 )
 from app.models.enums import AssetEntryStatus, AssetEntryType, QualityTier
 
+# `GET /v1/characters` / `/v1/scenes`: `summary` leaves out `looks` /
+# `variants` (every image of every card, each a signed URL) for list pages
+# that only show a card's hero and text. Pickers that choose a look keep `full`.
+LibraryListView = Literal["full", "summary"]
+
 
 class VariantPresets(ApiModel):
     """Scene variant presets (P0 vocabulary) or a look's `age_stage` (P2-6).

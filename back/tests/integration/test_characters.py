@@ -264,3 +264,28 @@ def test_character_name_is_bounded_by_the_skill_title_column(
         headers=auth_header(author),
     )
     assert renamed.status_code == 422, renamed.text
+
+
+def test_the_summary_list_drops_looks_but_keeps_the_hero(
+    client: TestClient, db: Session, author: User
+) -> None:
+    sheet = _asset(db, author)
+    created = client.post(
+        "/v1/characters",
+        json={"name": "林夏", "reference_asset_ids": [sheet.id]},
+        headers=auth_header(author),
+    ).json()
+    assert created["hero_url"]
+
+    (full,) = client.get("/v1/characters", headers=auth_header(author)).json()
+    (summary,) = client.get(
+        "/v1/characters", params={"view": "summary"}, headers=auth_header(author)
+    ).json()
+    assert full["looks"] and summary["looks"] == []
+    assert summary["hero_url"] == full["hero_url"]
+    assert sheet.object_key in summary["hero_url"]
+    assert [r["asset_id"] for r in summary["reference_assets"]] == [sheet.id]
+    assert summary["anchor_entry_id"] == full["anchor_entry_id"]
+
+    bad = client.get("/v1/characters", params={"view": "tiny"}, headers=auth_header(author))
+    assert bad.status_code == 422

@@ -8185,6 +8185,8 @@ export interface components {
             looks?: components["schemas"]["AssetVariantView"][];
             /** Anchor Entry Id */
             anchor_entry_id?: string | null;
+            /** Hero Url */
+            hero_url?: string | null;
             /** @default draft */
             status: components["schemas"]["CreationSkillStatus"];
             /** @default private */
@@ -16967,7 +16969,9 @@ export interface operations {
     };
     list_characters_v1_characters_get: {
         parameters: {
-            query?: never;
+            query?: {
+                view?: "full" | "summary";
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -17562,7 +17566,9 @@ export interface operations {
     };
     list_scenes_v1_scenes_get: {
         parameters: {
-            query?: never;
+            query?: {
+                view?: "full" | "summary";
+            };
             header?: {
                 authorization?: string | null;
             };
