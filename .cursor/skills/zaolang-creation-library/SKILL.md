@@ -27,7 +27,7 @@ Not here → `zaolang-admin-ops` (review, takedown), `zaolang-credits-billing` (
 | `front/src/app/[locale]/(site)/skills/page.tsx` | plaza; URL filters `contentType` × `category` × `access` |
 | `front/src/components/skills/` | plaza grid/card, detail+unlock dialog, create/manage dialogs, `@` menu |
 | `front/src/components/characters/character-library.tsx` | `/create/characters` grid + text-only edit dialog (never sends `reference_asset_ids` — that flat replace drops unlisted approved images); twin `scene-library.tsx` in `components/scenes/` |
-| `front/src/app/[locale]/(site)/create/{characters,scenes}/[id]/page.tsx` | per-card management page (`character-manage-page.tsx` / `scene-manage-page.tsx`, `?look=` opens a look); `?manage=` on the list pages redirects here; renders `front/src/components/library/asset-variants-panel.tsx` (looks / variants) with `entry-actions.tsx` (`EntryCard`) |
+| `front/src/app/[locale]/(site)/create/{characters,scenes}/[id]/page.tsx` | per-card management page (`character-manage-page.tsx` / `scene-manage-page.tsx`, `?look=` opens a look); `?manage=` on the list pages redirects here; renders `front/src/components/asset-graph/asset-graph-workspace.tsx` from `GET …/graph`: looks as class-box nodes (attribute rows, expandable into image nodes), typed relation edges (drag handle→handle or the inspector's keyboard `AddRelationForm`), inspectors reusing `library/entry-actions.tsx` (`EntryCard`), `variant-attributes-form.tsx`, `scene-preset-fields.tsx` |
 | `front/src/lib/skill-mention.ts` | `isSkillMentionable`, `creationStudioHref`, `@Title` token helpers |
 | `front/src/components/studio/use-applied-skills.tsx` | studio apply, `MAX_APPLIED_SKILLS`, `?skillId=` seed |
 

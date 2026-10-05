@@ -37,6 +37,7 @@ export function EntryCard({
   onDelete,
   onAnchor,
   onApprove,
+  showImage = true,
 }: {
   entry: AssetEntry;
   variant: AssetVariant;
@@ -47,6 +48,8 @@ export function EntryCard({
   onDelete: () => void;
   onAnchor: () => void;
   onApprove: () => void;
+  /** `false` where the image is already shown large (the graph inspector). */
+  showImage?: boolean;
 }) {
   const t = useTranslations('assetVariants');
   const candidate = entry.status === 'candidate';
@@ -57,25 +60,27 @@ export function EntryCard({
         candidate ? 'border-dashed border-border' : 'border-border',
       )}
     >
-      <div
-        className={cn(
-          'relative aspect-square overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft',
-          candidate && 'opacity-70',
-        )}
-      >
-        {entry.url ? (
-          <Image src={entry.url} alt="" fill sizes="160px" className="object-cover" />
-        ) : null}
-        {isAnchor ? (
-          <span className="absolute left-1 top-1">
-            <Badge tone="primary">{t('anchor')}</Badge>
-          </span>
-        ) : candidate ? (
-          <span className="absolute left-1 top-1">
-            <Badge>{t('candidate')}</Badge>
-          </span>
-        ) : null}
-      </div>
+      {showImage ? (
+        <div
+          className={cn(
+            'relative aspect-square overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft',
+            candidate && 'opacity-70',
+          )}
+        >
+          {entry.url ? (
+            <Image src={entry.url} alt="" fill sizes="160px" className="object-cover" />
+          ) : null}
+          {isAnchor ? (
+            <span className="absolute left-1 top-1">
+              <Badge tone="primary">{t('anchor')}</Badge>
+            </span>
+          ) : candidate ? (
+            <span className="absolute left-1 top-1">
+              <Badge>{t('candidate')}</Badge>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {candidate ? (
         <Button size="sm" onClick={onApprove} title={t('approveHint')}>
           {t('approve')}
