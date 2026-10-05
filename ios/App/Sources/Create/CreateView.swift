@@ -87,6 +87,16 @@ struct CreateView: View {
                     router.learnPath.append(LearnRoute.publish)
                 }
             }
+            modeCard(
+                title: L10n.t("iosCharacters.entryTitle"),
+                description: L10n.t("iosCharacters.entryDesc"),
+                tag: L10n.t("iosCharacters.entryTag"),
+                systemImage: "person.2.crop.square.stack"
+            ) {
+                environment.requireAuth(actionLabel: L10n.t("iosCharacters.entryTitle")) {
+                    path.append(CreateRoute.characterLibrary)
+                }
+            }
         }
     }
 

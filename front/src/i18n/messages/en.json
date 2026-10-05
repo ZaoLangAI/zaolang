@@ -4118,5 +4118,23 @@
       "inner_monologue": "Inner monologue",
       "narration": "Narration"
     }
+  },
+  "iosCharacters": {
+    "entryTitle": "Characters",
+    "entryDesc": "Browse your characters' looks, images and voices; approve candidates and generate voice previews.",
+    "entryTag": "Looks & voices",
+    "manageOnWeb": "Manage on the web",
+    "manageOnWebHint": "Create looks, adjust or derive images, and edit relations or voice settings on the web.",
+    "noVoices": "No voices yet — add one on the web.",
+    "noLooks": "No images yet — generate the first one on the web.",
+    "approve": "Approve this one",
+    "approved": "Approved",
+    "previewConfirm": "A preview costs {credits} credits (you have {available}).",
+    "previewFailed": "The preview failed. Try again later.",
+    "editProfile": "Edit description",
+    "saved": "Saved",
+    "relationTo": "{relations} → {name}",
+    "boundLooks": "Used by looks: {names}",
+    "describeHint": "Drafts the descriptions from linked scripts. Review them above, then save."
   }
 }

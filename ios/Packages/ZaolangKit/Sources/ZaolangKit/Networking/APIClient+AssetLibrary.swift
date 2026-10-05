@@ -19,6 +19,51 @@ public extension APIClient {
         try await send(.get("/v1/characters/\(id)"))
     }
 
+    /// The character's management graph: looks + images, relations,
+    /// voices, running jobs (`GET /v1/characters/{id}/graph`).
+    func fetchCharacterGraph(id: String) async throws -> AssetGraphResponse {
+        try await send(.get("/v1/characters/\(id)/graph"))
+    }
+
+    /// Text fields only (name / description / voice description).
+    func updateCharacterProfile(id: String, _ payload: CharacterProfileUpdate) async throws -> CharacterResponse {
+        try await send(try .patch("/v1/characters/\(id)", body: payload))
+    }
+
+    /// Scripts that link this character — 「AI 生成」 is offered only when any do.
+    func characterScriptLinks(id: String) async throws -> [CharacterScriptLink] {
+        try await send(.get("/v1/characters/\(id)/script-links"))
+    }
+
+    /// A draft of the description / voice description from the linked
+    /// scripts. Saves nothing.
+    func describeCharacter(id: String, _ payload: CharacterDescribeRequest = .init()) async throws -> CharacterDescribeResponse {
+        try await send(try .post("/v1/characters/\(id)/describe", body: payload))
+    }
+
+    /// 定稿: a candidate image becomes the approved one of its slot.
+    func approveCharacterEntry(characterID: String, entryID: String) async throws -> AssetEntryView {
+        try await send(.post("/v1/characters/\(characterID)/entries/\(entryID):approve"))
+    }
+
+    func makeDefaultVoice(characterID: String, voiceID: String) async throws -> CharacterVoiceView {
+        try await send(try .patch("/v1/characters/\(characterID)/voices/\(voiceID)", body: MakeDefaultVoice()))
+    }
+
+    /// `dryRun` prices; otherwise submits one preview job (reuse the same
+    /// `idempotencyKey` on retry). Its audio becomes the voice's preview.
+    func previewVoice(
+        characterID: String, voiceID: String, dryRun: Bool, idempotencyKey: String? = nil
+    ) async throws -> VoicePreviewResponse {
+        try await send(
+            try .post(
+                "/v1/characters/\(characterID)/voices/\(voiceID):preview",
+                body: VoicePreviewRequest(dryRun: dryRun),
+                idempotencyKey: idempotencyKey
+            )
+        )
+    }
+
     func listScenes() async throws -> [SceneResponse] {
         try await send(.get("/v1/scenes"))
     }

@@ -24,6 +24,7 @@ Not here → `zaolang-api-contract` (errors, idempotency), `zaolang-generation-j
 | `ios/App/Sources/Common/` | `LoadableState`, `StateViews`, `SharedComponents`, `Date+ZL.swift` (`ZLClock`) |
 | `ios/App/Sources/DesignSystem/` | `Color.zl.*`, radius/shadow, `zlMotion`, `.zlEyebrow()`, `.zlSkeletonPulse()` |
 | `ios/App/Sources/Create/` | Create hub, `StudioView`/`StudioViewModel`, job detail, publish, draft detail, `CreateJobBanner`, `AssetLibrary/LibraryPickerSheet.swift` |
+| `ios/App/Sources/CharacterLibrary/` | 角色库 (create hub card → `CreateRoute.characterLibrary` / `.characterDetail`): list, detail with 造型 \| 音色 tabs over `GET /v1/characters/{id}/graph`; `CharacterGraphModel` = phone outline of the web DAG (depth-indented looks, version folding mirrors `front/src/components/asset-graph/versions.ts`) |
 | `ios/App/Resources/` | `Assets.xcassets`, `Localizable.xcstrings`, `Info.plist`, `PrivacyInfo.xcprivacy`, `Zaolang.entitlements` (`aps-environment` = development) |
 | `ios/tools/gen-colors.py` | Generates `Assets.xcassets/Colors` from `front/src/app/globals.css` (light + dark blocks) |
 | `ios/tools/gen-strings.py` | Generates `Localizable.xcstrings` from the JSON files in `front/src/i18n/messages/`; `NAMESPACES` = exported set |
@@ -38,7 +39,7 @@ Other feature dirs under `ios/App/Sources/` pair `*View` + `*ViewModel`. Learn u
 4. `zl_refresh` is taken over manually: `URLSessionFactory` sets `httpShouldSetCookies = false`, `CookieCodec` parses `Set-Cookie` into Keychain, `SessionManager.inFlightRefresh` single-flights 401s. Changing the cookie (`back/app/api/deps.py:REFRESH_COOKIE_NAME`) or its attributes silently breaks renewal.
 5. Reduced motion: read `@Environment(\.zlMotion)` (system OR server `reduce_motion`, merged in `RootView`), never `accessibilityReduceMotion` directly. Gate every new animation/transition on it.
 6. `ref` (inspiration) ≠ `source_work_id` (remix → lineage edge + license). Both go through one `StudioView`/`StudioViewModel` distinguished by `StudioMode` — never split. See `reference-write-flows.md`.
-7. Parse every list as `Page<T>` even when the backend only takes `limit` (of the lists iOS calls, only `/v1/works`, `/v1/credits/ledger`, `/v1/learn/posts` take `cursor`). Exception: `/v1/characters` and `/v1/scenes` return bare arrays — decode `[T]` (`APIClient+AssetLibrary.swift`).
+7. Parse every list as `Page<T>` even when the backend only takes `limit` (of the lists iOS calls, only `/v1/works`, `/v1/credits/ledger`, `/v1/learn/posts` take `cursor`). Exception: `/v1/characters` and `/v1/scenes` return bare arrays — decode `[T]` (`APIClient+AssetLibrary.swift`); `/v1/characters/{id}/graph` is one object (`AssetGraphResponse`, `Models/AssetGraph.swift`).
 8. Lineage graph requests depth 3 (`LineageViewModel.depth`), not the API default 4 — phone width. Deliberate.
 9. Amounts are `Int`; enum raw values follow `back/app/models/enums.py`; mirror backend enum additions (`Operation`, `ImageAssetKind`, `CharacterViewAngle` in `Models/Enums.swift`) in the same change. Known drift: `Operation` lacks `music_generation`/`video_analysis` (response DTOs decode them as unknown via `RawOrUnknown`).
 10. XcodeGen 2.46.0's top-level `resources:` emits no resources phase. Put new resource files in the target's `sources:` with `buildPhase: resources`, as `project.yml` does.

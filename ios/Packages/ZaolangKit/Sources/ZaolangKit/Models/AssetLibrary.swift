@@ -30,11 +30,25 @@ public struct CharacterResponse: Codable, Sendable, Equatable, Identifiable {
     public let description: String?
     public let referenceAssets: [LibraryReferenceAsset]
     public let voiceDescription: String?
+    /// Looks with their images (absent in older payloads).
+    public let looks: [AssetVariantView]?
+    public let anchorEntryID: String?
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, description
+        case id, name, description, looks
         case referenceAssets = "reference_assets"
         case voiceDescription = "voice_description"
+        case anchorEntryID = "anchor_entry_id"
+    }
+
+    /// What a library row leads with — the approved anchor, else the
+    /// approved identity portrait, else the legacy front sheet (mirrors the
+    /// web `characterHeroUrl`).
+    public var heroURL: String? {
+        let approved = (looks ?? []).flatMap(\.entries).filter { !$0.isCandidate && $0.url != nil }
+        if let anchor = approved.first(where: { $0.id == anchorEntryID }) { return anchor.url }
+        if let portrait = approved.first(where: { $0.entryType == "identity_portrait" }) { return portrait.url }
+        return frontReference?.url ?? referenceAssets.first?.url
     }
 
     /// The character's front view, if it has one — what the "补全侧面/背面"

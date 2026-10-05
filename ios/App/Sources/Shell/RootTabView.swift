@@ -181,6 +181,10 @@ struct RootTabView: View {
                 onOpenWork: { router.createPath.append(CreateRoute.workDetail(workID: $0)) },
                 onOpenLineage: { router.createPath.append(CreateRoute.lineage(workID: $0)) }
             )
+        case .characterLibrary:
+            CharacterLibraryView()
+        case .characterDetail(let characterID):
+            CharacterDetailView(characterID: characterID)
         }
     }
 

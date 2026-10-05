@@ -63,6 +63,11 @@ NAMESPACES = [
     "notificationBody",
     "credits",
     "iosOnboarding",
+    # 角色库（P10）：只读为主的角色 / 造型 / 音色页。
+    "characters",
+    "assetVariants",
+    "assetGraph",
+    "iosCharacters",
 ]
 
 SOURCE_LANGUAGE = "zh-Hans"

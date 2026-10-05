@@ -4118,5 +4118,23 @@
       "inner_monologue": "内心独白",
       "narration": "旁白"
     }
+  },
+  "iosCharacters": {
+    "entryTitle": "角色库",
+    "entryDesc": "查看角色的造型、图片与音色，定稿候选图并生成试听。",
+    "entryTag": "造型与音色",
+    "manageOnWeb": "在网页端管理",
+    "manageOnWebHint": "新建造型、调整或派生图片、编辑关系与音色设置请在网页端完成。",
+    "noVoices": "还没有音色，可在网页端为角色添加。",
+    "noLooks": "还没有造型图片，可在网页端生成第一张。",
+    "approve": "定稿这张",
+    "approved": "已定稿",
+    "previewConfirm": "生成试听将消耗 {credits} 积分（可用 {available}）。",
+    "previewFailed": "试听生成失败，请稍后重试。",
+    "editProfile": "编辑描述",
+    "saved": "已保存",
+    "relationTo": "{relations} → {name}",
+    "boundLooks": "用于造型：{names}",
+    "describeHint": "根据关联剧本起草描述，填入上方后需保存才生效。"
   }
 }

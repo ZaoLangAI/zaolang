@@ -7,6 +7,7 @@ Section names below (D3/D4, M3, M4, contract gap 5, in-progress banner) are what
 |---|---|
 | Session renewal | Client takes over the `zl_refresh` cookie (`CookieCodec` + Keychain); no native refresh channel on the backend |
 | Credit purchasing | No StoreKit; `BillingView` is read-only and links to web `/billing` |
+| Character library | Read-mostly mirror of the web management page. Writes on iOS: approve a candidate image, set the default voice, generate a voice preview (quote → confirm → idempotent submit → 3s poll), edit name/descriptions (with AI draft from linked scripts). New looks, adjust/derive, relations, voice settings and cloning stay web-only — the detail page links to `/create/characters/{id}` |
 | APNs push | Client chain complete (`PushManager`, `POST/DELETE /v1/me/devices`); backend send is a stub (see open gaps) |
 
 ## Done
@@ -15,6 +16,7 @@ Section names below (D3/D4, M3, M4, contract gap 5, in-progress banner) are what
 - **M2 Account** — `AuthSheet`, `requireAuth`, like/bookmark/follow (optimistic), library (works/drafts/bookmarks/collections), settings, notifications, data export and deletion requests.
 - **M3 Creation** — create hub, studio (D3/D4 below), direct uploads, quoting, draft + job submission, job detail (SSE + polling), publish (checkboxes unchecked, `public_view_only`), in-progress banner.
 - **M4 Onboarding** — three screens, `iosOnboarding` namespace, seen-flag in `UserDefaults` (independent of login).
+- **Character library** — list + detail (造型 outline with relation chips and folded versions, 音色 list with playback), the writes listed under locked decisions.
 - **M5 Store readiness** — `PrivacyInfo.xcprivacy` (email, UGC, device ID), `aps-environment` entitlement, `UIBackgroundModes: remote-notification`. App Store assets, age rating and crash monitoring are manual work in App Store Connect.
 
 ## D3/D4 studio shape

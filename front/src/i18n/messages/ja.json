@@ -4118,5 +4118,23 @@
       "inner_monologue": "心の声",
       "narration": "ナレーション"
     }
+  },
+  "iosCharacters": {
+    "entryTitle": "キャラクター",
+    "entryDesc": "キャラクターの衣装・画像・声を確認し、候補の確定や試聴の生成ができます。",
+    "entryTag": "衣装と声",
+    "manageOnWeb": "Web で管理",
+    "manageOnWebHint": "衣装の作成、画像の調整・派生、関係や声の設定は Web で行います。",
+    "noVoices": "声はまだありません。Web で追加できます。",
+    "noLooks": "画像はまだありません。Web で最初の 1 枚を生成できます。",
+    "approve": "これに確定",
+    "approved": "確定しました",
+    "previewConfirm": "試聴の生成に {credits} クレジットかかります（残高 {available}）。",
+    "previewFailed": "試聴の生成に失敗しました。後でもう一度お試しください。",
+    "editProfile": "説明を編集",
+    "saved": "保存しました",
+    "relationTo": "{relations} → {name}",
+    "boundLooks": "使用する造形：{names}",
+    "describeHint": "関連する脚本から説明を下書きします。上で確認してから保存してください。"
   }
 }
