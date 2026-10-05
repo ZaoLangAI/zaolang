@@ -796,10 +796,12 @@ def _requested_outputs_of(job: GenerationJob) -> int:
     params = job.request_json if isinstance(job.request_json, dict) else {}
     views = params.get("character_views")
     variants = params.get("scene_variants")
+    poses = params.get("camera_poses")
     return jobs_service.requested_output_count(
         asset_kind=params.get("asset_kind"),
         character_views=views if isinstance(views, list) else None,
         scene_variants=variants if isinstance(variants, list) else None,
+        camera_poses=poses if isinstance(poses, list) else None,
     )
 
 

@@ -1,7 +1,10 @@
-"""调整修改 / 派生新属性图 in the management page (P6):
+"""调整修改 / 派生新属性图 in the management page (P6), and 多机位 (AC-2):
 
 - `POST /v1/{characters|scenes}/{id}/entries/{entry_id}:adjust`
 - `POST /v1/{characters|scenes}/{id}/entries/{entry_id}:derive`
+- `POST /v1/{characters|scenes}/{id}/entries/{entry_id}:orbit` — one
+  `image_to_image` job, one pass and one image per camera pose
+  (`derive.plan_orbit`), priced per image.
 
 `dry_run` (the default) prices one image like `quote:batch` (balance and
 monthly cap) and, for a derive, previews the look-level relations. A submit
@@ -28,13 +31,16 @@ from app.api.schemas.asset_graph import (
     AssetAdjustRequest,
     AssetDeriveRequest,
     AssetGenerateResponse,
+    AssetOrbitRequest,
 )
+from app.api.schemas.asset_variants import CameraPose
 from app.api.schemas.jobs import GenerationParams
 from app.domain.asset_graph import derive
 from app.domain.asset_graph import service as graph_service
 from app.domain.asset_variants import service as av
 from app.domain.credits import service as credits_service
 from app.domain.errors import InsufficientCredits, SpendLimitExceeded
+from app.domain.image_assets import camera as camera_vocab
 from app.domain.jobs import dispatch as job_dispatch
 from app.domain.jobs import service as jobs_service
 from app.domain.skill_library import service as skill_library_service
@@ -47,9 +53,18 @@ router = APIRouter(tags=["asset-graph"])
 Write = Annotated[None, Depends(rate_limited("authenticated_write"))]
 
 
-def _quote(session: Session, user_id: str, quality_tier: str) -> tuple[int, int, int | None, bool]:
+def _quote(
+    session: Session,
+    user_id: str,
+    quality_tier: str,
+    output_count: int = 1,
+    operation: Operation = Operation.TEXT_TO_IMAGE,
+) -> tuple[int, int, int | None, bool]:
     credits = jobs_service.quote_for(
-        session, operation=Operation.TEXT_TO_IMAGE, quality_tier=quality_tier, output_count=1
+        session,
+        operation=operation,
+        quality_tier=quality_tier,
+        output_count=output_count,
     ).credits
     account = credits_service.get_or_create_account(session, user_id)
     remaining = credits_service.remaining_monthly_spend(account)
@@ -85,7 +100,14 @@ def _replay(session: Session, user_id: str, key: str) -> GenerationJob | None:
 def _replayed_response(
     session: Session, user_id: str, quality_tier: str, job: GenerationJob
 ) -> AssetGenerateResponse:
-    credits, available, remaining, within = _quote(session, user_id, quality_tier)
+    poses = job.request_json.get("camera_poses") or []
+    credits, available, remaining, within = _quote(
+        session,
+        user_id,
+        quality_tier,
+        max(1, len(poses)),
+        Operation.IMAGE_TO_IMAGE if poses else Operation.TEXT_TO_IMAGE,
+    )
     return AssetGenerateResponse(
         credits=credits,
         available_credits=available,
@@ -95,6 +117,7 @@ def _replayed_response(
         job_id=job.id,
         variant_id=job.request_json.get("target_variant_id"),
         replayed=True,
+        poses=[CameraPose.model_validate(pose) for pose in poses],
     )
 
 
@@ -106,12 +129,13 @@ def _submit(
     quality_tier: str,
     params: dict[str, Any],
     key: str,
+    operation: Operation = Operation.TEXT_TO_IMAGE,
 ) -> GenerationJob:
     rate_limit.enforce("generation_submit", client_identity(request, user))
     result = jobs_service.submit(
         session,
         user_id=user.id,
-        operation=Operation.TEXT_TO_IMAGE,
+        operation=operation,
         quality_tier=quality_tier,
         params=GenerationParams.model_validate(params).model_dump(),
         idempotency_key=key,
@@ -293,6 +317,64 @@ def _register(prefix: str) -> None:
                 "edge_id": edge.id if edge else None,
             }
         )
+
+    @router.post(
+        f"/{prefix}/{{card_id}}/entries/{{entry_id}}:orbit",
+        response_model=AssetGenerateResponse,
+        operation_id=f"orbit_{kind}_entry",
+    )
+    def orbit_entry(
+        card_id: str,
+        entry_id: str,
+        payload: AssetOrbitRequest,
+        request: Request,
+        user: CurrentUser,
+        session: DbSession,
+        idempotency_key: IdempotencyKey,
+        _: Write,
+    ) -> AssetGenerateResponse:
+        poses = [camera_vocab.CameraPose(p.azimuth, p.elevation, p.distance) for p in payload.poses]
+        token = ",".join("-".join(map(str, pose.bucket())) for pose in poses)
+        key = _job_key(idempotency_key, "orbit", entry_id, token)
+        if not payload.dry_run:
+            replayed = _replay(session, user.id, key)
+            if replayed is not None:
+                return _replayed_response(session, user.id, payload.quality_tier, replayed)
+        plan = derive.plan_orbit(
+            session,
+            user_id=user.id,
+            kind=kind,
+            card_id=card_id,
+            entry_id=entry_id,
+            poses=poses,
+            aspect_ratio=payload.aspect_ratio,
+        )
+        planned = plan.params["camera_poses"]
+        credits, available, remaining, within = _quote(
+            session, user.id, payload.quality_tier, len(planned), Operation.IMAGE_TO_IMAGE
+        )
+        response = AssetGenerateResponse(
+            credits=credits,
+            available_credits=available,
+            period_remaining=remaining,
+            within_spend_limit=within,
+            sufficient=available >= credits and within,
+            variant_id=plan.source.variant_id,
+            poses=[CameraPose.model_validate(pose) for pose in planned],
+        )
+        if payload.dry_run:
+            return response
+        _check_funds(credits, available, remaining, within)
+        job = _submit(
+            session,
+            request=request,
+            user=user,
+            quality_tier=payload.quality_tier,
+            params=plan.params,
+            key=key,
+            operation=Operation.IMAGE_TO_IMAGE,
+        )
+        return response.model_copy(update={"job_id": job.id})
 
 
 _register("characters")

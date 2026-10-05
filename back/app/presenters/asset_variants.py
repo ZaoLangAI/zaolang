@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.schemas.asset_variants import (
     AssetEntryView,
     AssetVariantView,
+    CameraPose,
     SceneLinkView,
     VariantAttributes,
 )
@@ -27,6 +28,7 @@ def entry_view(session: Session, entry: SkillAssetEntry) -> AssetEntryView:
         url=media_urls.asset_url(session, entry.asset_id),
         entry_type=AssetEntryType(entry.entry_type),
         view=entry.view,
+        camera=CameraPose.model_validate(entry.camera_json) if entry.camera_json else None,
         expressions=[str(item) for item in entry.expressions_json or []],
         label=entry.label,
         status=AssetEntryStatus(entry.status),

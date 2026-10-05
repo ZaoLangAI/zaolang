@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.asset_variants import service as asset_variants_service
 from app.domain.errors import NotFound, ValidationFailed
+from app.domain.image_assets import camera as camera_vocab
 from app.domain.skill_library import service as skill_library_service
 from app.models import Asset, CreationSkill
 from app.models.base import utcnow
@@ -417,6 +418,7 @@ def append_reference_asset(
     portrait: bool = False,
     entry_type: str | None = None,
     copy_from_entry_id: str | None = None,
+    camera: dict[str, Any] | None = None,
 ) -> CharacterView:
     """Files one image under a look — the P0 `(view, label)` call shape,
     translated: a non-expression `label` names the look (created on first
@@ -441,6 +443,9 @@ def append_reference_asset(
     exactly like that entry of this card — same look, type, view and
     expressions; `entry_type` (派生) sets the type outright.
 
+    `camera` (多机位, AC-2) files a single view drawn from that pose: entry
+    type `view`, the coarse view it stands for, and one slot per pose.
+
     Called by the character library UI and by
     `app.workflows.nodes.execute_asset_output_link`.
     """
@@ -454,6 +459,9 @@ def append_reference_asset(
     ) or asset_variants_service.find_or_create_variant(
         session, skill, name=_legacy_variant_name(clean_label)
     )
+    pose = camera_vocab.parse(camera)
+    if pose is not None:
+        entry_type, entry_view = AssetEntryType.VIEW.value, camera_vocab.coarse_view(pose)
     if expressions:
         entry_type, entry_view = AssetEntryType.EXPRESSION_SHEET.value, None
     if portrait:
@@ -468,7 +476,11 @@ def append_reference_asset(
         expressions = list(source.expressions_json or []) or None
     elif output_type:
         entry_type, entry_view = output_type, None
-    if not generated and entry_type in (AssetEntryType.CHARACTER_SHEET, AssetEntryType.VIEW):
+    if (
+        not generated
+        and pose is None
+        and entry_type in (AssetEntryType.CHARACTER_SHEET, AssetEntryType.VIEW)
+    ):
         for stale in [
             e
             for e in variant.entries
@@ -488,6 +500,7 @@ def append_reference_asset(
             expressions=list(source.expressions_json or []) or None,
             source_job_id=source_job_id,
             candidate=True,
+            camera=source.camera_json,
         )
         asset_variants_service.claim_anchor(session, skill, entry)
         return CharacterView(skill)
@@ -502,6 +515,9 @@ def append_reference_asset(
         label=clean_label if entry_type == AssetEntryType.EXPRESSION_SHEET else None,
         expressions=expressions,
         source_job_id=source_job_id,
+        camera=pose.as_dict()
+        if pose is not None and source is None and entry_type == AssetEntryType.VIEW
+        else None,
     )
     asset_variants_service.claim_anchor(session, skill, entry)
     return CharacterView(skill)

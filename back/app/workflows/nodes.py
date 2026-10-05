@@ -27,6 +27,7 @@ from app.domain.characters import service as characters_service
 from app.domain.costs import service as costs_service
 from app.domain.credits.pricing import settlement_credits
 from app.domain.errors import NotFound, ValidationFailed
+from app.domain.image_assets import camera as camera_vocab
 from app.domain.image_assets import prompt_builder
 from app.domain.image_assets.vocabulary import (
     EXPRESSION_PRESETS,
@@ -505,6 +506,9 @@ ASSET_OUTPUTS_STATE_KEY = "asset_outputs"
 # Which `scene_variants` entry the current pass of a scene variant set is
 # producing (0-based); advanced by `execute_asset_output_advance`.
 SCENE_VARIANT_STATE_KEY = "_current_scene_variant"
+# Which `camera_poses` entry the current pass of a multi-angle job is drawing
+# (0-based, AC-2); advanced by `execute_asset_output_advance`.
+CAMERA_POSE_STATE_KEY = "_current_camera_pose"
 _ORIGINAL_PROMPT_STATE_KEY = "_asset_plan_original_prompt"
 _ORIGINAL_NEGATIVE_PROMPT_STATE_KEY = "_asset_plan_original_negative_prompt"
 _ORIGINAL_REFERENCES_STATE_KEY = "_asset_plan_original_references"
@@ -512,6 +516,9 @@ _ORIGINAL_REFERENCE_LABELS_STATE_KEY = "_asset_plan_original_reference_labels"
 # The legend's name for a side/back pass's reference 1 when it is this job's
 # own front sheet (`_chain_front_reference`).
 CHAINED_FRONT_LABEL = "本任务刚生成的正面设定图"
+# A multi-angle job from a sheet (`camera_from_sheet`): every pose after the
+# first is drawn from the front single figure pass 1 produced.
+CHAINED_ORBIT_FRONT_LABEL = "本任务刚生成的正面全身图"
 
 # The fixed character/scene prompt fragments live in
 # `app.domain.image_assets.prompt_builder` now; these aliases keep the names
@@ -588,8 +595,85 @@ def _scale_for_character_views(ctx: WorkflowContext, progress: int) -> int:
     return round((index * 100 + progress) / passes)
 
 
+def _camera_poses(ctx: WorkflowContext) -> list[dict[str, Any]]:
+    """A multi-angle job's poses (`GenerationParams.camera_poses`, AC-2),
+    each drawn by its own pass; empty for any other job."""
+    raw = ctx.params.get("camera_poses")
+    if not isinstance(raw, list):
+        return []
+    poses = [camera_vocab.parse(item) for item in raw]
+    return [pose.as_dict() for pose in poses if pose is not None]
+
+
+def _current_camera_pose(ctx: WorkflowContext, character_view: str | None) -> dict[str, Any] | None:
+    """The pose this pass draws from: the job's current `camera_poses` entry,
+    else what an old side/back completion view stands for (so a camera
+    route can serve it too); `None` for every unposed pass."""
+    poses = _camera_poses(ctx)
+    if poses:
+        index = int(ctx.state.get(CAMERA_POSE_STATE_KEY) or 0)
+        return poses[min(index, len(poses) - 1)]
+    if character_view in prompt_builder.CHARACTER_COMPLETION_FIXED_PROMPTS:
+        pose = camera_vocab.from_view(character_view)
+        return pose.as_dict() if pose is not None else None
+    return None
+
+
+def _orbit_extracts_front(ctx: WorkflowContext) -> bool:
+    """This pass is a sheet-sourced multi-angle job's first one: the front
+    single figure drawn out of the sheet, by a prompt-only model (a camera
+    route would re-draw the whole sheet)."""
+    return (
+        bool(ctx.params.get("camera_from_sheet"))
+        and bool(_camera_poses(ctx))
+        and int(ctx.state.get(CAMERA_POSE_STATE_KEY) or 0) == 0
+    )
+
+
+def _chain_orbit_front(ctx: WorkflowContext) -> None:
+    """Later passes of a sheet-sourced multi-angle job draw from this job's
+    own front figure (pass 1) as reference 1 — the camera route only reads
+    that one image. Runs after `_chain_front_reference` restored the
+    submitted references for this pass."""
+    if not ctx.params.get("camera_from_sheet") or _orbit_extracts_front(ctx):
+        return
+    front = next(
+        (
+            str(output["asset_id"])
+            for output in ctx.state.get(ASSET_OUTPUTS_STATE_KEY) or []
+            if output.get("asset_id")
+            and (camera_vocab.parse(output.get("camera")) or camera_vocab.CameraPose(-1)).azimuth
+            == 0
+        ),
+        None,
+    )
+    if not front:
+        return
+    refs = [str(r) for r in ctx.params.get("reference_asset_ids") or []]
+    ctx.params["reference_asset_ids"] = ([front] + [r for r in refs if r != front])[
+        : characters_service.MAX_JOB_REFERENCE_ASSETS
+    ]
+    labels = [dict(item) for item in ctx.params.get("reference_labels") or []]
+    ctx.params["reference_labels"] = [{"asset_id": front, "label": CHAINED_ORBIT_FRONT_LABEL}] + [
+        item for item in labels if item.get("asset_id") != front
+    ]
+
+
+def _set_pass_camera_pose(ctx: WorkflowContext, pose: dict[str, Any] | None) -> None:
+    """Writes (or clears) `extra.camera_pose` for this pass — the router's
+    camera preference and the fal multi-angle adapter read it there. Copied,
+    never mutated in place: `extra` came from the request."""
+    extra = {k: v for k, v in (ctx.params.get("extra") or {}).items() if k != "camera_pose"}
+    if pose is not None:
+        extra["camera_pose"] = dict(pose)
+    ctx.params["extra"] = extra
+
+
 def _pass_position(ctx: WorkflowContext) -> tuple[int, int]:
     """`(total passes, current 0-based pass)` of a looping asset job."""
+    poses = _camera_poses(ctx)
+    if poses:
+        return len(poses), int(ctx.state.get(CAMERA_POSE_STATE_KEY) or 0)
     kind = ctx.params.get("asset_kind")
     if kind == ImageAssetKind.CHARACTER.value:
         raw_views = ctx.params.get("character_views")
@@ -747,7 +831,15 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
     character_view = _current_character_view(ctx) if is_character else None
     if is_character:
         _chain_front_reference(ctx, character_view)
+        _chain_orbit_front(ctx)
+    camera_pose = _current_camera_pose(ctx, character_view) if media_axis == "image" else None
+    extract_front = is_character and _orbit_extracts_front(ctx)
+    _set_pass_camera_pose(ctx, None if extract_front else camera_pose)
     pass_params = _pass_params(ctx)
+    if extract_front:
+        pass_params = {**pass_params, "orbit_front_extract": True}
+    elif camera_pose is not None:
+        pass_params = {**pass_params, "camera_pose": camera_pose}
     asset_pass = (
         prompt_builder.resolve_pass(
             pass_params, asset_kind=asset_kind, character_view=character_view
@@ -838,6 +930,21 @@ def execute_asset_output_advance(
         axis is not None and axis[0] == "image" and asset_kind == ImageAssetKind.CHARACTER.value
     )
     view = _current_character_view(ctx) if is_character else str(asset_kind or "")
+    poses = _camera_poses(ctx) if axis is not None and axis[0] == "image" else []
+    if poses:
+        index = int(ctx.state.get(CAMERA_POSE_STATE_KEY) or 0)
+        pose = poses[min(index, len(poses) - 1)]
+        if asset_id:
+            outputs.append({"asset_id": str(asset_id), "view": view, "camera": pose})
+        if index + 1 >= len(poses):
+            return NodeResult(port="done")
+        ctx.state[CAMERA_POSE_STATE_KEY] = index + 1
+        next_pose = camera_vocab.parse(poses[index + 1])
+        return NodeResult(
+            port="next",
+            summary=f"继续生成第 {index + 2}/{len(poses)} 个机位"
+            + (f"（{camera_vocab.label_zh(next_pose)}）" if next_pose else ""),
+        )
     variants = _scene_variants(ctx)
     if variants:
         index = _current_scene_variant(ctx)
@@ -859,7 +966,11 @@ def execute_asset_output_advance(
             summary=f"继续生成第 {index + 2}/{len(variants)} 张场景变体",
         )
     if asset_id:
-        outputs.append({"asset_id": str(asset_id), "view": view})
+        output: dict[str, Any] = {"asset_id": str(asset_id), "view": view}
+        legacy_pose = camera_vocab.from_view(view) if view in ("side", "back") else None
+        if legacy_pose is not None:
+            output["camera"] = legacy_pose.as_dict()
+        outputs.append(output)
 
     if not is_character:
         return NodeResult(port="done")
@@ -974,6 +1085,7 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                                 # A filled slot keeps its approved image; this
                                 # one becomes a candidate (P2-1).
                                 "generated": True,
+                                "camera": entry.get("camera"),
                                 **_derive_filing(ctx.params),
                             },
                         )
@@ -1019,6 +1131,7 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                                 or None,
                                 "source_job_id": ctx.job.id,
                                 "generated": True,
+                                "camera": entry.get("camera"),
                                 **_derive_filing(ctx.params),
                             },
                         )
@@ -2420,6 +2533,7 @@ def _finish_partial_asset_job(ctx: WorkflowContext, *, failure_code: str) -> Nod
         asset_kind=ctx.params.get("asset_kind"),
         character_views=ctx.params.get("character_views"),
         scene_variants=ctx.params.get("scene_variants"),
+        camera_poses=ctx.params.get("camera_poses"),
     )
     if delivered >= requested:
         return None

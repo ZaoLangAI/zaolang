@@ -126,13 +126,17 @@ def requested_output_count(
     asset_kind: str | None,
     character_views: list[Any] | None,
     scene_variants: list[Any] | None = None,
+    camera_poses: list[Any] | None = None,
 ) -> int:
     """How many images a job is priced for.
 
-    A multi-view character job (one pass per view) or a scene variant group
-    (one provider call returning one image per `scene_variants` entry); a
-    composite expression image is a single image.
+    A multi-view character job (one pass per view), a scene variant group
+    (one image per `scene_variants` entry) or a multi-angle job (one pass
+    per `camera_poses` entry, AC-2); a composite expression image is a
+    single image.
     """
+    if camera_poses and asset_kind not in (None, ImageAssetKind.GENERAL.value):
+        return len(camera_poses)
     if asset_kind == ImageAssetKind.SCENE.value and scene_variants:
         return len(scene_variants)
     return character_output_count(asset_kind=asset_kind, character_views=character_views)
@@ -271,6 +275,7 @@ def submit(
             asset_kind=params.get("asset_kind"),
             character_views=params.get("character_views"),
             scene_variants=params.get("scene_variants"),
+            camera_poses=params.get("camera_poses"),
         ),
     )
     sandbox = origin == JobOrigin.SANDBOX

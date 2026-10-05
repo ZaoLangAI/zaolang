@@ -39,6 +39,13 @@
 2. Priced `unit × N` (`requested_output_count`); each pass captures in full like a multi-view job; time limit adds `_IMAGE_EXTRA_VIEW` per extra variant (capped). Progress rescales per pass (`_pass_position`).
 3. Not a provider group call: a live check showed DMXAPI Seedream returns one image for `sequential_image_generation` `max_images=2`, so `ImageModelProfile.max_group_outputs` stays 1.
 
+## Multi-angle jobs (`camera_poses`, AC-2)
+
+1. `camera_poses` (≤8 `CameraPose`, `asset_kind` character/scene, needs `source_entry_id` or a reference; exclusive with views/expressions/portrait/outfit/edit/in_scene/`scene_variants`) loop like views: one pass per pose (`CAMERA_POSE_STATE_KEY`). Each pass `execute_asset_planning` writes the pose to `ctx.params["extra"]["camera_pose"]` (`_set_pass_camera_pose`, cleared otherwise; a client value is dropped by `reference_resolver.resolve`) — the router prefers `camera_control` routes for it — and composes `AssetPass.CAMERA_ORBIT` (identity / scene lock + `camera.to_prompt_phrase`, no planner additions).
+2. `camera_from_sheet` (the source is a composite sheet): pass 1 is the 0° front figure drawn out of the sheet (`AssetPass.SHEET_FRONT_FIGURE`, no pose → never the camera route); later passes put that output first (`_chain_orbit_front`, label `CHAINED_ORBIT_FRONT_LABEL`).
+3. `asset_output_advance` records `{asset_id, view, camera}` per pass; a legacy side/back view pass records its pose too (`camera.from_view`) and writes it to `extra` so a camera route could serve it. Write-back passes `camera` → a character `view` (coarse view from the pose) or a scene `shot` (`reverse` at 180°, `detail` when close), one slot per pose.
+4. Priced `unit × N` (`requested_output_count(camera_poses=…)`); time limit adds `_IMAGE_EXTRA_VIEW` per extra pose (capped); progress rescales (`_pass_position`).
+
 ## Write-back (`execute_asset_output_link`)
 
 1. The only node that mutates something outside job/Work/Draft. No-op on `dry_run`, no outputs, no axis, or `auto_attach_asset=False`; never fails the job (logs and skips).

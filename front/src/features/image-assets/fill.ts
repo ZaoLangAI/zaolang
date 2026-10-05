@@ -1,6 +1,14 @@
 import type { LookFillResponse, LookFillSlot } from '@/lib/api/types';
 
-export const FILL_SLOTS: LookFillSlot[] = ['portrait', 'front', 'side', 'back', 'expressions'];
+export const FILL_SLOTS: LookFillSlot[] = [
+  'portrait',
+  'front',
+  'side',
+  'back',
+  'left',
+  'three_quarter',
+  'expressions',
+];
 /** The backend's default expression set (`characters.fill.DEFAULT_FILL_EXPRESSIONS`). */
 export const DEFAULT_FILL_EXPRESSIONS = [
   'neutral',

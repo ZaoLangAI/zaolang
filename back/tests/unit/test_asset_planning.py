@@ -918,15 +918,29 @@ def test_asset_output_advance_loops_through_every_requested_character_view(
     first = execute_asset_output_advance(ctx, AssetOutputAdvanceConfig())
     assert first.port == "next"
     assert ctx.state["_current_character_view"] == CharacterViewAngle.BACK.value
-    assert ctx.state["asset_outputs"] == [{"asset_id": side_asset.id, "view": "side"}]
+    assert ctx.state["asset_outputs"] == [
+        {
+            "asset_id": side_asset.id,
+            "view": "side",
+            "camera": {"azimuth": 90, "elevation": 0, "distance": "medium"},
+        }
+    ]
 
     back_asset = _asset(db, author)
     ctx.state["asset_id"] = back_asset.id
     second = execute_asset_output_advance(ctx, AssetOutputAdvanceConfig())
     assert second.port == "done"
     assert ctx.state["asset_outputs"] == [
-        {"asset_id": side_asset.id, "view": "side"},
-        {"asset_id": back_asset.id, "view": "back"},
+        {
+            "asset_id": side_asset.id,
+            "view": "side",
+            "camera": {"azimuth": 90, "elevation": 0, "distance": "medium"},
+        },
+        {
+            "asset_id": back_asset.id,
+            "view": "back",
+            "camera": {"azimuth": 180, "elevation": 0, "distance": "medium"},
+        },
     ]
 
 

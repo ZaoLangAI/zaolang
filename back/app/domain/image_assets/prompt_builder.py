@@ -21,6 +21,7 @@ from collections.abc import Iterable
 from enum import StrEnum
 from typing import Any
 
+from app.domain.image_assets import camera
 from app.domain.image_assets.vocabulary import (
     EXPRESSION_PRESETS,
     PERIOD_PRESETS,
@@ -47,6 +48,11 @@ class AssetPass(StrEnum):
     ASSET_EDIT = "asset_edit"
     # P6: the character from reference 1 placed in its look's linked scene.
     CHARACTER_IN_SCENE = "character_in_scene"
+    # AC-2: reference 1 re-drawn from another camera pose (多机位).
+    CAMERA_ORBIT = "camera_orbit"
+    # AC-2: a sheet-sourced multi-angle job's first pass — the front single
+    # figure drawn out of the sheet, which the other poses then orbit.
+    SHEET_FRONT_FIGURE = "sheet_front_figure"
     OTHER = "other"
 
 
@@ -239,6 +245,14 @@ def _expressions(params: dict[str, Any]) -> list[str]:
 def resolve_pass(
     params: dict[str, Any], *, asset_kind: str | None, character_view: str | None
 ) -> AssetPass:
+    if params.get("orbit_front_extract") and asset_kind == ImageAssetKind.CHARACTER.value:
+        return AssetPass.SHEET_FRONT_FIGURE
+    if (
+        camera.parse(params.get("camera_pose")) is not None
+        and asset_kind in _ORBIT_KINDS
+        and character_view not in CHARACTER_COMPLETION_FIXED_PROMPTS
+    ):
+        return AssetPass.CAMERA_ORBIT
     if params.get("asset_edit") and asset_kind in (
         ImageAssetKind.CHARACTER.value,
         ImageAssetKind.SCENE.value,
@@ -285,6 +299,16 @@ def compose(
             CHARACTER_COMPLETION_FIXED_PROMPTS[character_view],
             merge_negative(negative, CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT),
         )
+    if asset_pass is AssetPass.CAMERA_ORBIT:
+        return _compose_camera_orbit(prompt, negative, params)
+    if asset_pass is AssetPass.SHEET_FRONT_FIGURE:
+        subject = _strip_sheet_layout(prompt).strip().rstrip("。．.")
+        text = (
+            _join(SHEET_FRONT_FIGURE_PROMPT, f"主体：{subject}")
+            if subject
+            else (SHEET_FRONT_FIGURE_PROMPT)
+        )
+        return text, merge_negative(negative, SHEET_FRONT_FIGURE_NEGATIVE)
     if asset_pass is AssetPass.ASSET_EDIT:
         return (
             ASSET_EDIT_TEMPLATE.format(instruction=prompt.strip().rstrip("。．.")),
@@ -317,6 +341,50 @@ def compose(
             prompt, negative, scene_presets_from(params), has_reference=has_reference
         )
     return prompt, negative
+
+
+# 多机位 (AC-2): reference 1 is the subject; only the camera moves. The move
+# is spelled out in words too (`camera.to_prompt_phrase`) so a model without
+# camera control (the fallback route) still gets it; the fal camera route
+# reads the pose from `extra.camera_pose` and this text as its extra prompt.
+_ORBIT_KINDS = frozenset({ImageAssetKind.CHARACTER.value, ImageAssetKind.SCENE.value, "prop"})
+CAMERA_ORBIT_LOCKS: dict[str, str] = {
+    ImageAssetKind.CHARACTER.value: (
+        "以参考图1中的人物为准，严格保持五官、发型发色、肤色、体型、服装配饰与画风完全一致，"
+        "只改变拍摄机位：{phrase}。单张单人画面，纯色背景，全身不裁切头脚"
+    ),
+    ImageAssetKind.SCENE.value: (
+        "以参考图1中的场景为准，保持建筑结构、陈设布局、材质、光线与时间完全一致，"
+        "只改变拍摄机位：{phrase}。单张画面，画面中不出现人物"
+    ),
+    "prop": (
+        "以参考图1中的物体为准，保持形状、比例、材质、颜色与磨损细节完全一致，"
+        "只改变拍摄机位：{phrase}。单张画面，主体完整居中，纯色背景"
+    ),
+}
+SHEET_FRONT_FIGURE_PROMPT = (
+    "从参考图1（角色设定图）中取出该角色的正面全身形象：单人、正面、全身站姿、不裁切头脚、"
+    "纯白背景，严格保持五官、发型发色、服装配饰、体型与画风完全一致"
+)
+SHEET_FRONT_FIGURE_NEGATIVE = (
+    "三视图、多个相同人物、面部特写分格、色板、文字标注、侧面、背面、改变服装"
+)
+CAMERA_ORBIT_NEGATIVE = (
+    "多视角拼接、分格、并排画面、三视图、同一画面出现多个相同主体、视角文字标注、"
+    "改变服装或材质、改变配色"
+)
+
+
+def _compose_camera_orbit(
+    prompt: str, negative: str | None, params: dict[str, Any]
+) -> tuple[str, str]:
+    pose = camera.parse(params.get("camera_pose"))
+    phrase = camera.to_prompt_phrase(pose) if pose is not None else ""
+    kind = str(params.get("asset_kind") or ImageAssetKind.CHARACTER.value)
+    lock = CAMERA_ORBIT_LOCKS.get(kind, CAMERA_ORBIT_LOCKS["prop"]).format(phrase=phrase)
+    subject = _strip_sheet_layout(prompt).strip().rstrip("。．.")
+    text = _join(lock, f"主体：{subject}") if subject else lock
+    return text, merge_negative(negative, CAMERA_ORBIT_NEGATIVE)
 
 
 # 调整修改 (P6): the instruction is the whole intent; everything it does not
@@ -493,9 +561,10 @@ def sanitize_enhancements(
     Enforced in Python on purpose: an operator-published `AgentSkill` can
     replace every rule the system prompt states, but not this.
     """
-    if asset_pass is AssetPass.ASSET_EDIT:
-        # An edit does exactly what the author asked; planner additions
-        # would be unrequested changes.
+    if asset_pass in (AssetPass.ASSET_EDIT, AssetPass.CAMERA_ORBIT, AssetPass.SHEET_FRONT_FIGURE):
+        # An edit does exactly what the author asked, and a camera move must
+        # keep everything but the camera; planner additions would be
+        # unrequested changes.
         return []
     kept: list[str] = []
     period = params.get("scene_period")

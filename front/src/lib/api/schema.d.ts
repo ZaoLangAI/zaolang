@@ -1739,6 +1739,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/characters/{card_id}/entries/{entry_id}:orbit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Orbit Entry */
+        post: operations["orbit_character_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/scenes/{card_id}/entries/{entry_id}:adjust": {
         parameters: {
             query?: never;
@@ -1767,6 +1784,23 @@ export interface paths {
         put?: never;
         /** Derive Entry */
         post: operations["derive_scene_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/entries/{entry_id}:orbit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Orbit Entry */
+        post: operations["orbit_scene_entry"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6823,6 +6857,7 @@ export interface components {
             entry_type: components["schemas"]["AssetEntryType"];
             /** View */
             view?: string | null;
+            camera?: components["schemas"]["CameraPose"] | null;
             /** Expressions */
             expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
             /** Label */
@@ -6842,7 +6877,8 @@ export interface components {
         AssetEntryType: "identity_portrait" | "character_sheet" | "view" | "expression_sheet" | "pose" | "outfit_detail" | "prop" | "master" | "shot" | "other";
         /**
          * AssetEntryUpdateRequest
-         * @description `view: null` is "leave as is"; send `clear_view` to unset it.
+         * @description `view: null` is "leave as is"; send `clear_view` to unset it (same
+         *     for `camera` / `clear_camera`).
          */
         AssetEntryUpdateRequest: {
             /** Variant Id */
@@ -6855,6 +6891,12 @@ export interface components {
              * @default false
              */
             clear_view: boolean;
+            camera?: components["schemas"]["CameraPose"] | null;
+            /**
+             * Clear Camera
+             * @default false
+             */
+            clear_camera: boolean;
             /** Expressions */
             expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
             /** Label */
@@ -6872,6 +6914,7 @@ export interface components {
             entry_type: components["schemas"]["AssetEntryType"];
             /** View */
             view?: string | null;
+            camera?: components["schemas"]["CameraPose"] | null;
             /** Expressions */
             expressions?: string[];
             /** Label */
@@ -6915,6 +6958,8 @@ export interface components {
              * @default false
              */
             replayed: boolean;
+            /** Poses */
+            poses?: components["schemas"]["CameraPose"][];
         };
         /**
          * AssetGraphCaps
@@ -6984,11 +7029,28 @@ export interface components {
             caps: components["schemas"]["AssetGraphCaps"];
         };
         /**
+         * AssetOrbitRequest
+         * @description 多机位 (AC-2): re-draw the entry from each camera pose.
+         */
+        AssetOrbitRequest: {
+            /** Poses */
+            poses: components["schemas"]["CameraPose"][];
+            /** @default standard */
+            quality_tier: components["schemas"]["QualityTier"];
+            /** Aspect Ratio */
+            aspect_ratio?: string | null;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+        };
+        /**
          * AssetRelation
          * @description What a graph edge says changed from source to target (P4).
          * @enum {string}
          */
-        AssetRelation: "age" | "outfit" | "emotion" | "scene" | "period" | "lighting" | "weather" | "state" | "edit" | "params" | "custom";
+        AssetRelation: "age" | "outfit" | "emotion" | "scene" | "period" | "lighting" | "weather" | "state" | "edit" | "params" | "custom" | "camera";
         /** AssetResponse */
         AssetResponse: {
             /** Id */
@@ -7606,6 +7668,28 @@ export interface components {
         Body_extract_script_source_v1_scripts_extract_post: {
             /** File */
             file: string;
+        };
+        /**
+         * CameraPose
+         * @description Where the camera sits around the subject (多机位, AC-2) — the grid in
+         *     `app.domain.image_assets.camera`: azimuth 0 = front, 90 = the subject's
+         *     right side, 180 = its back (a scene's reverse shot), 270 = its left;
+         *     elevation -30 (low) … 60 (high), 90 bird's-eye.
+         */
+        CameraPose: {
+            /** Azimuth */
+            azimuth: number;
+            /**
+             * Elevation
+             * @default 0
+             */
+            elevation: number;
+            /**
+             * Distance
+             * @default medium
+             * @enum {string}
+             */
+            distance: "close" | "medium" | "wide";
         };
         /**
          * CanvasAgentRunCreateRequest
@@ -10107,6 +10191,13 @@ export interface components {
             asset_output_entry_type?: components["schemas"]["AssetEntryType"] | null;
             /** Asset Output Mode */
             asset_output_mode?: "in_scene" | null;
+            /** Camera Poses */
+            camera_poses?: components["schemas"]["CameraPose"][] | null;
+            /**
+             * Camera From Sheet
+             * @default false
+             */
+            camera_from_sheet: boolean;
             /** Voice Profile Id */
             voice_profile_id?: string | null;
             /** Target Voice Id */
@@ -10964,7 +11055,7 @@ export interface components {
             /** Wave */
             wave: number;
             /** Slots */
-            slots: ("portrait" | "front" | "side" | "back" | "expressions")[];
+            slots: ("portrait" | "front" | "side" | "back" | "left" | "three_quarter" | "expressions")[];
             /** Output Count */
             output_count: number;
             /** Credits */
@@ -10973,7 +11064,7 @@ export interface components {
         /** LookFillRequest */
         LookFillRequest: {
             /** Slots */
-            slots?: ("portrait" | "front" | "side" | "back" | "expressions")[] | null;
+            slots?: ("portrait" | "front" | "side" | "back" | "left" | "three_quarter" | "expressions")[] | null;
             /** Expressions */
             expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
             /** @default standard */
@@ -11010,7 +11101,7 @@ export interface components {
             /** Submitted Job Id */
             submitted_job_id?: string | null;
             /** Submitted Slots */
-            submitted_slots?: ("portrait" | "front" | "side" | "back" | "expressions")[];
+            submitted_slots?: ("portrait" | "front" | "side" | "back" | "left" | "three_quarter" | "expressions")[];
         };
         /** McpTokenCreateRequest */
         McpTokenCreateRequest: {
@@ -18789,6 +18880,45 @@ export interface operations {
             };
         };
     };
+    orbit_character_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetOrbitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetGenerateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     adjust_scene_entry: {
         parameters: {
             query?: never;
@@ -18844,6 +18974,45 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AssetDeriveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetGenerateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    orbit_scene_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetOrbitRequest"];
             };
         };
         responses: {

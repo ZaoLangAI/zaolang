@@ -9,6 +9,10 @@ of a card's own images, in the page instead of the image studio.
   portrait (default look only), an expression grid, or the character placed
   in its look's scene (`in_scene`); for a scene, a master or a shot.
 
+- **orbit** (多机位, AC-2): the source image re-drawn from other camera
+  poses, one image per pose, filed as each pose's slot of the same look /
+  variant (`plan_orbit`).
+
 Plans are pure reads: nothing is created until the API submits (which also
 writes the new look and the look-level auto edge in the same transaction).
 """
@@ -25,6 +29,7 @@ from app.domain.asset_variants import service as av
 from app.domain.characters import service as characters_service
 from app.domain.characters.fill import DEFAULT_FILL_EXPRESSIONS
 from app.domain.errors import NotFound, ValidationFailed
+from app.domain.image_assets import camera as camera_vocab
 from app.domain.image_assets.vocabulary import MAX_CHARACTER_EXPRESSIONS
 from app.domain.scenes import service as scenes_service
 from app.models import CreationSkill, SkillAssetEntry, SkillAssetVariant
@@ -250,3 +255,79 @@ def plan_derive(
         target=target,
         new_variant=new_variant,
     )
+
+
+# A composite or face-only image cannot be orbited as-is: a sheet would be
+# re-drawn as a sheet from the side. A sheet source starts with a front
+# single-figure pass the other poses then chain from (`camera_from_sheet`).
+_ORBIT_SOURCE_TYPES: dict[str, frozenset[str]] = {
+    "character": frozenset(
+        {
+            AssetEntryType.CHARACTER_SHEET,
+            AssetEntryType.VIEW,
+            AssetEntryType.POSE,
+            AssetEntryType.OTHER,
+        }
+    ),
+    "scene": frozenset({AssetEntryType.MASTER, AssetEntryType.SHOT, AssetEntryType.OTHER}),
+}
+FRONT_POSE = camera_vocab.CameraPose(0)
+
+
+def orbit_poses(
+    source: SkillAssetEntry, poses: list[camera_vocab.CameraPose]
+) -> tuple[list[dict[str, Any]], bool]:
+    """`(camera_poses params, camera_from_sheet)` for orbiting `source`:
+    snapped, de-duplicated, and — for a character sheet — led by the front
+    single figure the other poses are drawn from."""
+    snapped: list[camera_vocab.CameraPose] = []
+    for pose in poses:
+        clean = camera_vocab.snap(pose)
+        if clean.bucket() not in {p.bucket() for p in snapped}:
+            snapped.append(clean)
+    from_sheet = source.entry_type == AssetEntryType.CHARACTER_SHEET
+    if from_sheet:
+        snapped = [FRONT_POSE] + [p for p in snapped if p.bucket() != FRONT_POSE.bucket()]
+    return [p.as_dict() for p in snapped], from_sheet
+
+
+def plan_orbit(
+    session: Session,
+    *,
+    user_id: str,
+    kind: str,
+    card_id: str,
+    entry_id: str,
+    poses: list[camera_vocab.CameraPose],
+    aspect_ratio: str | None = None,
+) -> Plan:
+    """多机位: one image per pose of the source's subject, filed into the
+    source's own look / variant (each pose is its own slot). Already-filled
+    poses are not filtered here — a new one becomes a candidate."""
+    skill, name, description = _card(session, user_id=user_id, kind=kind, card_id=card_id)
+    source = _source(skill, entry_id)
+    if source.entry_type not in _ORBIT_SOURCE_TYPES.get(kind, frozenset()):
+        raise ValidationFailed(
+            "这张图不能用来生成多机位：请选设定图、单人视图或场景图。",
+            fields={"entry_id": "类型不支持"},
+        )
+    if not poses:
+        raise ValidationFailed("请至少选择一个机位。", fields={"poses": "不能为空"})
+    camera_poses, from_sheet = orbit_poses(source, poses)
+    if len(camera_poses) > camera_vocab.MAX_CAMERA_POSES:
+        raise ValidationFailed(
+            f"一次最多生成 {camera_vocab.MAX_CAMERA_POSES} 个机位"
+            + ("（从设定图生成时含正面全身）" if from_sheet else "")
+            + "。",
+            fields={"poses": "数量过多"},
+        )
+    params: dict[str, Any] = {
+        **_base(kind, skill, name),
+        "source_entry_id": source.id,
+        "target_variant_id": source.variant_id,
+        "camera_poses": camera_poses,
+        "camera_from_sheet": from_sheet,
+        "prompt": _sentence(name, description)[:4096],
+        "aspect_ratio": aspect_ratio or ("3:4" if kind == "character" else "16:9"),
+    }
+    return Plan(skill=skill, source=source, params=params, relations=[])

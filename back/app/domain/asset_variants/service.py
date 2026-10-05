@@ -15,8 +15,9 @@ Every mutation goes through the relationships (`skill.asset_variants`,
 request, and flushes.
 
 Candidates (P2-1): a generated image filed into a *slot* that already holds
-an approved image — a look's front sheet, one side/back view, one set of
-expressions, the card's identity portrait, a variant's master plate — is
+an approved image — a look's front sheet, one camera pose (a side/back view,
+or a posed shot of a scene), one set of expressions, the card's identity
+portrait, a variant's master plate — is
 kept as a `candidate` beside it instead of replacing it (`file_generated`).
 `approve_entry` swaps the two. Every read meant for someone other than the
 owner's own editor (the flat projection, defaults, thumbnails,
@@ -34,6 +35,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.errors import NotFound, ValidationFailed
+from app.domain.image_assets import camera as camera_vocab
 from app.models import Asset, CreationSkill, SkillAssetEntry, SkillAssetVariant
 from app.models.enums import (
     CHARACTER_ENTRY_TYPES,
@@ -137,6 +139,32 @@ def identity_portrait(skill: CreationSkill) -> SkillAssetEntry | None:
     return portraits[0] if portraits else None
 
 
+def entry_pose(entry: SkillAssetEntry) -> camera_vocab.CameraPose | None:
+    """The viewpoint an image shows: its stored pose (AC-2), else what its
+    coarse `view` stands for (an old side view = right side). A front sheet
+    is the front pose; anything else (portrait, expressions, master) has
+    none."""
+    stored = camera_vocab.parse(entry.camera_json)
+    if stored is not None:
+        return stored
+    if entry.entry_type == AssetEntryType.CHARACTER_SHEET:
+        return camera_vocab.CameraPose(0)
+    if entry.entry_type in (AssetEntryType.VIEW, AssetEntryType.SHOT):
+        return camera_vocab.from_view(entry.view)
+    return None
+
+
+def check_camera(raw: Any) -> dict[str, Any] | None:
+    """A caller's `{azimuth, elevation, distance}`, snapped to the grid —
+    `None` clears it; anything malformed is a 422."""
+    if raw is None:
+        return None
+    pose = camera_vocab.parse(raw)
+    if pose is None:
+        raise ValidationFailed("机位无效。", fields={"camera": "需要 azimuth/elevation/distance"})
+    return camera_vocab.snap(pose).as_dict()
+
+
 def asset_ids(skill: CreationSkill) -> list[str]:
     return list(dict.fromkeys(entry.asset_id for entry in approved_entries(skill)))
 
@@ -172,6 +200,7 @@ def project(skill: CreationSkill) -> list[dict[str, Any]]:
                 "variant_id": variant.id,
                 "entry_type": entry.entry_type,
                 "is_anchor": entry.is_anchor,
+                "camera": dict(entry.camera_json) if entry.camera_json else None,
             }
         )
     return projected
@@ -462,6 +491,11 @@ def _expression_set(expressions: list[Any] | None) -> tuple[str, ...]:
     return tuple(sorted(str(item) for item in expressions or []))
 
 
+def _pose_bucket(entry: SkillAssetEntry) -> tuple[int, int, str] | None:
+    pose = entry_pose(entry)
+    return pose.bucket() if pose is not None else None
+
+
 def slot_mates(
     skill: CreationSkill,
     variant: SkillAssetVariant,
@@ -470,16 +504,43 @@ def slot_mates(
     view: str | None,
     expressions: list[Any] | None,
     exclude: SkillAssetEntry | None = None,
+    camera: dict[str, Any] | None = None,
 ) -> list[SkillAssetEntry]:
     """Every entry (any status) competing for the same slot, or `[]` for a
-    type that has none (poses, details, props, shots, other accumulate).
+    type that has none (poses, details, props, unposed shots, other
+    accumulate).
 
     The identity portrait is card-wide (one face for every look); the other
-    slots are per look / variant: the front sheet, each single view, each
-    distinct set of expressions, the master plate.
+    slots are per look / variant: the front sheet, each camera pose (a
+    single view — an old `side` view is the right-side pose — or a scene shot
+    drawn from a pose), each distinct set of expressions, the master plate.
     """
+    pose = camera_vocab.parse(camera)
+    if entry_type == AssetEntryType.SHOT and pose is not None:
+        wanted_pose = pose.bucket()
+        return [
+            entry
+            for entry in variant.entries
+            if entry is not exclude
+            and entry.entry_type == AssetEntryType.SHOT
+            and _pose_bucket(entry) == wanted_pose
+        ]
     if entry_type not in _SLOT_TYPES:
         return []
+    if entry_type == AssetEntryType.VIEW:
+        slot_pose = pose or camera_vocab.from_view(view)
+        wanted_pose_key = slot_pose.bucket() if slot_pose is not None else None
+        return [
+            entry
+            for entry in variant.entries
+            if entry is not exclude
+            and entry.entry_type == AssetEntryType.VIEW
+            and (
+                _pose_bucket(entry) == wanted_pose_key
+                if wanted_pose_key is not None
+                else entry.view == view and entry.camera_json is None
+            )
+        ]
     if entry_type == AssetEntryType.IDENTITY_PORTRAIT:
         pool = entries(skill)
     else:
@@ -488,8 +549,6 @@ def slot_mates(
     mates: list[SkillAssetEntry] = []
     for entry in pool:
         if entry is exclude or entry.entry_type != entry_type:
-            continue
-        if entry_type == AssetEntryType.VIEW and entry.view != view:
             continue
         if (
             entry_type == AssetEntryType.EXPRESSION_SHEET
@@ -532,12 +591,15 @@ def file_generated(
     expressions: list[str] | None = None,
     source_job_id: str | None = None,
     candidate: bool = False,
+    camera: dict[str, Any] | None = None,
 ) -> SkillAssetEntry:
     """Files a generated image: approved when its slot holds no approved
     image yet (and the caps leave room), otherwise a candidate beside it.
     Never replaces or evicts anything. `candidate` always files a candidate
     — a new version of an existing image (调整修改, P6) waits for 定稿."""
-    mates = slot_mates(skill, variant, entry_type=entry_type, view=view, expressions=expressions)
+    mates = slot_mates(
+        skill, variant, entry_type=entry_type, view=view, expressions=expressions, camera=camera
+    )
     in_variant, in_skill = _approved_counts(skill, variant)
     room = in_variant < MAX_ENTRIES_PER_VARIANT and (
         not is_character(skill) or in_skill < MAX_ENTRIES_PER_SKILL
@@ -559,6 +621,7 @@ def file_generated(
         expressions=expressions,
         source_job_id=source_job_id,
         status=status.value,
+        camera=camera,
     )
 
 
@@ -579,6 +642,7 @@ def approve_entry(
             view=entry.view,
             expressions=entry.expressions_json,
             exclude=entry,
+            camera=entry.camera_json,
         )
         if is_approved(mate)
     ]
@@ -645,6 +709,7 @@ def add_entry(
     expressions: list[str] | None = None,
     source_job_id: str | None = None,
     status: str = AssetEntryStatus.APPROVED.value,
+    camera: dict[str, Any] | None = None,
 ) -> SkillAssetEntry:
     """Files `asset_id` under `variant`. Re-adding an asset already in that
     variant updates the existing entry instead of duplicating it (keeping
@@ -669,6 +734,7 @@ def add_entry(
     existing.view = view
     existing.label = (label or "").strip()[:60] or None
     existing.expressions_json = list(expressions) if expressions else None
+    existing.camera_json = check_camera(camera)
     if source_job_id:
         existing.source_job_id = source_job_id
     session.flush()
@@ -928,7 +994,10 @@ def entry_label(skill: CreationSkill, entry: SkillAssetEntry) -> str:
     if not entry.variant.is_default:
         parts.append(entry.variant.name)
     positional = entry.entry_type in (AssetEntryType.VIEW, AssetEntryType.SHOT)
-    if positional and entry.view in _VIEW_NAMES:
+    pose = camera_vocab.parse(entry.camera_json)
+    if positional and pose is not None:
+        parts.append(camera_vocab.label_zh(pose))
+    elif positional and entry.view in _VIEW_NAMES:
         parts.append(_VIEW_NAMES[entry.view])
     else:
         parts.append(_ENTRY_TYPE_NAMES.get(AssetEntryType(entry.entry_type), "参考图"))
@@ -965,9 +1034,12 @@ def update_entry(
     label: str | None = None,
     expressions: list[str] | None = None,
     status: str | None = None,
+    camera: dict[str, Any] | None = None,
+    clear_camera: bool = False,
 ) -> SkillAssetEntry:
     """Edits one entry; `variant` moves it to another look of the same card
-    (an asset already in the target look is a 422 — the pair is unique)."""
+    (an asset already in the target look is a 422 — the pair is unique).
+    `camera` tags the pose it shows (`clear_camera` removes it)."""
     if entry_type is not None:
         _check_entry_type(skill, entry_type)
         entry.entry_type = entry_type
@@ -979,6 +1051,8 @@ def update_entry(
         entry.label = label.strip()[:60] or None
     if expressions is not None:
         entry.expressions_json = list(expressions) or None
+    if camera is not None or clear_camera:
+        entry.camera_json = None if clear_camera else check_camera(camera)
     if status == AssetEntryStatus.CANDIDATE and is_approved(entry):
         if entry.is_anchor:
             raise ValidationFailed(

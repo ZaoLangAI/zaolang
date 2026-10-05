@@ -8,8 +8,11 @@ from typing import Any, Literal
 
 from pydantic import Field, ValidationError, model_validator
 
+from app.api.schemas.asset_variants import CameraPose
 from app.api.schemas.common import ApiModel
 from app.domain.blocking.vocabulary import ShotSize
+from app.domain.image_assets import camera as camera_vocab
+from app.domain.image_assets.camera import MAX_CAMERA_POSES
 from app.domain.image_assets.vocabulary import (
     MAX_CHARACTER_EXPRESSIONS,
     MAX_OUTFIT_LABEL_LEN,
@@ -594,6 +597,18 @@ class GenerationParams(ApiModel):
     # `in_scene`: the character placed in its look's linked scene (the
     # scene's master is borrowed as an environment-only reference).
     asset_output_mode: Literal["in_scene"] | None = None
+    # 多机位 (AC-2): re-draw reference 1 (normally `source_entry_id`) from
+    # each of these camera poses, one pass and one image per pose, filed as
+    # that pose's slot of the target card. A camera-control route
+    # (`ProviderCapability.camera_control`) is preferred for each pass.
+    camera_poses: list[CameraPose] | None = Field(
+        default=None, min_length=1, max_length=MAX_CAMERA_POSES
+    )
+    # The source is a character sheet (a multi-view composite): pass 1 draws
+    # the front single figure from it (no camera route) and every later pose
+    # is drawn from that figure (`nodes._chain_orbit_front`). Set by the
+    # orbit / fill planners; `camera_poses[0]` must then be the front pose.
+    camera_from_sheet: bool = False
     # `audio_generation` (P7): speak with this character voice — its model,
     # preset voice and knobs (or clone sample) replace `forced_model`,
     # `extra.voice/emotion/speed` and the references at submit
@@ -643,6 +658,31 @@ class GenerationParams(ApiModel):
             raise ValueError("调整修改不能同时指定其他生成方式。")
         if self.asset_output_mode and not is_character:
             raise ValueError("角色入场景仅适用于 asset_kind=character。")
+        if self.camera_poses:
+            if not (is_character or is_scene):
+                raise ValueError("多机位仅适用于 asset_kind=character/scene。")
+            if not (self.source_entry_id or self.reference_asset_ids):
+                raise ValueError("多机位需要一张源图（source_entry_id 或参考图）。")
+            if (
+                self.asset_edit
+                or self.asset_output_mode
+                or self.character_expressions
+                or self.character_portrait
+                or self.character_outfit_label
+                or self.character_views not in (None, [CharacterViewAngle.FRONT])
+                or self.scene_variants
+            ):
+                raise ValueError("多机位不能同时指定其他生成方式。")
+            buckets = {
+                camera_vocab.CameraPose(p.azimuth, p.elevation, p.distance).bucket()
+                for p in self.camera_poses
+            }
+            if len(buckets) != len(self.camera_poses):
+                raise ValueError("多机位里有重复的机位。")
+            if self.camera_from_sheet and (not is_character or self.camera_poses[0].azimuth != 0):
+                raise ValueError("从设定图生成多机位时，第一个机位必须是正面。")
+        elif self.camera_from_sheet:
+            raise ValueError("camera_from_sheet 仅适用于多机位任务。")
         if self.asset_output_entry_type is not None:
             allowed = CHARACTER_ENTRY_TYPES if is_character else SCENE_ENTRY_TYPES
             if self.asset_output_entry_type not in allowed:

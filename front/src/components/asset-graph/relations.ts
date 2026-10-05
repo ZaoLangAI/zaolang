@@ -4,7 +4,8 @@ import type { CardKind } from '@/components/library/entry-actions';
 
 /** The relations an author can pick — `CHARACTER_RELATIONS` /
  * `SCENE_RELATIONS` (`back/app/models/enums.py`) minus `edit`, which only
- * links versions of one image (`versions.ts`) and is never drawn. */
+ * links versions of one image (`versions.ts`) and is never drawn, and
+ * `camera`, which only a multi-angle job writes. */
 export const RELATIONS_BY_KIND: Record<CardKind, AssetRelation[]> = {
   character: ['age', 'outfit', 'emotion', 'scene', 'period', 'custom'],
   scene: ['lighting', 'weather', 'state', 'period', 'custom'],
@@ -28,6 +29,8 @@ export const RELATION_COLOR: Record<AssetRelation, string> = {
   edit: 'var(--relation-edit)',
   // A voice derived with other TTS parameters (P7).
   params: 'var(--relation-period)',
+  // The same subject from another camera pose (多机位, AC-2) — auto only.
+  camera: 'var(--relation-scene)',
   custom: 'var(--relation-custom)',
 };
 

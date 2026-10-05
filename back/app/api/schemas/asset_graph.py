@@ -9,12 +9,18 @@ from typing import Literal
 
 from pydantic import Field
 
-from app.api.schemas.asset_variants import AssetVariantView, VariantAttributes, VariantPresets
+from app.api.schemas.asset_variants import (
+    AssetVariantView,
+    CameraPose,
+    VariantAttributes,
+    VariantPresets,
+)
 from app.api.schemas.character_voices import CharacterVoiceView
 from app.api.schemas.common import ApiModel
 from app.domain.asset_graph.derive import MAX_INSTRUCTION_LEN, DeriveOutput
 from app.domain.asset_graph.service import MAX_EDGE_LABEL_LEN, MAX_RELATIONS_PER_EDGE
 from app.domain.asset_variants.service import MAX_VARIANT_NAME_LEN
+from app.domain.image_assets.camera import MAX_CAMERA_POSES
 from app.domain.image_assets.vocabulary import MAX_CHARACTER_EXPRESSIONS, CharacterExpression
 from app.models.enums import AssetEdgeOrigin, AssetGraphLevel, AssetRelation, QualityTier
 
@@ -97,6 +103,16 @@ class AssetAdjustRequest(ApiModel):
     dry_run: bool = True
 
 
+class AssetOrbitRequest(ApiModel):
+    """多机位 (AC-2): re-draw the entry from each camera pose."""
+
+    poses: list[CameraPose] = Field(min_length=1, max_length=MAX_CAMERA_POSES)
+    quality_tier: QualityTier = QualityTier.STANDARD
+    aspect_ratio: str | None = Field(default=None, pattern=r"^\d{1,2}:\d{1,2}$")
+    # `true` (the default) only prices; `false` submits one job.
+    dry_run: bool = True
+
+
 class NewVariantDraftRequest(ApiModel):
     name: str = Field(min_length=1, max_length=MAX_VARIANT_NAME_LEN)
     description: str | None = Field(default=None, max_length=2000)
@@ -135,3 +151,6 @@ class AssetGenerateResponse(ApiModel):
     variant_id: str | None = None
     edge_id: str | None = None
     replayed: bool = False
+    # Orbit: the poses the job will draw, in pass order (a character sheet
+    # source is led by the front single figure the others are drawn from).
+    poses: list[CameraPose] = Field(default_factory=list)

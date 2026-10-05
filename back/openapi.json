@@ -7648,6 +7648,99 @@
         }
       }
     },
+    "/v1/characters/{card_id}/entries/{entry_id}:orbit": {
+      "post": {
+        "tags": [
+          "asset-graph"
+        ],
+        "summary": "Orbit Entry",
+        "operationId": "orbit_character_entry",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetOrbitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetGenerateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/scenes/{card_id}/entries/{entry_id}:adjust": {
       "post": {
         "tags": [
@@ -7806,6 +7899,99 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AssetDeriveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetGenerateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenes/{card_id}/entries/{entry_id}:orbit": {
+      "post": {
+        "tags": [
+          "asset-graph"
+        ],
+        "summary": "Orbit Entry",
+        "operationId": "orbit_scene_entry",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetOrbitRequest"
               }
             }
           }
@@ -26296,6 +26482,16 @@
             ],
             "title": "View"
           },
+          "camera": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CameraPose"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "expressions": {
             "anyOf": [
               {
@@ -26412,6 +26608,21 @@
             "title": "Clear View",
             "default": false
           },
+          "camera": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CameraPose"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clear_camera": {
+            "type": "boolean",
+            "title": "Clear Camera",
+            "default": false
+          },
           "expressions": {
             "anyOf": [
               {
@@ -26466,7 +26677,7 @@
         },
         "type": "object",
         "title": "AssetEntryUpdateRequest",
-        "description": "`view: null` is \"leave as is\"; send `clear_view` to unset it."
+        "description": "`view: null` is \"leave as is\"; send `clear_view` to unset it (same\nfor `camera` / `clear_camera`)."
       },
       "AssetEntryView": {
         "properties": {
@@ -26502,6 +26713,16 @@
               }
             ],
             "title": "View"
+          },
+          "camera": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CameraPose"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "expressions": {
             "items": {
@@ -26635,6 +26856,13 @@
             "type": "boolean",
             "title": "Replayed",
             "default": false
+          },
+          "poses": {
+            "items": {
+              "$ref": "#/components/schemas/CameraPose"
+            },
+            "type": "array",
+            "title": "Poses"
           }
         },
         "type": "object",
@@ -26864,6 +27092,46 @@
         ],
         "title": "AssetGraphResponse"
       },
+      "AssetOrbitRequest": {
+        "properties": {
+          "poses": {
+            "items": {
+              "$ref": "#/components/schemas/CameraPose"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Poses"
+          },
+          "quality_tier": {
+            "$ref": "#/components/schemas/QualityTier",
+            "default": "standard"
+          },
+          "aspect_ratio": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{1,2}:\\d{1,2}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aspect Ratio"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "poses"
+        ],
+        "title": "AssetOrbitRequest",
+        "description": "多机位 (AC-2): re-draw the entry from each camera pose."
+      },
       "AssetRelation": {
         "type": "string",
         "enum": [
@@ -26877,7 +27145,8 @@
           "state",
           "edit",
           "params",
-          "custom"
+          "custom",
+          "camera"
         ],
         "title": "AssetRelation",
         "description": "What a graph edge says changed from source to target (P4)."
@@ -28616,6 +28885,39 @@
           "file"
         ],
         "title": "Body_extract_script_source_v1_scripts_extract_post"
+      },
+      "CameraPose": {
+        "properties": {
+          "azimuth": {
+            "type": "integer",
+            "maximum": 359.0,
+            "minimum": 0.0,
+            "title": "Azimuth"
+          },
+          "elevation": {
+            "type": "integer",
+            "maximum": 90.0,
+            "minimum": -30.0,
+            "title": "Elevation",
+            "default": 0
+          },
+          "distance": {
+            "type": "string",
+            "enum": [
+              "close",
+              "medium",
+              "wide"
+            ],
+            "title": "Distance",
+            "default": "medium"
+          }
+        },
+        "type": "object",
+        "required": [
+          "azimuth"
+        ],
+        "title": "CameraPose",
+        "description": "Where the camera sits around the subject (多机位, AC-2) — the grid in\n`app.domain.image_assets.camera`: azimuth 0 = front, 90 = the subject's\nright side, 180 = its back (a scene's reverse shot), 270 = its left;\nelevation -30 (low) … 60 (high), 90 bird's-eye."
       },
       "CanvasAgentRunCreateRequest": {
         "properties": {
@@ -35303,6 +35605,27 @@
             ],
             "title": "Asset Output Mode"
           },
+          "camera_poses": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CameraPose"
+                },
+                "type": "array",
+                "maxItems": 8,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Poses"
+          },
+          "camera_from_sheet": {
+            "type": "boolean",
+            "title": "Camera From Sheet",
+            "default": false
+          },
           "voice_profile_id": {
             "anyOf": [
               {
@@ -37342,6 +37665,8 @@
                 "front",
                 "side",
                 "back",
+                "left",
+                "three_quarter",
                 "expressions"
               ]
             },
@@ -37378,11 +37703,13 @@
                     "front",
                     "side",
                     "back",
+                    "left",
+                    "three_quarter",
                     "expressions"
                   ]
                 },
                 "type": "array",
-                "maxItems": 5
+                "maxItems": 7
               },
               {
                 "type": "null"
@@ -37456,6 +37783,8 @@
                 "front",
                 "side",
                 "back",
+                "left",
+                "three_quarter",
                 "expressions"
               ]
             },
@@ -37515,6 +37844,8 @@
                 "front",
                 "side",
                 "back",
+                "left",
+                "three_quarter",
                 "expressions"
               ]
             },
