@@ -12,9 +12,9 @@ from sqlalchemy.orm import Session
 from app.agents import router as routing
 from app.domain.credits import service as credits_service
 from app.domain.jobs import state_machine as sm
-from app.models import CharacterVoice, GenerationJob, User
+from app.models import CharacterVoice, CreationSkill, GenerationJob, User
 from app.models.base import new_id
-from app.models.enums import JobStatus
+from app.models.enums import CreationSkillStatus, CreationSkillVisibility, JobStatus
 from app.workers import tasks
 from tests.conftest import auth_header
 from tests.fake_provider_catalog import build_fake_catalog
@@ -248,3 +248,50 @@ def test_a_dubbing_job_can_name_only_the_character_voice(
         headers={**auth_header(author), "Idempotency-Key": "dub-2"},
     )
     assert bare.status_code == 422
+
+
+def test_unlocking_a_character_never_hands_over_its_voices(
+    client: TestClient, db: Session, author: User, remixer: User
+) -> None:
+    """A buyer gets the card's approved looks, never its voices: no voice ids
+    in the unlocked detail or apply payload, the voice routes stay 404 and a
+    job cannot name the voice."""
+    card = _card(client, author)
+    voice = _voice(client, author, card["id"], look_ids=[card["looks"][0]["id"]])
+    skill = db.get(CreationSkill, card["id"])
+    assert skill is not None
+    skill.status = CreationSkillStatus.PUBLISHED
+    skill.visibility = CreationSkillVisibility.PUBLIC
+    skill.access_credits = 8
+    db.commit()
+
+    buyer = auth_header(remixer)
+    credits_service.grant(db, remixer.id, 5_000, idempotency_key=new_id("grant"))
+    db.commit()
+    unlocked = client.post(
+        f"/v1/skills/{card['id']}/unlock", headers={**buyer, "Idempotency-Key": new_id("idk")}
+    )
+    assert unlocked.status_code == 200, unlocked.text
+
+    detail = client.get(f"/v1/skills/{card['id']}", headers=buyer)
+    applied = client.post(f"/v1/skills/{card['id']}/apply", headers=buyer)
+    assert detail.status_code == 200 and applied.status_code == 200, applied.text
+    assert detail.json()["viewer_unlocked"] is True
+    (look,) = detail.json()["asset_variants"]  # the looks do come through
+    assert look["voice_id"] is None
+    for response in (detail, applied):
+        assert voice["id"] not in response.text
+        assert "柔美女友" not in response.text
+
+    assert client.get(f"/v1/characters/{card['id']}/voices", headers=buyer).status_code == 404
+    assert client.get(f"/v1/characters/{card['id']}/graph", headers=buyer).status_code == 404
+    job = client.post(
+        "/v1/generation-jobs",
+        json={
+            "operation": "audio_generation",
+            "quality_tier": "standard",
+            "params": {"prompt": "你好", "voice_profile_id": voice["id"]},
+        },
+        headers={**buyer, "Idempotency-Key": "buyer-voice-1"},
+    )
+    assert job.status_code == 404
