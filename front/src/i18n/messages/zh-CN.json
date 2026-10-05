@@ -3877,6 +3877,25 @@
       "adult": "壮年（30–44 岁）",
       "middle_aged": "中年（45–59 岁）",
       "elderly": "老年（60 岁以上）"
-    }
+    },
+    "attributesTitle": "属性",
+    "periodLabel": "时代",
+    "outfitLabel": "服装",
+    "outfitHint": "一个短名，例如「婚纱」「校服」；换装时用它命名造型。",
+    "stateLabel": "情绪 / 状态",
+    "stateHint": "例如「负伤」「战斗中」「疲惫」。",
+    "sceneNoteLabel": "场景说明",
+    "sceneLinkLabel": "关联场景",
+    "sceneLinkHint": "选择场景库中的场景，生成「角色入场景」时会带入场景参考图。",
+    "sceneLinkNone": "不关联",
+    "sceneVariantLabel": "场景变体",
+    "sceneVariantDefault": "默认变体",
+    "customLabel": "自定义属性",
+    "customKey": "名称",
+    "customValue": "内容",
+    "customAdd": "添加属性",
+    "customRemove": "删除属性",
+    "customIncomplete": "自定义属性需要同时填写名称和内容。",
+    "saveAttributes": "保存属性"
   }
 }

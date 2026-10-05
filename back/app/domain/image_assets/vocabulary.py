@@ -379,6 +379,51 @@ def age_stage_fragments(age_stage: object) -> tuple[str, str]:
     )
 
 
+# A look's period (P3): the same `ScenePeriod` keys, written for a person —
+# wardrobe, hair and props of that time — rather than for a set.
+CHARACTER_PERIOD_PRESETS: dict[str, Preset] = {
+    "ancient": Preset(
+        "古代",
+        "时代背景：中国古代，服饰为交领右衽的传统衣裳，发型为束发、发髻或发冠，配饰为玉佩、簪钗",
+        "西装，牛仔裤，运动鞋，手表，眼镜",
+    ),
+    "republic": Preset(
+        "民国",
+        "时代背景：民国时期，服饰为长衫、旗袍、中山装或早期西式三件套，发型为油头、手推波纹或短发",
+        "现代潮牌，运动鞋，耳机，手机",
+    ),
+    "1980s": Preset(
+        "八十年代",
+        "时代背景：二十世纪八十年代的中国，服饰为的确良衬衫、中山装、喇叭裤或军绿外套，"
+        "发型为烫卷或齐耳短发",
+        "智能手机，现代潮牌，无线耳机",
+    ),
+    "1990s": Preset(
+        "九十年代",
+        "时代背景：二十世纪九十年代，服饰为宽松西装、牛仔夹克、高腰裤，发型为中分或大波浪",
+        "智能手机，无线耳机，当代潮牌",
+    ),
+    "contemporary": Preset(
+        "当代",
+        "时代背景：当代，服饰与发型符合当下日常审美",
+        "古装，戏服",
+    ),
+    "near_future": Preset(
+        "近未来",
+        "时代背景：近未来，服饰带有功能面料、简洁的科技细节与发光饰条",
+        "古装，复古年代服饰",
+    ),
+}
+
+
+def character_period_fragments(period: object) -> tuple[str, str]:
+    """`(prompt sentence, negative)` for a look's period; empty when unset."""
+    preset = CHARACTER_PERIOD_PRESETS.get(str(period or ""))
+    if preset is None:
+        return "", ""
+    return f"{preset.prompt}。", preset.negative
+
+
 SCENE_PRESET_TABLES: dict[str, Mapping[str, Preset]] = {
     "lighting": LIGHTING_PRESETS,
     "weather": WEATHER_PRESETS,

@@ -6590,14 +6590,33 @@ export interface components {
             /** Description */
             description?: string | null;
             presets?: components["schemas"]["VariantPresets"] | null;
+            attributes?: components["schemas"]["VariantAttributes"] | null;
+            /** Scene Id */
+            scene_id?: string | null;
+            /** Scene Variant Id */
+            scene_variant_id?: string | null;
         };
-        /** AssetVariantUpdateRequest */
+        /**
+         * AssetVariantUpdateRequest
+         * @description `attributes` replaces the whole set; `scene_id: null` leaves the link
+         *     as is — send `clear_scene` to unset it.
+         */
         AssetVariantUpdateRequest: {
             /** Name */
             name?: string | null;
             /** Description */
             description?: string | null;
             presets?: components["schemas"]["VariantPresets"] | null;
+            attributes?: components["schemas"]["VariantAttributes"] | null;
+            /** Scene Id */
+            scene_id?: string | null;
+            /** Scene Variant Id */
+            scene_variant_id?: string | null;
+            /**
+             * Clear Scene
+             * @default false
+             */
+            clear_scene: boolean;
             /** Sort Order */
             sort_order?: number | null;
             /**
@@ -6618,6 +6637,8 @@ export interface components {
             presets?: {
                 [key: string]: unknown;
             };
+            attributes?: components["schemas"]["VariantAttributes"];
+            scene_link?: components["schemas"]["SceneLinkView"] | null;
             /** Is Default */
             is_default: boolean;
             /** Sort Order */
@@ -8462,6 +8483,13 @@ export interface components {
             currency: string;
             /** Region */
             region: string;
+        };
+        /** CustomAttribute */
+        CustomAttribute: {
+            /** Key */
+            key: string;
+            /** Value */
+            value: string;
         };
         /** CutCreateRequest */
         CutCreateRequest: {
@@ -12329,6 +12357,22 @@ export interface components {
             reference_asset_ids?: string[];
         };
         /**
+         * SceneLinkView
+         * @description The scene card a look is set in (owner's own editor only).
+         */
+        SceneLinkView: {
+            /** Scene Id */
+            scene_id: string;
+            /** Scene Name */
+            scene_name: string;
+            /** Variant Id */
+            variant_id?: string | null;
+            /** Variant Name */
+            variant_name?: string | null;
+            /** Thumb Url */
+            thumb_url?: string | null;
+        };
+        /**
          * SceneMatrixAxes
          * @description The values picked per axis; their cartesian product is the matrix
          *     (≤4 per axis, ≤12 cells per request — `scenes.matrix`).
@@ -13215,6 +13259,18 @@ export interface components {
             description?: string | null;
             /** Age Stage */
             age_stage?: ("child" | "teen" | "youth" | "adult" | "middle_aged" | "elderly") | null;
+            /** Period */
+            period?: ("ancient" | "republic" | "1980s" | "1990s" | "contemporary" | "near_future") | null;
+            /** Outfit */
+            outfit?: string | null;
+            /** State */
+            state?: string | null;
+            /** Scene Note */
+            scene_note?: string | null;
+            /** Custom */
+            custom?: {
+                [key: string]: string;
+            }[];
         };
         /**
          * ThemePreference
@@ -13457,6 +13513,21 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /**
+         * VariantAttributes
+         * @description Free-text look attributes (P3) — each becomes a prompt sentence. A
+         *     scene variant takes only `custom` (the service rejects the rest).
+         */
+        VariantAttributes: {
+            /** Outfit */
+            outfit?: string | null;
+            /** State */
+            state?: string | null;
+            /** Scene Note */
+            scene_note?: string | null;
+            /** Custom */
+            custom?: components["schemas"]["CustomAttribute"][];
         };
         /** VariantBatchCreateRequest */
         VariantBatchCreateRequest: {

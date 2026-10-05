@@ -25047,6 +25047,40 @@
                 "type": "null"
               }
             ]
+          },
+          "attributes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VariantAttributes"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "scene_variant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Variant Id"
           }
         },
         "type": "object",
@@ -25092,6 +25126,45 @@
               }
             ]
           },
+          "attributes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VariantAttributes"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "scene_variant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Variant Id"
+          },
+          "clear_scene": {
+            "type": "boolean",
+            "title": "Clear Scene",
+            "default": false
+          },
           "sort_order": {
             "anyOf": [
               {
@@ -25112,7 +25185,8 @@
           }
         },
         "type": "object",
-        "title": "AssetVariantUpdateRequest"
+        "title": "AssetVariantUpdateRequest",
+        "description": "`attributes` replaces the whole set; `scene_id: null` leaves the link\nas is — send `clear_scene` to unset it."
       },
       "AssetVariantView": {
         "properties": {
@@ -25139,6 +25213,19 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Presets"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/VariantAttributes"
+          },
+          "scene_link": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneLinkView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "is_default": {
             "type": "boolean",
@@ -29621,6 +29708,26 @@
           "region"
         ],
         "title": "CreditPackageResponse"
+      },
+      "CustomAttribute": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 12,
+            "title": "Key"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "title": "CustomAttribute"
       },
       "CutCreateRequest": {
         "properties": {
@@ -39959,6 +40066,58 @@
         ],
         "title": "SceneCreateRequest"
       },
+      "SceneLinkView": {
+        "properties": {
+          "scene_id": {
+            "type": "string",
+            "title": "Scene Id"
+          },
+          "scene_name": {
+            "type": "string",
+            "title": "Scene Name"
+          },
+          "variant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Id"
+          },
+          "variant_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Name"
+          },
+          "thumb_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumb Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scene_id",
+          "scene_name"
+        ],
+        "title": "SceneLinkView",
+        "description": "The scene card a look is set in (owner's own editor only)."
+      },
       "SceneMatrixAxes": {
         "properties": {
           "lighting": {
@@ -42292,6 +42451,72 @@
               }
             ],
             "title": "Age Stage"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ancient",
+                  "republic",
+                  "1980s",
+                  "1990s",
+                  "contemporary",
+                  "near_future"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "outfit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outfit"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "scene_note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Note"
+          },
+          "custom": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Custom"
           }
         },
         "type": "object",
@@ -42777,6 +43002,57 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VariantAttributes": {
+        "properties": {
+          "outfit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outfit"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "scene_note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Note"
+          },
+          "custom": {
+            "items": {
+              "$ref": "#/components/schemas/CustomAttribute"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Custom"
+          }
+        },
+        "type": "object",
+        "title": "VariantAttributes",
+        "description": "Free-text look attributes (P3) — each becomes a prompt sentence. A\nscene variant takes only `custom` (the service rejects the rest)."
       },
       "VariantBatchCreateRequest": {
         "properties": {

@@ -12,6 +12,7 @@ import {
   type CardKind,
 } from '@/components/library/entry-actions';
 import { candidateCount, groupEntries } from '@/components/library/entry-groups';
+import { VariantAttributesForm } from '@/components/library/variant-attributes-form';
 import { SceneMatrixDialog } from '@/components/scenes/scene-matrix-dialog';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -21,8 +22,6 @@ import { ErrorNotice } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import {
-  AGE_STAGES,
-  keysOf,
   SCENE_LIGHTINGS,
   SCENE_PERIODS,
   SCENE_STATES,
@@ -412,21 +411,6 @@ function VariantPanel({
         onChange={(event) => setDescription(event.target.value)}
         className="min-h-20"
       />
-      {kind === 'character' ? (
-        <Select
-          label={t('ageStageLabel')}
-          hint={t('ageStageHint')}
-          value={(variant.presets as { age_stage?: string } | undefined)?.age_stage ?? ''}
-          onChange={(event) => onUpdate({ presets: { age_stage: event.target.value || null } })}
-          options={[
-            { value: '', label: t('ageStageNone') },
-            ...keysOf(AGE_STAGES).map((key) => ({
-              value: key,
-              label: t(AGE_STAGES[key].labelKey),
-            })),
-          ]}
-        />
-      ) : null}
       {kind === 'scene' ? (
         <div className="grid grid-cols-2 gap-2">
           {PRESET_AXES.map(({ axis, table }) => (
@@ -448,6 +432,17 @@ function VariantPanel({
           ))}
         </div>
       ) : null}
+      <details
+        className="rounded-[var(--radius-sm)] border border-border p-3"
+        open={kind === 'character'}
+      >
+        <summary className="cursor-pointer text-xs font-semibold text-muted">
+          {t('attributesTitle')}
+        </summary>
+        <div className="mt-3">
+          <VariantAttributesForm kind={kind} variant={variant} onSave={onUpdate} />
+        </div>
+      </details>
       <div className="flex flex-wrap gap-2">
         <Button
           size="sm"

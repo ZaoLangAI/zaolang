@@ -345,3 +345,67 @@ def test_an_upload_can_become_the_cards_first_anchor(
         headers=headers,
     ).json()
     assert client.get(base, headers=headers).json()["anchor_entry_id"] == portrait["id"]
+
+
+def test_look_attributes_and_scene_link_round_trip(
+    client: TestClient, db: Session, author: User
+) -> None:
+    character = _character(client, author)
+    headers = auth_header(author)
+    base = f"/v1/characters/{character['id']}"
+    scene = client.post("/v1/scenes", json={"name": "码头"}, headers=headers).json()
+
+    created = client.post(
+        f"{base}/looks",
+        json={
+            "name": "卧底",
+            "presets": {"age_stage": "adult", "period": "republic"},
+            "attributes": {"outfit": "长衫", "custom": [{"key": "身份", "value": "卧底"}]},
+            "scene_id": scene["id"],
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    look = created.json()
+    assert look["presets"] == {"age_stage": "adult", "period": "republic"}
+    assert look["attributes"]["outfit"] == "长衫"
+    assert look["attributes"]["custom"] == [{"key": "身份", "value": "卧底"}]
+    assert look["scene_link"]["scene_id"] == scene["id"]
+    assert look["scene_link"]["scene_name"] == "码头"
+
+    # `attributes` replaces the set; a missing `scene_id` keeps the link.
+    patched = client.patch(
+        f"{base}/looks/{look['id']}", json={"attributes": {"state": "负伤"}}, headers=headers
+    ).json()
+    assert patched["attributes"]["outfit"] is None
+    assert patched["attributes"]["state"] == "负伤"
+    assert patched["scene_link"]["scene_id"] == scene["id"]
+
+    cleared = client.patch(
+        f"{base}/looks/{look['id']}", json={"clear_scene": True}, headers=headers
+    ).json()
+    assert cleared["scene_link"] is None
+
+    bad = client.patch(
+        f"{base}/looks/{look['id']}",
+        json={"scene_id": character["id"]},
+        headers=headers,
+    )
+    assert bad.status_code == 422
+
+
+def test_the_published_detail_hides_the_scene_link(
+    client: TestClient, db: Session, author: User
+) -> None:
+    character = _character(client, author)
+    headers = auth_header(author)
+    scene = client.post("/v1/scenes", json={"name": "码头"}, headers=headers).json()
+    client.patch(
+        f"/v1/characters/{character['id']}/looks/{character['looks'][0]['id']}",
+        json={"scene_id": scene["id"], "attributes": {"state": "疲惫"}},
+        headers=headers,
+    )
+    detail = client.get(f"/v1/skills/{character['id']}", headers=headers).json()
+    look = detail["asset_variants"][0]
+    assert look["scene_link"] is None
+    assert look["attributes"]["state"] == "疲惫"

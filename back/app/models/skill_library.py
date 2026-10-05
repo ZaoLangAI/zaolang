@@ -87,6 +87,9 @@ class CreationSkill(Base, TimestampMixin):
         back_populates="skill",
         cascade="all, delete-orphan",
         passive_deletes=True,
+        # A look also points at a scene card (`scene_skill_id`); only
+        # `skill_id` is ownership.
+        foreign_keys="SkillAssetVariant.skill_id",
         order_by="(SkillAssetVariant.is_default.desc(), SkillAssetVariant.sort_order, "
         "SkillAssetVariant.created_at)",
     )
@@ -127,16 +130,33 @@ class SkillAssetVariant(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(40), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Scene: `{lighting, weather, state, period}` (`image_assets.vocabulary`);
-    # look: `{age_stage?}`. Copy before mutating (JSONB identity tracking).
+    # look: `{age_stage?, period?}`. Enumerated values only — write-back and
+    # the scene matrix match on it exactly. Copy before mutating (JSONB
+    # identity tracking).
     presets_json: Mapped[dict[str, Any]] = mapped_column(
         default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
+    # Free text (P3): look `{outfit?, state?, scene_note?, custom: [{key,
+    # value}]}`, scene variant `{custom}` — `asset_variants.service._check_attributes`.
+    attributes_json: Mapped[dict[str, Any]] = mapped_column(
+        default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
+    # A look set in one of the owner's scene cards (and optionally one of its
+    # variants). Cleared when that card / variant goes.
+    scene_skill_id: Mapped[str | None] = mapped_column(
+        ForeignKey("creation_skills.id", ondelete="SET NULL"), nullable=True
+    )
+    scene_variant_id: Mapped[str | None] = mapped_column(
+        ForeignKey("skill_asset_variants.id", ondelete="SET NULL"), nullable=True
     )
     is_default: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"), nullable=False
     )
     sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
-    skill: Mapped[CreationSkill] = relationship(back_populates="asset_variants")
+    skill: Mapped[CreationSkill] = relationship(
+        back_populates="asset_variants", foreign_keys=[skill_id]
+    )
     entries: Mapped[list[SkillAssetEntry]] = relationship(
         back_populates="variant",
         cascade="all, delete-orphan",
@@ -147,11 +167,16 @@ class SkillAssetVariant(Base, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint(f"kind IN ({_VARIANT_KINDS})", name="kind_valid"),
+        CheckConstraint(
+            "kind = 'look' OR (scene_skill_id IS NULL AND scene_variant_id IS NULL)",
+            name="scene_link_look_only",
+        ),
         UniqueConstraint("skill_id", "name", name="uq_skill_asset_variants_skill_id_name"),
         # Target of `skill_asset_entries`' composite FK: an entry's variant
         # must belong to the same skill the entry says it does.
         UniqueConstraint("id", "skill_id", name="uq_skill_asset_variants_id_skill_id"),
         Index("ix_skill_asset_variants_skill_id", "skill_id"),
+        Index("ix_skill_asset_variants_scene_skill_id", "scene_skill_id"),
         Index(
             "uq_skill_asset_variants_default",
             "skill_id",

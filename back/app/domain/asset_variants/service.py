@@ -110,6 +110,22 @@ def anchor(skill: CreationSkill) -> SkillAssetEntry | None:
     return next((entry for entry in entries(skill) if entry.is_anchor), None)
 
 
+def master_or_anchor(
+    scene: CreationSkill, variant: SkillAssetVariant | None = None
+) -> SkillAssetEntry | None:
+    """A scene's representative still: the variant's (else the default
+    variant's) approved master, else the card's anchor, else any approved
+    image. Used for a look's scene link (thumbnail, and the `in_scene`
+    reference)."""
+    target = variant or find_default(scene)
+    pool = [e for e in (target.entries if target else []) if is_approved(e)]
+    master = next((e for e in pool if e.entry_type == AssetEntryType.MASTER), None)
+    if master is not None:
+        return master
+    approved = approved_entries(scene)
+    return anchor(scene) or (approved[0] if approved else None)
+
+
 def identity_portrait(skill: CreationSkill) -> SkillAssetEntry | None:
     """The card's approved identity portrait (定妆照): the anchor when it is
     one, else the first approved portrait."""
@@ -168,6 +184,10 @@ def moderation_texts(skill: CreationSkill) -> list[str]:
     for variant in skill.asset_variants:
         texts.extend(t for t in (variant.name, variant.description) if t)
         texts.extend(entry.label for entry in variant.entries if entry.label)
+        attributes = variant.attributes_json or {}
+        texts.extend(str(attributes[key]) for key in LOOK_ATTRIBUTE_LIMITS if attributes.get(key))
+        for item in attributes.get("custom") or []:
+            texts.append(f"{item.get('key')}：{item.get('value')}")
     return texts
 
 
@@ -200,13 +220,20 @@ def _check_variant_name(skill: CreationSkill, name: str, *, exclude_id: str | No
     return clean
 
 
-_LOOK_PRESET_KEYS = frozenset({"age_stage"})
+_LOOK_PRESET_KEYS = frozenset({"age_stage", "period"})
 _SCENE_PRESET_KEYS = frozenset({"lighting", "weather", "state", "period"})
+
+# Free-text look attributes (P3) and their lengths; scene variants carry
+# only `custom`. Short on purpose: each one becomes a prompt sentence.
+LOOK_ATTRIBUTE_LIMITS = {"outfit": 20, "state": 40, "scene_note": 60}
+MAX_CUSTOM_ATTRIBUTES = 8
+MAX_CUSTOM_KEY_LEN = 12
+MAX_CUSTOM_VALUE_LEN = 40
 
 
 def _check_presets(skill: CreationSkill, presets: dict[str, Any] | None) -> dict[str, Any]:
-    """A look carries only `age_stage`; a scene variant only the four scene
-    axes (P2-6) — the other kind's keys are a 422, not silently stored."""
+    """A look carries `age_stage` / `period`; a scene variant only the four
+    scene axes (P2-6) — the other kind's keys are a 422, not silently stored."""
     clean = dict(presets or {})
     allowed = _LOOK_PRESET_KEYS if is_character(skill) else _SCENE_PRESET_KEYS
     foreign = sorted(key for key in clean if key not in allowed)
@@ -219,6 +246,86 @@ def _check_presets(skill: CreationSkill, presets: dict[str, Any] | None) -> dict
     return clean
 
 
+def _check_attributes(skill: CreationSkill, attributes: dict[str, Any] | None) -> dict[str, Any]:
+    """Trims and validates free-text attributes; blank values are dropped.
+    A scene variant only takes `custom`."""
+    raw = dict(attributes or {})
+    allowed = (set(LOOK_ATTRIBUTE_LIMITS) if is_character(skill) else set()) | {"custom"}
+    foreign = sorted(key for key in raw if key not in allowed)
+    if foreign:
+        raise ValidationFailed(
+            f"不支持这些属性：{'、'.join(foreign)}。", fields={"attributes": "与卡片类别不匹配"}
+        )
+    clean: dict[str, Any] = {}
+    for key, limit in LOOK_ATTRIBUTE_LIMITS.items():
+        value = str(raw.get(key) or "").strip()
+        if not value:
+            continue
+        if len(value) > limit:
+            raise ValidationFailed(
+                f"属性内容过长（最多 {limit} 个字）。", fields={f"attributes.{key}": "过长"}
+            )
+        clean[key] = value
+    custom: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in raw.get("custom") or []:
+        key = str((item or {}).get("key") or "").strip()
+        value = str((item or {}).get("value") or "").strip()
+        if not key and not value:
+            continue
+        if not key or not value:
+            raise ValidationFailed(
+                "自定义属性需要同时填写名称和内容。", fields={"attributes.custom": "不完整"}
+            )
+        if len(key) > MAX_CUSTOM_KEY_LEN or len(value) > MAX_CUSTOM_VALUE_LEN:
+            raise ValidationFailed(
+                f"自定义属性名最多 {MAX_CUSTOM_KEY_LEN} 字、内容最多 {MAX_CUSTOM_VALUE_LEN} 字。",
+                fields={"attributes.custom": "过长"},
+            )
+        if key in seen:
+            raise ValidationFailed(
+                f"自定义属性「{key}」重复。", fields={"attributes.custom": "重复"}
+            )
+        seen.add(key)
+        custom.append({"key": key, "value": value})
+    if len(custom) > MAX_CUSTOM_ATTRIBUTES:
+        raise ValidationFailed(
+            f"最多 {MAX_CUSTOM_ATTRIBUTES} 条自定义属性。", fields={"attributes.custom": "数量过多"}
+        )
+    if custom:
+        clean["custom"] = custom
+    return clean
+
+
+def set_scene_link(
+    session: Session,
+    skill: CreationSkill,
+    variant: SkillAssetVariant,
+    *,
+    scene_id: str | None,
+    scene_variant_id: str | None = None,
+) -> None:
+    """Sets (or with `scene_id=None` clears) a look's scene. The scene must
+    be one of the same owner's scene cards, and the variant one of its own."""
+    if not is_character(skill):
+        raise ValidationFailed("只有角色造型可以关联场景。", fields={"scene_id": "不支持"})
+    if scene_id is None:
+        variant.scene_skill_id = None
+        variant.scene_variant_id = None
+        return
+    scene = session.get(CreationSkill, scene_id)
+    if (
+        scene is None
+        or scene.owner_user_id != skill.owner_user_id
+        or scene.category != CreationSkillCategory.SCENE_ASSET
+    ):
+        raise ValidationFailed("场景不存在。", fields={"scene_id": "场景不存在"})
+    if scene_variant_id is not None and find_variant(scene, scene_variant_id) is None:
+        raise ValidationFailed("场景变体不存在。", fields={"scene_variant_id": "变体不存在"})
+    variant.scene_skill_id = scene.id
+    variant.scene_variant_id = scene_variant_id
+
+
 def create_variant(
     session: Session,
     skill: CreationSkill,
@@ -226,9 +333,11 @@ def create_variant(
     name: str,
     description: str | None = None,
     presets: dict[str, Any] | None = None,
+    attributes: dict[str, Any] | None = None,
 ) -> SkillAssetVariant:
     ensure_default(session, skill)
     presets = _check_presets(skill, presets)
+    clean_attributes = _check_attributes(skill, attributes)
     if is_character(skill) and len(skill.asset_variants) >= MAX_VARIANTS_PER_SKILL:
         raise ValidationFailed(
             f"每个{'角色' if is_character(skill) else '场景'}最多 {MAX_VARIANTS_PER_SKILL} 个"
@@ -241,6 +350,7 @@ def create_variant(
         name=_check_variant_name(skill, name),
         description=(description or "").strip() or None,
         presets_json=dict(presets or {}),
+        attributes_json=clean_attributes,
         is_default=False,
         sort_order=max((v.sort_order for v in skill.asset_variants), default=0) + 1,
     )
@@ -280,6 +390,7 @@ def update_variant(
     name: str | None = None,
     description: str | None = None,
     presets: dict[str, Any] | None = None,
+    attributes: dict[str, Any] | None = None,
     sort_order: int | None = None,
     make_default: bool = False,
 ) -> SkillAssetVariant:
@@ -289,6 +400,8 @@ def update_variant(
         variant.description = description.strip() or None
     if presets is not None:
         variant.presets_json = _check_presets(skill, presets)
+    if attributes is not None:
+        variant.attributes_json = _check_attributes(skill, attributes)
     if sort_order is not None:
         variant.sort_order = sort_order
     if make_default and not variant.is_default:

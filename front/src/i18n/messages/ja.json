@@ -3877,6 +3877,25 @@
       "adult": "壮年期（30–44 歳）",
       "middle_aged": "中年期（45–59 歳）",
       "elderly": "老年期（60 歳以上）"
-    }
+    },
+    "attributesTitle": "属性",
+    "periodLabel": "時代",
+    "outfitLabel": "衣装",
+    "outfitHint": "「ウェディングドレス」「制服」など短い名前。",
+    "stateLabel": "感情・状態",
+    "stateHint": "例：「負傷」「戦闘中」「疲労」。",
+    "sceneNoteLabel": "シーンメモ",
+    "sceneLinkLabel": "関連シーン",
+    "sceneLinkHint": "シーンを選ぶと「シーン内のキャラクター」生成で参照画像として使われます。",
+    "sceneLinkNone": "関連なし",
+    "sceneVariantLabel": "シーンのバリエーション",
+    "sceneVariantDefault": "デフォルト",
+    "customLabel": "カスタム属性",
+    "customKey": "名前",
+    "customValue": "内容",
+    "customAdd": "属性を追加",
+    "customRemove": "属性を削除",
+    "customIncomplete": "カスタム属性は名前と内容の両方が必要です。",
+    "saveAttributes": "属性を保存"
   }
 }

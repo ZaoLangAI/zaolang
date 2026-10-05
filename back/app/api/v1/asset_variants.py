@@ -66,6 +66,12 @@ def _presets(payload: Any) -> dict[str, Any] | None:
     return payload.model_dump(exclude_none=True)
 
 
+def _attributes(payload: Any) -> dict[str, Any] | None:
+    if payload is None:
+        return None
+    return payload.model_dump(exclude_none=True)
+
+
 def _register(
     prefix: str, segment: str, load: Callable[[Session, str, str], CreationSkill]
 ) -> None:
@@ -91,7 +97,16 @@ def _register(
             name=payload.name,
             description=payload.description,
             presets=_presets(payload.presets),
+            attributes=_attributes(payload.attributes),
         )
+        if payload.scene_id is not None:
+            av.set_scene_link(
+                session,
+                skill,
+                variant,
+                scene_id=payload.scene_id,
+                scene_variant_id=payload.scene_variant_id,
+            )
         skill_library_service.withdraw_after_edit(session, skill)
         session.commit()
         return presenter.variant_view(session, variant)
@@ -117,9 +132,19 @@ def _register(
             name=payload.name,
             description=payload.description,
             presets=_presets(payload.presets),
+            attributes=_attributes(payload.attributes),
             sort_order=payload.sort_order,
             make_default=payload.make_default,
         )
+        if payload.clear_scene or payload.scene_id is not None:
+            av.set_scene_link(
+                session,
+                skill,
+                variant,
+                scene_id=None if payload.clear_scene else payload.scene_id,
+                scene_variant_id=payload.scene_variant_id,
+            )
+            session.flush()
         skill_library_service.withdraw_after_edit(session, skill)
         session.commit()
         return presenter.variant_view(session, variant)
