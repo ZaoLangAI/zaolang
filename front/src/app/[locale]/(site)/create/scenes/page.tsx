@@ -4,6 +4,7 @@ import { SignInPrompt } from '@/components/auth/sign-in-prompt';
 import { SceneLibrary } from '@/components/scenes/scene-library';
 import { GoBackLink } from '@/components/ui/go-back-link';
 import { PageHeading } from '@/components/ui/primitives';
+import { redirect } from '@/i18n/navigation';
 import { isSignedIn, serverFetchOrNull } from '@/lib/api/server';
 import type { Scene } from '@/lib/api/types';
 
@@ -18,13 +19,22 @@ export async function generateMetadata() {
  * short without retyping a description on every scene heading.
  */
 export default async function ScenesPage({
+  params,
   searchParams,
 }: {
-  /** `manage`: a card whose variants sheet opens on arrival (the studio's 去定稿). */
+  params: Promise<{ locale: string }>;
+  /** `manage`: a pre-page link (the old looks drawer) — now the card's own page. */
   searchParams: Promise<{ manage?: string }>;
 }) {
   const t = await getTranslations('scenes');
   const tActions = await getTranslations('actions');
+  const { manage } = await searchParams;
+  if (manage) {
+    redirect({
+      href: `/create/scenes/${encodeURIComponent(manage)}`,
+      locale: (await params).locale,
+    });
+  }
   if (!(await isSignedIn())) return <SignInPrompt />;
 
   const scenes = await serverFetchOrNull<Scene[]>('/v1/scenes', {
@@ -36,7 +46,7 @@ export default async function ScenesPage({
     <div className="mx-auto flex w-full max-w-[1160px] flex-col gap-6 px-4 py-6 sm:px-6">
       <GoBackLink fallbackHref="/create">{tActions('back')}</GoBackLink>
       <PageHeading eyebrow={t('eyebrow')} title={t('title')} description={t('subtitle')} />
-      <SceneLibrary initial={scenes} manageId={(await searchParams).manage} />
+      <SceneLibrary initial={scenes} />
     </div>
   );
 }

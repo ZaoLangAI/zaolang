@@ -39,6 +39,12 @@ export function sceneImageStudioHref(input: {
   return `/create/new?${params.toString()}`;
 }
 
+/** The card's own management page (variants and their images). */
+export function sceneManageHref(sceneId: string, variantId?: string | null): string {
+  const base = `/create/scenes/${encodeURIComponent(sceneId)}`;
+  return variantId ? `${base}?look=${encodeURIComponent(variantId)}` : base;
+}
+
 /** The one image a scene card shows — its master plate: an explicit
  * establishing tag, else the first unlabelled asset (labelled ones are
  * 黄昏/战损… variants), else the first asset. Mirrors the backend's

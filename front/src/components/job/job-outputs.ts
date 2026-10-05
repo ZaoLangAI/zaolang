@@ -66,8 +66,8 @@ export function partialDelivery(job: {
 
 /**
  * Where 去定稿 goes for a job whose images were filed as candidates (P2-1):
- * its card's library page with that card's looks / variants sheet open
- * (`?manage=`), else just the library.
+ * its card's management page (`/create/{characters|scenes}/[id]`), else
+ * just the library.
  */
 export function reviewCandidatesHref(job: {
   asset_kind?: string | null;
@@ -77,5 +77,5 @@ export function reviewCandidatesHref(job: {
   const scene = job.asset_kind === 'scene';
   const cardId = scene ? job.linked_scene_id : job.linked_character_id;
   const base = scene ? '/create/scenes' : '/create/characters';
-  return cardId ? `${base}?manage=${encodeURIComponent(cardId)}` : base;
+  return cardId ? `${base}/${encodeURIComponent(cardId)}` : base;
 }

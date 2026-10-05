@@ -1719,7 +1719,7 @@
   "characters": {
     "eyebrow": "キャラクターライブラリ",
     "title": "キャラクターと声",
-    "subtitle": "キャラクター設定図と声の説明を保存し、複数話をまたいで一貫性を保ちます。",
+    "subtitle": "キャラクターの外見・衣装・声を保存し、各話で一貫性を保ちます。",
     "newCharacter": "キャラクターを追加",
     "editCharacter": "キャラクターを編集",
     "nameLabel": "名前",
@@ -1729,19 +1729,9 @@
     "voiceHint": "声の特徴を文章で説明してください（例：低くしゃがれた中年男性の声）。音声サンプルのアップロードには対応していません。",
     "referenceLabel": "参考画像",
     "referenceHint": "正面・側面・背面の3方向。今後の生成でこのキャラクターの見た目を保つために使われます。",
-    "sheetLabel": "キャラクター設定図",
-    "sheetHint": "1枚の多分割設定図：左に全身三面図、右に顔のアップ・衣装ディテール・カラーパレット。アップロードや既存画像の選択もできます。",
-    "generateSheet": "設定図を生成",
-    "generateAgain": "設定図を再生成",
-    "saveAndGenerate": "保存して生成",
-    "referenceUpload": "アップロード",
-    "referenceChooseExisting": "既存から選択",
-    "referencePickerTitle": "生成済みの画像を選ぶ",
-    "referencePickerEmpty": "選択できる画像はまだありません",
-    "referencePickerError": "読み込みに失敗しました。再試行してください",
     "noReference": "参考画像はまだありません",
     "emptyTitle": "まだキャラクターがいません",
-    "emptyHint": "キャラクターを追加し、設定図を生成して複数話で使い回せるようにしましょう。",
+    "emptyHint": "キャラクターを作成し、管理ページで衣装を作ると、各話で再利用できます。",
     "publishCharacter": "キャラクターを共有",
     "publishCharacterHint": "共有すると審査に提出されます。承認されると他の制作者がスキル広場でこのキャラクターを見つけて利用できるようになります（価格を設定していればクレジットで解除できます）。",
     "portraitConsentLabel": "このキャラクターの肖像を公開共有する権利があることを確認し、他の人がそれを使って創作する可能性があることを理解しています。",
@@ -1764,7 +1754,11 @@
     "actionClipsLabel": "関連動画",
     "deleteConfirmTitle": "このキャラクターを削除しますか？",
     "deleteConfirmBody": "「{name}」を削除すると元に戻せません。設定図と声の説明も削除されます。",
-    "manageLooks": "衣装を管理"
+    "manageLooks": "衣装を管理",
+    "startLooks": "衣装づくりを始める",
+    "saveAndManage": "保存して衣装を管理",
+    "manageEyebrow": "キャラクター管理",
+    "backToLibrary": "キャラクター一覧へ戻る"
   },
   "collectionPage": {
     "eyebrow": "MY LIBRARY",
@@ -3271,7 +3265,9 @@
     "generateSceneVideo": "シーン動画を生成 →",
     "deleteConfirmTitle": "このシーンを削除しますか？",
     "deleteConfirmBody": "「{name}」を削除すると元に戻せません。参考素材も削除されます。",
-    "manageVariants": "バリエーションを管理"
+    "manageVariants": "バリエーションを管理",
+    "manageEyebrow": "シーン管理",
+    "backToLibrary": "シーン一覧へ戻る"
   },
   "scriptStudio": {
     "title": "台本づくり",

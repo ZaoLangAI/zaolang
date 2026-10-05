@@ -4,45 +4,35 @@ import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
-import {
-  ExistingAssetPickerDialog,
-  type ExistingAssetPick,
-} from '@/components/library/existing-asset-picker-dialog';
 import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { VideoFirstFrame } from '@/components/media/video-first-frame';
-import { AssetVariantsSheet } from '@/components/library/asset-variants-sheet';
 import { Button, IconButton } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog } from '@/components/ui/dialog';
 import { TextArea, TextInput } from '@/components/ui/field';
 import {
-  IconClose,
   IconGrid,
-  IconImage,
   IconPencil,
   IconPlus,
   IconShare,
   IconSparkle,
   IconTrash,
-  IconUpload,
   IconVideo,
 } from '@/components/ui/icons';
 import { MediaLightbox } from '@/components/ui/media-lightbox';
 import { Badge, Card, EmptyState, ErrorNotice } from '@/components/ui/primitives';
 import { Sheet } from '@/components/ui/sheet';
-import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { useRouter } from '@/i18n/navigation';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { Character } from '@/lib/api/types';
-import { characterImageStudioHref, characterSheetAsset } from '@/lib/characters';
+import { characterHeroUrl, characterManageHref } from '@/lib/characters';
 import {
   CREATION_SKILL_STATUS_LABEL_KEY,
   CREATION_SKILL_STATUS_TONE,
 } from '@/lib/creation-skill-status';
 import { useMinWidth } from '@/lib/use-media-query';
-import { uploadFile } from '@/lib/upload';
 
 // Status badges reuse `CREATION_SKILL_STATUS_*` — a character is a
 // `CreationSkillCategory.CHARACTER` skill under the hood.
@@ -51,39 +41,24 @@ interface CharacterForm {
   name: string;
   description: string;
   voiceDescription: string;
-  reference: ExistingAssetPick | null;
 }
 
 const EMPTY_FORM: CharacterForm = {
   name: '',
   description: '',
   voiceDescription: '',
-  reference: null,
 };
 
-function sheetHref(character: Pick<Character, 'id' | 'name' | 'description'>): string {
-  return characterImageStudioHref({
-    characterId: character.id,
-    name: character.name,
-    appearance: character.description,
-  });
-}
-
 /**
- * Card list of the creator's reusable cast, with a drawer to create or edit one.
+ * Card list of the creator's reusable cast, with a dialog to create or edit
+ * one's text profile (name, description, voice description).
  *
- * A character stores a text voice hint and one character-sheet image —
- * the multi-panel design board generated from the image studio — so what
- * is offered here is a profile a future generation call can be pointed at.
+ * Images are managed on the card's own page (`/create/characters/[id]`):
+ * the form never sends `reference_asset_ids`, which on the backend is a
+ * flat replace (`asset_variants.service.set_members`) that would drop every
+ * approved image the form did not list.
  */
-export function CharacterLibrary({
-  initial,
-  manageId,
-}: {
-  initial: Character[];
-  /** Opens this card's looks sheet on arrival (`?manage=`, the studio's 去定稿). */
-  manageId?: string;
-}) {
+export function CharacterLibrary({ initial }: { initial: Character[] }) {
   const t = useTranslations('characters');
   const tActions = useTranslations('actions');
   const tStates = useTranslations('states');
@@ -96,11 +71,8 @@ export function CharacterLibrary({
   const [editing, setEditing] = useState<Character | null>(null);
   const [form, setForm] = useState<CharacterForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
-  const [saveIntent, setSaveIntent] = useState<'save' | 'saveAndGenerate'>('save');
   const [formError, setFormError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Character | null>(null);
@@ -117,9 +89,6 @@ export function CharacterLibrary({
   const [publishBusy, setPublishBusy] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
-  const [looksTarget, setLooksTarget] = useState<Character | null>(
-    () => initial.find((character) => character.id === manageId) ?? null,
-  );
 
   const openCreate = () => {
     setEditing(null);
@@ -130,13 +99,11 @@ export function CharacterLibrary({
   };
 
   const openEdit = (character: Character) => {
-    const sheet = characterSheetAsset(character);
     setEditing(character);
     setForm({
       name: character.name,
       description: character.description ?? '',
       voiceDescription: character.voice_description ?? '',
-      reference: sheet ? { id: sheet.asset_id, url: sheet.url ?? '' } : null,
     });
     setFormError(null);
     setNameError(null);
@@ -148,36 +115,10 @@ export function CharacterLibrary({
     setSheetOpen(false);
   };
 
-  const setReference = (asset: ExistingAssetPick | null) => {
-    setForm((current) => ({ ...current, reference: asset }));
-  };
-
-  const uploadReference = async (file: File | undefined) => {
-    if (!file) return;
-    setUploading(true);
-    try {
-      const asset = await uploadFile(file, 'generation_reference');
-      setReference({ id: asset.id, url: asset.url ?? '' });
-    } catch {
-      notify(tStates('error'), 'error');
-    } finally {
-      setUploading(false);
-    }
-  };
-
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const name = form.name.trim();
     if (!name) return;
-    // Read the clicked submitter — `setSaveIntent` in the button's onClick
-    // is not flushed before this handler, so `saveIntent` would still be
-    // `'save'` and "保存并生成" would only create the card.
-    const submitter = (event.nativeEvent as SubmitEvent).submitter;
-    const intent =
-      submitter instanceof HTMLButtonElement && submitter.value === 'saveAndGenerate'
-        ? 'saveAndGenerate'
-        : 'save';
-    setSaveIntent(intent);
     const duplicate = characters.some(
       (item) => item.id !== editing?.id && item.name.trim() === name,
     );
@@ -194,30 +135,19 @@ export function CharacterLibrary({
       const payload = {
         name,
         description: form.description.trim() || null,
-        reference_asset_ids: form.reference ? [form.reference.id] : [],
         voice_description: form.voiceDescription.trim() || null,
       };
-      let saved = editing
+      const saved = editing
         ? await api.patch<Character>(`/v1/characters/${editing.id}`, payload)
         : await api.post<Character>('/v1/characters', payload);
-      // The call above resets every reference asset's view tag to `general`
-      // (`_entries_from_flat_ids`) — tag the one sheet as `front` so the
-      // card hero and a later studio seed both find it.
-      if (form.reference) {
-        await api.patch(`/v1/characters/${saved.id}/reference-assets/${form.reference.id}`, {
-          view: 'front',
-        });
-        saved = await api.get<Character>(`/v1/characters/${saved.id}`);
-      }
       setCharacters((current) =>
         editing
           ? current.map((item) => (item.id === saved.id ? saved : item))
           : [saved, ...current],
       );
       setSheetOpen(false);
-      if (intent === 'saveAndGenerate' && !form.reference) {
-        router.push(sheetHref(saved));
-      }
+      // A new card has no images yet — its page is where the first look starts.
+      if (!editing) router.push(characterManageHref(saved.id));
     } catch (caught) {
       if (caught instanceof ApiError) {
         const taken = Boolean(caught.fieldErrors.name);
@@ -228,7 +158,6 @@ export function CharacterLibrary({
       }
     } finally {
       setSaving(false);
-      setSaveIntent('save');
     }
   };
 
@@ -341,97 +270,22 @@ export function CharacterLibrary({
           setForm((current) => ({ ...current, voiceDescription: event.target.value }))
         }
       />
-      <div>
-        <p className="text-sm font-medium text-text">{t('sheetLabel')}</p>
-        <p className="mt-1 text-xs text-muted">{t('sheetHint')}</p>
-        <div className="mt-2 max-w-xs">
-          {form.reference ? (
-            <div className="relative aspect-video overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
-              <button
-                type="button"
-                aria-label={tMedia('lightboxTitle')}
-                onClick={() => setLightboxUrl(form.reference?.url ?? null)}
-                className="absolute inset-0"
-              >
-                <Image
-                  src={form.reference.url}
-                  alt=""
-                  fill
-                  sizes="320px"
-                  className="object-contain"
-                />
-              </button>
-              <button
-                type="button"
-                aria-label={tActions('delete')}
-                onClick={() => setReference(null)}
-                className="absolute right-1 top-1 grid size-5 place-items-center rounded-full bg-surface-raised/90 text-muted hover:text-text"
-              >
-                <IconClose className="size-3" />
-              </button>
-            </div>
-          ) : (
-            <div className="flex aspect-video flex-col overflow-hidden rounded-[var(--radius-sm)] border border-dashed border-border">
-              <label className="flex flex-1 cursor-pointer flex-col items-center justify-center gap-1 border-b border-dashed border-border text-muted transition-colors hover:border-border-strong hover:text-text">
-                {uploading ? (
-                  <Spinner className="size-4" />
-                ) : (
-                  <>
-                    <IconUpload className="size-4" />
-                    <span className="text-[10px]">{t('referenceUpload')}</span>
-                  </>
-                )}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="sr-only"
-                  onChange={(event) => void uploadReference(event.target.files?.[0])}
-                />
-              </label>
-              <button
-                type="button"
-                onClick={() => setPickerOpen(true)}
-                className="flex flex-1 flex-col items-center justify-center gap-1 text-muted transition-colors hover:text-text"
-              >
-                <IconImage className="size-4" />
-                <span className="text-[10px]">{t('referenceChooseExisting')}</span>
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
     </form>
   );
 
-  const canSaveAndGenerate = !form.reference;
   const formFooter = (
     <div className="flex w-full flex-wrap justify-end gap-3">
       <Button variant="ghost" onClick={closeSheet} disabled={saving}>
         {tActions('cancel')}
       </Button>
-      {canSaveAndGenerate ? (
-        <Button
-          type="submit"
-          form="character-form"
-          name="intent"
-          value="saveAndGenerate"
-          variant="secondary"
-          loading={saving && saveIntent === 'saveAndGenerate'}
-          disabled={saving}
-        >
-          {t('saveAndGenerate')}
-        </Button>
-      ) : null}
       <Button
         type="submit"
         form="character-form"
-        name="intent"
-        value="save"
-        loading={saving && saveIntent === 'save'}
+        loading={saving}
         disabled={saving}
         className="w-28"
       >
-        {tActions('save')}
+        {editing ? tActions('save') : t('saveAndManage')}
       </Button>
     </div>
   );
@@ -453,35 +307,29 @@ export function CharacterLibrary({
       ) : (
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {characters.map((character) => {
-            const sheet = characterSheetAsset(character);
+            const hero = characterHeroUrl(character);
             return (
               <li key={character.id}>
                 <Card className="flex h-full flex-col gap-3 p-4">
                   <h3 className="truncate text-sm font-semibold">{character.name}</h3>
                   <div className="relative aspect-video overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
-                    {sheet?.url ? (
+                    {hero ? (
                       <button
                         type="button"
                         aria-label={tMedia('lightboxTitle')}
-                        onClick={() => setLightboxUrl(sheet.url ?? null)}
+                        onClick={() => setLightboxUrl(hero)}
                         className="absolute inset-0"
                       >
-                        <Image
-                          src={sheet.url}
-                          alt=""
-                          fill
-                          sizes="360px"
-                          className="object-contain"
-                        />
+                        <Image src={hero} alt="" fill sizes="360px" className="object-contain" />
                       </button>
                     ) : (
                       <button
                         type="button"
-                        onClick={() => router.push(sheetHref(character))}
+                        onClick={() => router.push(characterManageHref(character.id))}
                         className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted transition-colors hover:text-text"
                       >
                         <IconSparkle className="size-4" />
-                        <span className="text-[10px]">{t('generateSheet')}</span>
+                        <span className="text-[10px]">{t('startLooks')}</span>
                       </button>
                     )}
                   </div>
@@ -533,13 +381,6 @@ export function CharacterLibrary({
                   <div className="mt-auto flex items-center justify-center gap-6 border-t border-border pt-3">
                     <IconButton
                       size="sm"
-                      label={sheet ? t('generateAgain') : t('generateSheet')}
-                      onClick={() => router.push(sheetHref(character))}
-                    >
-                      <IconSparkle className="size-4" />
-                    </IconButton>
-                    <IconButton
-                      size="sm"
                       label={tActions('edit')}
                       onClick={() => openEdit(character)}
                     >
@@ -548,7 +389,7 @@ export function CharacterLibrary({
                     <IconButton
                       size="sm"
                       label={t('manageLooks')}
-                      onClick={() => setLooksTarget(character)}
+                      onClick={() => router.push(characterManageHref(character.id))}
                     >
                       <IconGrid className="size-4" />
                     </IconButton>
@@ -613,18 +454,6 @@ export function CharacterLibrary({
         </Sheet>
       )}
 
-      <ExistingAssetPickerDialog
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onSelect={(asset) => {
-          setReference(asset);
-          setPickerOpen(false);
-        }}
-        title={t('referencePickerTitle')}
-        empty={t('referencePickerEmpty')}
-        error={t('referencePickerError')}
-      />
-
       <MediaLightbox
         open={lightboxUrl !== null}
         src={lightboxUrl}
@@ -685,36 +514,6 @@ export function CharacterLibrary({
           {publishError ? <ErrorNotice title={publishError} /> : null}
         </div>
       </Dialog>
-      {looksTarget ? (
-        <AssetVariantsSheet
-          kind="character"
-          card={looksTarget}
-          variants={looksTarget.looks ?? []}
-          anchorEntryId={looksTarget.anchor_entry_id}
-          open
-          onClose={() => setLooksTarget(null)}
-          onCardChange={(updated) => {
-            setLooksTarget(updated);
-            setCharacters((current) => current.map((c) => (c.id === updated.id ? updated : c)));
-          }}
-          generateHref={(look) =>
-            characterImageStudioHref({
-              characterId: looksTarget.id,
-              name: looksTarget.name,
-              appearance: [looksTarget.description, look.is_default ? null : look.description]
-                .filter(Boolean)
-                .join('。'),
-              variantId: look.id,
-            })
-          }
-          portraitHref={characterImageStudioHref({
-            characterId: looksTarget.id,
-            name: looksTarget.name,
-            appearance: looksTarget.description,
-            portrait: true,
-          })}
-        />
-      ) : null}
     </div>
   );
 }

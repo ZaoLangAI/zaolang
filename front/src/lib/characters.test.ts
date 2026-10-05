@@ -5,7 +5,9 @@ import type { AssetEntry, AssetVariant, GenerationJob } from '@/lib/api/types';
 import {
   borrowedCharacterReferences,
   CHARACTER_SHEET_PROMPT_HINT,
+  characterHeroUrl,
   characterImageStudioHref,
+  characterManageHref,
   characterSheetAsset,
   characterSheetPrompt,
   defaultCharacterReferenceIds,
@@ -288,5 +290,37 @@ describe('borrowedCharacterReferences', () => {
       'sheet',
       'outfit',
     ]);
+  });
+});
+
+describe('characterManageHref', () => {
+  it('links the card page, optionally focused on one look', () => {
+    expect(characterManageHref('sk_1')).toBe('/create/characters/sk_1');
+    expect(characterManageHref('sk_1', 'skv_2')).toBe('/create/characters/sk_1?look=skv_2');
+  });
+});
+
+describe('characterHeroUrl', () => {
+  const withUrl = (e: AssetEntry) => ({ ...e, url: `https://cdn/${e.id}.png` }) as AssetEntry;
+
+  it('leads with the anchor, then the approved portrait, then the legacy sheet', () => {
+    const portrait = withUrl(entry('portrait', 'identity_portrait'));
+    const sheet = withUrl(entry('sheet', 'character_sheet'));
+    expect(
+      characterHeroUrl({
+        anchor_entry_id: 'sheet',
+        looks: [look('default', true, [portrait, sheet])],
+      } as Character),
+    ).toBe('https://cdn/sheet.png');
+    expect(
+      characterHeroUrl({ looks: [look('default', true, [sheet, portrait])] } as Character),
+    ).toBe('https://cdn/portrait.png');
+    expect(
+      characterHeroUrl({
+        looks: [look('default', true, [withUrl(entry('p2', 'identity_portrait', 'candidate'))])],
+        reference_assets: [{ asset_id: 'legacy', view: 'front', url: 'https://cdn/legacy.png' }],
+      } as Character),
+    ).toBe('https://cdn/legacy.png');
+    expect(characterHeroUrl({ looks: [] } as unknown as Character)).toBeNull();
   });
 });

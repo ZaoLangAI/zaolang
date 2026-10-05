@@ -1,19 +1,24 @@
 'use client';
 
-import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 import { LookFillDialog } from '@/components/characters/look-fill-dialog';
 import { matchesPresetFilter } from '@/features/image-assets/matrix';
+import {
+  CHARACTER_ENTRY_TYPES,
+  EntryCard,
+  SCENE_ENTRY_TYPES,
+  type CardKind,
+} from '@/components/library/entry-actions';
 import { candidateCount, groupEntries } from '@/components/library/entry-groups';
 import { SceneMatrixDialog } from '@/components/scenes/scene-matrix-dialog';
-import { Button, IconButton } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Select, TextArea, TextInput } from '@/components/ui/field';
-import { IconCheck, IconPlus, IconSparkle, IconTrash, IconUpload } from '@/components/ui/icons';
-import { Badge } from '@/components/ui/primitives';
-import { Sheet } from '@/components/ui/sheet';
+import { IconPlus, IconSparkle, IconUpload } from '@/components/ui/icons';
+import { ErrorNotice } from '@/components/ui/primitives';
+import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import {
   AGE_STAGES,
@@ -31,19 +36,8 @@ import type { AssetEntry, AssetEntryType, AssetVariant } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { uploadFile } from '@/lib/upload';
 
-export type CardKind = 'character' | 'scene';
+export type { CardKind };
 
-const CHARACTER_ENTRY_TYPES: AssetEntryType[] = [
-  'identity_portrait',
-  'character_sheet',
-  'view',
-  'expression_sheet',
-  'pose',
-  'outfit_detail',
-  'prop',
-  'other',
-];
-const SCENE_ENTRY_TYPES: AssetEntryType[] = ['master', 'shot', 'other'];
 const VARIANT_FILTER_THRESHOLD = 8;
 const PRESET_AXES = [
   { axis: 'lighting', table: SCENE_LIGHTINGS },
@@ -56,20 +50,19 @@ const PRESET_AXES = [
  * A character's looks (造型) or a scene's variants (变体) and the images
  * filed under each — `/v1/{characters|scenes}/{id}/{looks|variants}…`.
  * Every change refetches the card and hands it back via `onCardChange`, so
- * the library grid (sheet thumbnail, `reference_assets`) stays in step.
+ * the page holding it (`/create/{characters|scenes}/[id]`) stays in step.
  *
  * Images are grouped by role (`groupEntries`). A generated image whose slot
  * already had an approved one arrives as a candidate (P2-1): it is shown
  * after the approved image so the two can be compared, and 定稿 swaps them.
  * Candidates are never removed automatically — only from here.
  */
-export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
+export function AssetVariantsPanel<TCard extends { id: string; name: string }>({
   kind,
   card,
   variants,
   anchorEntryId,
-  open,
-  onClose,
+  initialVariantId,
   onCardChange,
   generateHref,
   portraitHref,
@@ -78,8 +71,8 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
   card: TCard;
   variants: AssetVariant[];
   anchorEntryId: string | null | undefined;
-  open: boolean;
-  onClose: () => void;
+  /** Opens on this look / variant (`?look=`), else the first. */
+  initialVariantId?: string | null;
   onCardChange: (card: TCard) => void;
   /** Image-studio deep link that files its output under `variant`. */
   generateHref: (variant: AssetVariant) => string;
@@ -92,7 +85,7 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
   const router = useRouter();
   const base = `/v1/${kind === 'character' ? 'characters' : 'scenes'}/${card.id}`;
   const segment = kind === 'character' ? 'looks' : 'variants';
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(initialVariantId ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
@@ -175,14 +168,14 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
     });
 
   return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      title={t(kind === 'character' ? 'titleLooks' : 'titleVariants', { name: card.name })}
-      description={t(kind === 'character' ? 'hintLooks' : 'hintVariants')}
-      loading={busy}
-      error={error}
-    >
+    <section aria-busy={busy} className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-muted">
+          {t(kind === 'character' ? 'hintLooks' : 'hintVariants')}
+        </p>
+        {busy ? <Spinner className="size-4 shrink-0" /> : null}
+      </div>
+      {error ? <ErrorNotice title={error} /> : null}
       <div className="flex flex-col gap-4">
         {kind === 'character' && portraitHref && !hasPortrait ? (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-dashed border-border p-3">
@@ -357,7 +350,7 @@ export function AssetVariantsSheet<TCard extends { id: string; name: string }>({
           onProgress={() => void run(() => Promise.resolve())}
         />
       ) : null}
-    </Sheet>
+    </section>
   );
 }
 
@@ -578,92 +571,5 @@ function VariantPanel({
         }}
       />
     </div>
-  );
-}
-
-function EntryCard({
-  entry,
-  variant,
-  variants,
-  isAnchor,
-  entryTypes,
-  onUpdate,
-  onDelete,
-  onAnchor,
-  onApprove,
-}: {
-  entry: AssetEntry;
-  variant: AssetVariant;
-  variants: AssetVariant[];
-  isAnchor: boolean;
-  entryTypes: AssetEntryType[];
-  onUpdate: (body: Record<string, unknown>) => void;
-  onDelete: () => void;
-  onAnchor: () => void;
-  onApprove: () => void;
-}) {
-  const t = useTranslations('assetVariants');
-  const candidate = entry.status === 'candidate';
-  return (
-    <li
-      className={cn(
-        'flex flex-col gap-1.5 rounded-[var(--radius-sm)] border p-1.5',
-        candidate ? 'border-dashed border-border' : 'border-border',
-      )}
-    >
-      <div
-        className={cn(
-          'relative aspect-square overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft',
-          candidate && 'opacity-70',
-        )}
-      >
-        {entry.url ? (
-          <Image src={entry.url} alt="" fill sizes="160px" className="object-cover" />
-        ) : null}
-        {isAnchor ? (
-          <span className="absolute left-1 top-1">
-            <Badge tone="primary">{t('anchor')}</Badge>
-          </span>
-        ) : candidate ? (
-          <span className="absolute left-1 top-1">
-            <Badge>{t('candidate')}</Badge>
-          </span>
-        ) : null}
-      </div>
-      {candidate ? (
-        <Button size="sm" onClick={onApprove} title={t('approveHint')}>
-          {t('approve')}
-        </Button>
-      ) : (
-        <>
-          <Select
-            label={t('entryType')}
-            value={entry.entry_type}
-            onChange={(event) => onUpdate({ entry_type: event.target.value })}
-            options={entryTypes.map((type) => ({ value: type, label: t(`type.${type}`) }))}
-          />
-          {variants.length > 1 ? (
-            <Select
-              label={t('moveTo')}
-              value={variant.id}
-              onChange={(event) => onUpdate({ variant_id: event.target.value })}
-              options={variants.map((v) => ({ value: v.id, label: v.name }))}
-            />
-          ) : null}
-        </>
-      )}
-      <div className="flex justify-between">
-        {candidate ? (
-          <span />
-        ) : (
-          <IconButton size="sm" label={t('setAnchor')} disabled={isAnchor} onClick={onAnchor}>
-            <IconCheck className="size-4" />
-          </IconButton>
-        )}
-        <IconButton size="sm" variant="danger" label={t('removeEntry')} onClick={onDelete}>
-          <IconTrash className="size-4" />
-        </IconButton>
-      </div>
-    </li>
   );
 }

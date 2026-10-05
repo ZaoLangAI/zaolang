@@ -9,7 +9,6 @@ import {
   type ExistingAssetPick,
 } from '@/components/library/existing-asset-picker-dialog';
 import { AccessPriceField } from '@/components/marketplace/access-price-field';
-import { AssetVariantsSheet } from '@/components/library/asset-variants-sheet';
 import { Button, IconButton } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog } from '@/components/ui/dialog';
@@ -38,7 +37,7 @@ import {
   CREATION_SKILL_STATUS_LABEL_KEY,
   CREATION_SKILL_STATUS_TONE,
 } from '@/lib/creation-skill-status';
-import { sceneHeroAsset, sceneImageStudioHref } from '@/lib/scenes';
+import { sceneHeroAsset, sceneImageStudioHref, sceneManageHref } from '@/lib/scenes';
 import { useMinWidth } from '@/lib/use-media-query';
 import { uploadFile } from '@/lib/upload';
 
@@ -101,14 +100,7 @@ function referenceIdsForSave(scene: Scene | null, heroId: string | null): string
  * historical stills stay on a read-only strip — so a future generation
  * call (or a linked script scene heading) can be pointed at it.
  */
-export function SceneLibrary({
-  initial,
-  manageId,
-}: {
-  initial: Scene[];
-  /** Opens this card's variants sheet on arrival (`?manage=`, the studio's 去定稿). */
-  manageId?: string;
-}) {
+export function SceneLibrary({ initial }: { initial: Scene[] }) {
   const t = useTranslations('scenes');
   const tActions = useTranslations('actions');
   const tStates = useTranslations('states');
@@ -134,9 +126,6 @@ export function SceneLibrary({
   const [publishBusy, setPublishBusy] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
-  const [variantsTarget, setVariantsTarget] = useState<Scene | null>(
-    () => initial.find((scene) => scene.id === manageId) ?? null,
-  );
   // `Sheet` (bottom drawer) below `lg`, `Dialog` (centred) at/above it —
   // mirrors `character-library.tsx` and `generation-studio-shell.tsx`'s own
   // `lg`-gated Sheet. Safe pre-hydration: `sheetOpen` only ever flips true
@@ -524,7 +513,7 @@ export function SceneLibrary({
                     <IconButton
                       size="sm"
                       label={t('manageVariants')}
-                      onClick={() => setVariantsTarget(scene)}
+                      onClick={() => router.push(sceneManageHref(scene.id))}
                     >
                       <IconGrid className="size-4" />
                     </IconButton>
@@ -648,29 +637,6 @@ export function SceneLibrary({
           {publishError ? <ErrorNotice title={publishError} /> : null}
         </div>
       </Dialog>
-      {variantsTarget ? (
-        <AssetVariantsSheet
-          kind="scene"
-          card={variantsTarget}
-          variants={variantsTarget.variants ?? []}
-          anchorEntryId={variantsTarget.anchor_entry_id}
-          open
-          onClose={() => setVariantsTarget(null)}
-          onCardChange={(updated) => {
-            setVariantsTarget(updated);
-            setScenes((current) => current.map((c) => (c.id === updated.id ? updated : c)));
-          }}
-          generateHref={(variant) =>
-            sceneImageStudioHref({
-              sceneId: variantsTarget.id,
-              name: variantsTarget.name,
-              description: variantsTarget.description,
-              variantId: variant.id,
-              presets: variant.presets as { lighting?: string | null; weather?: string | null },
-            })
-          }
-        />
-      ) : null}
     </div>
   );
 }
