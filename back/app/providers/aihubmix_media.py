@@ -1,9 +1,9 @@
 """AiHubMix-style HTTP media provider.
 
-The first *real* generation provider — every other one in `app/providers/` is
-a fake that never leaves the process. Image and audio calls are synchronous
-OpenAI-compatible HTTP requests; video calls are asynchronous: create a task,
-poll it, then download the finished file once it completes.
+The first real generation provider; DMXAPI, fal and MiniMax v2 followed it in
+the same shape (see `media_endpoints._factory`). Image and audio calls are
+synchronous OpenAI-compatible HTTP requests; video calls are asynchronous:
+create a task, poll it, then download the finished file once it completes.
 
 One instance is bound to exactly one (endpoint, capability) pair. That keeps
 `ProviderAttempt.provider`/the router's catalog key one-to-one, so per-model

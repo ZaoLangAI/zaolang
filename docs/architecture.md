@@ -22,7 +22,7 @@ back/app/
 ├─ agents/         Safety / Planner / Quality / Copy / Router
 ├─ teams/          Generation Gateway Team
 ├─ workflows/      生成工作流编排
-├─ providers/      生成供应商适配器（fake open / fake paid）
+├─ providers/      生成供应商适配器（AiHubMix / DMXAPI / fal / MiniMax v2）
 ├─ llm/            OpenAI 兼容网关客户端、模式切换、响应规范化
 ├─ platform_config/ 运行时配置中心与 Feature Flag
 ├─ workers/        Celery 任务（生成队列 + media_analysis + 租约/孤儿清理）
