@@ -58,6 +58,12 @@ def resolve(
     # Server-written below; a client never sets either.
     params.pop("reference_labels", None)
     params.pop("target_look", None)
+    # The per-pass camera pose is written into `extra` by the workflow
+    # (`nodes.execute_asset_planning`) from `camera_poses`; a client-sent
+    # one would steer the camera-control route on any image job.
+    extra = params.get("extra")
+    if isinstance(extra, dict) and "camera_pose" in extra:
+        params["extra"] = {k: v for k, v in extra.items() if k != "camera_pose"}
     hints = asset_variants_service.ReferenceHints(
         shot=shot_hint or params.get("reference_shot_size") or _prompt_shot_size(params),
         emotion=emotion_hint or params.get("reference_emotion"),

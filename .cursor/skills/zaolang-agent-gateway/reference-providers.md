@@ -54,7 +54,8 @@ Single owner for media-provider contracts and quirks. Protocol/pricing schema: s
 
 ## fal (`back/app/providers/fal_media.py`)
 
-- Models: `minimax/h3-max` (video), `minimax/voice-clone`, `minimax-music/v2.6`, `elevenlabs/sound-effects/v2`.
+- Models: `minimax/h3-max` (video), `minimax/voice-clone`, `minimax-music/v2.6`, `elevenlabs/sound-effects/v2`, `fal-ai/qwen-image-edit-2511-multiple-angles` (image_to_image, camera control).
+- Multi-angle (`build_multi_angle_body`): first image reference only (`MULTI_ANGLE_MAX_REFERENCES`), pose from `extra.camera_pose` → `horizontal_angle`/`vertical_angle`/`zoom` (`app.domain.image_assets.camera.to_fal`), prompt → `additional_prompt`, ~1MP `image_size` per aspect, output `generated/{job}/output_{attempt}.png`. Flat app path like the audio apps, task route `multi-angle`. Save the endpoint with image-only input (else it also derives `text_to_image`). `supports_camera_control` → `ProviderCapability.camera_control`; the client can never set `extra.camera_pose` (`reference_resolver.resolve` drops it).
 - H3 Max routes by reference shape: none → `text-to-video`; only first/last frame → `image-to-video`; any generic ref → `reference-to-video`. Profile 5–15s, `480P`/`768P` (no 2K), t2v `adaptive`→`16:9`, ≤12 files.
 - Always `prompt_expansion_mode=balanced`, `enable_safety_checker=true`; never `sync_mode` or the `fal-client` SDK. `external_task_id` = `{route}#{request_id}` (ids are per-app). `COMPLETED` + `error` → `PROVIDER_TASK_FAILED`. Queue paths unverified live.
 

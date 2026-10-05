@@ -32,7 +32,7 @@ Not here → `zaolang-generation-jobs` (pipeline, fast-retry seeding, SSE), `zao
 
 ## Invariants
 
-1. Routing: filtering is code, choosing is the LLM. `route()` sets `filter_reason` (op/tier/duration/aspect/resolution/reference-mode unsupported, `edit_model_requires_video_source`, 白膜 motion guide → `edit_model_not_for_motion_guide`/`video_reference_not_supported`, `music_style_not_supported` for `extra.audio_style`, latency, `previously_failed_this_job`, `provider_circuit_open`); survivors go to `select_provider`. LLM unavailable/off-list → `selected=None`, `reason="llm_selection_unavailable"`. No weighted formula/`routing_weights`; soft preferences live only in `SELECT_PROVIDER_SYSTEM_PROMPT`. `back/app/agents/router.py:route`
+1. Routing: filtering is code, choosing is the LLM. `route()` sets `filter_reason` (op/tier/duration/aspect/resolution/reference-mode unsupported, `edit_model_requires_video_source`, 白膜 motion guide → `edit_model_not_for_motion_guide`/`video_reference_not_supported`, `music_style_not_supported` for `extra.audio_style`, `camera_pose_required` (a `camera_control` route without `extra.camera_pose`), latency, `previously_failed_this_job`, `provider_circuit_open`); survivors go to `select_provider`. LLM unavailable/off-list → `selected=None`, `reason="llm_selection_unavailable"`. No weighted formula/`routing_weights`; soft preferences live only in `SELECT_PROVIDER_SYSTEM_PROMPT`. `back/app/agents/router.py:route`
 2. `Candidate` stats (`success_rate`, latency, `effective_cost_micro_usd`, `estimated_cost_micro_usd`, `model`) are LLM input + admin replay only; no code sorts on them. `quality_prior` is a flat `_QUALITY_PRIOR` — never add a model→score table. `router._candidate_payload`
 3. `success_rate` = Beta-smoothed with 0.8 prior over `PRIOR_PSEUDO_SAMPLES`=8; effective cost × `RETRY_COST_AMPLIFICATION`=1.2. `router._success_rate`
 4. Every filtered candidate's reason is persisted (`ProviderAttempt`/decision record) for admin replay.
@@ -50,6 +50,7 @@ Not here → `zaolang-generation-jobs` (pipeline, fast-retry seeding, SSE), `zao
 16. Quality judges metadata only (it cannot see media); prompt-text durations / missing width are not defects. A new `output_summary` field a model could misread needs a prompt note. `tests/unit/test_quality_duration_gate.py`
 17. Prompt polish: degraded copy agent → `error` frame with `ENHANCE_UNAVAILABLE_MESSAGE`, never echo the input as a polish; drama reference skills are video-only and advisory (empty on any failure). `back/app/domain/prompts.py`
 18. Secrets only via the masked `/admin/models` API — never config API, logs or prompts. No embedding model here (see `zaolang-discovery-search`).
+19. Camera preference is the one code-side routing preference: a posed pass (`extra.camera_pose`, server-written per pass by `execute_asset_planning`; `reference_resolver.resolve` drops a client value) with no `forced_model` narrows survivors to `ProviderCapability.camera_control` routes when any is eligible (the rest get `camera_control_preferred`); once those are tried or breaker-open the prompt-only models serve the same pass. `router.route`
 
 Cross-job exclusion: see `zaolang-generation-jobs › fast-retry`.
 
@@ -69,7 +70,7 @@ Cross-job exclusion: see `zaolang-generation-jobs › fast-retry`.
 
 ```bash
 cd back && conda run -n zaolang pytest tests/unit/test_agent_gateway.py tests/unit/test_media_routing.py tests/unit/test_media_breaker.py tests/unit/test_llm_normalize.py tests/unit/test_llm_gateway_failover.py tests/unit/test_llm_failover_lease.py tests/unit/test_llm_capabilities.py tests/unit/test_prompt_enhance.py tests/unit/test_agent_questions.py tests/unit/test_scene_skills.py tests/unit/test_skill_matcher.py tests/unit/test_quality_duration_gate.py tests/integration/test_prompts_api.py -v
-cd back && conda run -n zaolang pytest tests/unit/test_aihubmix_media.py tests/unit/test_dmxapi_media.py tests/unit/test_minimax_v2_media.py tests/unit/test_fal_media.py tests/unit/test_model_catalog.py tests/unit/test_provider_connectivity.py -v
+cd back && conda run -n zaolang pytest tests/unit/test_aihubmix_media.py tests/unit/test_dmxapi_media.py tests/unit/test_minimax_v2_media.py tests/unit/test_fal_media.py tests/unit/test_model_catalog.py tests/unit/test_provider_connectivity.py tests/unit/test_camera_routing.py tests/unit/test_image_camera.py -v
 make test-llm   # live smoke, real keys, not in make check
 ```
 

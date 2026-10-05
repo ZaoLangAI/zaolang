@@ -382,9 +382,14 @@ _MINIMAX_CAPABILITIES = frozenset(
 # `fal-ai/minimax-music/v2.6` for BGM, `fal-ai/elevenlabs/sound-effects/v2`
 # for SFX) joined the same way — confirmed against each model's own fal.ai
 # docs page (2026-09), not yet exercised against a live credential.
+# `image_to_image` is the camera-control family only
+# (`fal-ai/qwen-image-edit-2511-multiple-angles`, saved with image-only
+# input so it never derives `text_to_image`); the router keeps it away from
+# any request without a camera pose (`camera_pose_required`).
 _FAL_CAPABILITIES = _MINIMAX_CAPABILITIES | {
     Operation.AUDIO_GENERATION.value,
     Operation.MUSIC_GENERATION.value,
+    Operation.IMAGE_TO_IMAGE.value,
 }
 _COMFYUI_CAPABILITIES = (_OPENAI_CAPABILITIES | _MINIMAX_CAPABILITIES) - {
     Operation.AUDIO_GENERATION.value

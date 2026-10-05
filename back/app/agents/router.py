@@ -231,6 +231,21 @@ def route(
     # independent of which one it ends up picking.
     eligible.sort(key=lambda c: c.provider)
 
+    if not forced_model and _requested_camera_pose(params):
+        # A posed pass (multi-angle library image) prefers a model that takes
+        # the pose as parameters over one that has to read it from the
+        # prompt. Only a preference: once the camera routes are tried or
+        # breaker-open they drop out above and the prompt-only models serve
+        # the same pass (`prompt_builder` phrases the move in words).
+        camera_routes = [c for c in eligible if catalog[c.provider].camera_control]
+        if camera_routes:
+            camera_names = {c.provider for c in camera_routes}
+            for candidate in eligible:
+                if candidate.provider not in camera_names:
+                    candidate.eligible = False
+                    candidate.filter_reason = "camera_control_preferred"
+            eligible = camera_routes
+
     if forced_model:
         matched = [c for c in eligible if catalog[c.provider].model_or_workflow == forced_model]
         if not matched:
@@ -311,6 +326,11 @@ def _request_constraint_failure(
 ) -> str | None:
     """Hard-filter a provider that physically cannot honour the request."""
 
+    if capability.camera_control and not _requested_camera_pose(params):
+        # A camera-control model only re-renders a pose; an unposed image
+        # edit sent there would come back as some arbitrary angle.
+        return "camera_pose_required"
+
     if (
         capability.generation_kind == MediaGenerationKind.EDIT
         and bool(capability.operations & _VIDEO_GENERATION_OPERATIONS)
@@ -378,6 +398,11 @@ def _request_constraint_failure(
         ):
             return "music_style_not_supported"
     return None
+
+
+def _requested_camera_pose(params: Mapping[str, Any]) -> bool:
+    extra = params.get("extra")
+    return isinstance(extra, Mapping) and isinstance(extra.get("camera_pose"), Mapping)
 
 
 def _resolved_request_params(

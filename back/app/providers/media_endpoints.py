@@ -47,6 +47,9 @@ from app.providers.fal_media import (
     MAX_REFERENCE_FILES as FAL_MAX_REFERENCE_FILES,
 )
 from app.providers.fal_media import (
+    MULTI_ANGLE_MAX_REFERENCES as FAL_MULTI_ANGLE_MAX_REFERENCES,
+)
+from app.providers.fal_media import (
     FalMediaProvider,
 )
 from app.providers.fal_media import (
@@ -54,6 +57,9 @@ from app.providers.fal_media import (
 )
 from app.providers.fal_media import (
     music_style_for_model as fal_music_style_for_model,
+)
+from app.providers.fal_media import (
+    supports_camera_control as fal_supports_camera_control,
 )
 from app.providers.fal_media import (
     video_model_profile as fal_video_profile,
@@ -216,6 +222,7 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                 ),
                 max_image_references=_max_image_references(endpoint.protocol, endpoint.model, tag),
                 max_outputs_per_call=_max_outputs_per_call(endpoint.protocol, endpoint.model, tag),
+                camera_control=_camera_control(endpoint.protocol, endpoint.model, tag),
                 provider_factory=_factory(
                     endpoint_id=endpoint_id,
                     capability_tag=tag,
@@ -292,6 +299,8 @@ def _max_image_references(protocol: str | None, model: str, tag: str) -> int | N
             return profile.max_reference_count if profile is not None else None
         if protocol in {"minimax", "openai", "dashscope", None}:
             return aihubmix_image_reference_cap(model)
+        if protocol == "fal" and fal_supports_camera_control(model):
+            return FAL_MULTI_ANGLE_MAX_REFERENCES
         return None
     if tag in _VIDEO_TAGS:
         if protocol == "minimax_v2":
@@ -309,6 +318,11 @@ def _max_outputs_per_call(protocol: str | None, model: str, tag: str) -> int:
         if profile is not None:
             return max(1, profile.max_group_outputs)
     return 1
+
+
+def _camera_control(protocol: str | None, model: str, tag: str) -> bool:
+    """See `ProviderCapability.camera_control`."""
+    return tag == "image_to_image" and protocol == "fal" and fal_supports_camera_control(model)
 
 
 def _music_styles_for(protocol: str | None, model: str, tag: str) -> frozenset[str] | None:
