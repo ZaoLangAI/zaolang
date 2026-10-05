@@ -22,7 +22,7 @@ Not here → `zaolang-admin-ops` (review, takedown), `zaolang-credits-billing` (
 | `back/app/domain/asset_graph/service.py` | P4 relation graph: `add_edge` (card row lock → cap, duplicate, BFS cycle check; relations per card kind, `custom` needs a label), `add_auto_edge` (savepoint, skips instead of raising), `relations_between`, `graph()`; routes `back/app/api/v1/asset_graph.py` (`GET …/{id}/graph`, `…/edges` CRUD; owner-only, never withdraws) |
 | `back/app/domain/scenes/service.py` | `SceneView`, `apply_scene_refs` |
 | `back/app/api/v1/skills.py` | `/v1/skills*`: `/public`, CRUD, `/pricing`, `/publish`, `/withdraw`, `/unlock`, `/apply` |
-| `back/app/api/v1/characters.py` | `/v1/characters*` + `reference-assets/{asset_id}`; `scenes.py` mirrors it. Responses carry `looks`/`variants` + `anchor_entry_id` (`back/app/presenters/asset_variants.py`) |
+| `back/app/api/v1/characters.py` | `/v1/characters*` + `reference-assets/{asset_id}`; `scenes.py` mirrors it. Responses carry `looks`/`variants` + `anchor_entry_id` (`back/app/presenters/asset_variants.py`); characters also `hero_url` (`_hero_asset_id`, mirrors web `characterHeroUrl`). List `?view=summary` (`LibraryListView`) returns `looks`/`variants` as `[]` — used by the two library list pages and the iOS list; pickers that choose a look must keep the default `full` |
 | `back/app/api/v1/asset_variants.py` | `/v1/characters/{id}/looks…`, `/v1/scenes/{id}/variants…`, `…/entries/{entry_id}` (+ `:anchor`); owner-only 404, every write `withdraw_after_edit` |
 | `front/src/app/[locale]/(site)/skills/page.tsx` | plaza; URL filters `contentType` × `category` × `access` |
 | `front/src/components/skills/` | plaza grid/card, detail+unlock dialog, create/manage dialogs, `@` menu |
