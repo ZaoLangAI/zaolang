@@ -26,6 +26,27 @@ extension Color {
         let overlay = Color("Overlay")
         let skeleton = Color("Skeleton")
         let track = Color("Track")
+        // 角色管理图的关系类型色（`--relation-*`）。
+        let relationAge = Color("RelationAge")
+        let relationOutfit = Color("RelationOutfit")
+        let relationEmotion = Color("RelationEmotion")
+        let relationScene = Color("RelationScene")
+        let relationPeriod = Color("RelationPeriod")
+        let relationEdit = Color("RelationEdit")
+        let relationCustom = Color("RelationCustom")
+
+        /// 与网页 `asset-graph/relations.ts` 的 `RELATION_COLOR` 同一映射。
+        func relation(_ relation: String) -> Color {
+            switch relation {
+            case "age", "lighting": relationAge
+            case "outfit": relationOutfit
+            case "emotion", "state": relationEmotion
+            case "scene", "weather": relationScene
+            case "period", "params": relationPeriod
+            case "edit": relationEdit
+            default: relationCustom
+            }
+        }
     }
 
     static let zl = ZLPalette()
