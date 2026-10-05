@@ -36,7 +36,7 @@ export default async function CharactersPage({
   }
   if (!(await isSignedIn())) return <SignInPrompt />;
 
-  const characters = await serverFetchOrNull<Character[]>('/v1/characters', {
+  const characters = await serverFetchOrNull<Character[]>('/v1/characters?view=summary', {
     authenticated: true,
   });
   if (!characters) return <SignInPrompt />;

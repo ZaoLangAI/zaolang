@@ -37,7 +37,7 @@ export default async function ScenesPage({
   }
   if (!(await isSignedIn())) return <SignInPrompt />;
 
-  const scenes = await serverFetchOrNull<Scene[]>('/v1/scenes', {
+  const scenes = await serverFetchOrNull<Scene[]>('/v1/scenes?view=summary', {
     authenticated: true,
   });
   if (!scenes) return <SignInPrompt />;
