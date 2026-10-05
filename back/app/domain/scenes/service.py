@@ -25,12 +25,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.domain.asset_variants import service as asset_variants_service
 from app.domain.errors import NotFound, ValidationFailed
 from app.domain.skill_library import service as skill_library_service
-from app.models import Asset, CreationSkill
+from app.models import Asset, CreationSkill, SkillAssetVariant
 from app.models.enums import (
     AssetEntryType,
     CreationSkillCategory,
@@ -196,6 +196,8 @@ def list_scenes(session: Session, *, user_id: str) -> list[SceneView]:
             CreationSkill.owner_user_id == user_id,
             CreationSkill.category == CreationSkillCategory.SCENE_ASSET,
         )
+        # One round trip for every card's looks and images, not one per card.
+        .options(selectinload(CreationSkill.asset_variants).selectinload(SkillAssetVariant.entries))
         .order_by(CreationSkill.created_at.desc())
     )
     return [SceneView(skill) for skill in session.scalars(stmt)]

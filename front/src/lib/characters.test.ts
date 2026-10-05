@@ -323,4 +323,10 @@ describe('characterHeroUrl', () => {
     ).toBe('https://cdn/legacy.png');
     expect(characterHeroUrl({ looks: [] } as unknown as Character)).toBeNull();
   });
+
+  it("prefers the API's pick, which a summary list carries without looks", () => {
+    expect(
+      characterHeroUrl({ looks: [], hero_url: 'https://cdn/server.png' } as unknown as Character),
+    ).toBe('https://cdn/server.png');
+  });
 });

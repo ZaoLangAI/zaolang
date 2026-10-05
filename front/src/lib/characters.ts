@@ -78,10 +78,13 @@ export function characterManageHref(characterId: string, lookId?: string | null)
 
 /**
  * The image a library card leads with: the card's approved anchor, else its
- * approved identity portrait (定妆照), else the legacy sheet pick. Only a
- * signed URL is returned — never cached (`zaolang-frontend-ui`).
+ * approved identity portrait (定妆照), else the legacy sheet pick. The API
+ * picks it as `hero_url` (the only source in a `?view=summary` list, which
+ * has no `looks`); the local pick covers payloads without it. Only a signed
+ * URL is returned — never cached (`zaolang-frontend-ui`).
  */
 export function characterHeroUrl(character: Character): string | null {
+  if (character.hero_url) return character.hero_url;
   const approvedEntries = (character.looks ?? [])
     .flatMap((look) => look.entries ?? [])
     .filter((entry) => entry.status !== 'candidate' && entry.url);

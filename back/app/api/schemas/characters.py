@@ -79,6 +79,10 @@ class CharacterResponse(Timestamped):
     # above is their flat P0-shaped projection, kept for older clients.
     looks: list[AssetVariantView] = Field(default_factory=list)
     anchor_entry_id: str | None = None
+    # The image a library card leads with: the approved anchor, else an
+    # approved identity portrait, else the front / first reference. Set in
+    # both list views, so `?view=summary` callers need no `looks`.
+    hero_url: str | None = None
     status: CreationSkillStatus = CreationSkillStatus.DRAFT
     visibility: CreationSkillVisibility = CreationSkillVisibility.PRIVATE
     access_credits: int = 0

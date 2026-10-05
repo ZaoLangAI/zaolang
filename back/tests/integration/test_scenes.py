@@ -215,3 +215,20 @@ def test_scene_name_is_bounded_by_the_skill_title_column(
         headers=auth_header(author),
     )
     assert renamed.status_code == 422, renamed.text
+
+
+def test_the_summary_list_drops_variants_but_keeps_references(
+    client: TestClient, db: Session, author: User
+) -> None:
+    still = _asset(db, author)
+    client.post(
+        "/v1/scenes",
+        json={"name": "码头", "reference_asset_ids": [still.id]},
+        headers=auth_header(author),
+    )
+    (full,) = client.get("/v1/scenes", headers=auth_header(author)).json()
+    (summary,) = client.get(
+        "/v1/scenes", params={"view": "summary"}, headers=auth_header(author)
+    ).json()
+    assert full["variants"] and summary["variants"] == []
+    assert summary["reference_assets"] == full["reference_assets"]

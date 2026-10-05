@@ -33,18 +33,23 @@ public struct CharacterResponse: Codable, Sendable, Equatable, Identifiable {
     /// Looks with their images (absent in older payloads).
     public let looks: [AssetVariantView]?
     public let anchorEntryID: String?
+    /// The server's pick of the same image (absent in older payloads; the
+    /// only source in a `?view=summary` list).
+    public let heroUrl: String?
 
     private enum CodingKeys: String, CodingKey {
         case id, name, description, looks
         case referenceAssets = "reference_assets"
         case voiceDescription = "voice_description"
         case anchorEntryID = "anchor_entry_id"
+        case heroUrl = "hero_url"
     }
 
     /// What a library row leads with — the approved anchor, else the
     /// approved identity portrait, else the legacy front sheet (mirrors the
     /// web `characterHeroUrl`).
     public var heroURL: String? {
+        if let heroUrl { return heroUrl }
         let approved = (looks ?? []).flatMap(\.entries).filter { !$0.isCandidate && $0.url != nil }
         if let anchor = approved.first(where: { $0.id == anchorEntryID }) { return anchor.url }
         if let portrait = approved.first(where: { $0.entryType == "identity_portrait" }) { return portrait.url }

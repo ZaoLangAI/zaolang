@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, DbSession, rate_limited
+from app.api.schemas.asset_variants import LibraryListView
 from app.api.schemas.characters import (
     CharacterActionClip,
     CharacterCreateRequest,
@@ -20,8 +21,10 @@ from app.api.schemas.characters import (
     CharacterScriptLinkView,
     CharacterUpdateRequest,
 )
+from app.domain.asset_variants import service as asset_variants_service
 from app.domain.characters import script_context
 from app.domain.characters import service as characters
+from app.models.enums import AssetEntryType
 from app.presenters import asset_variants as asset_variant_presenter
 from app.presenters import media_urls
 
@@ -52,9 +55,10 @@ def list_characters(
     user: CurrentUser,
     session: DbSession,
     _: Annotated[None, Depends(rate_limited("public_read"))],
+    view: Annotated[LibraryListView, Query()] = "full",
 ) -> list[CharacterResponse]:
     return [
-        _character_response(session, character)
+        _character_response(session, character, summary=view == "summary")
         for character in characters.list_characters(session, user_id=user.id)
     ]
 
@@ -222,7 +226,27 @@ def withdraw_character(
     return _character_response(session, character)
 
 
-def _character_response(session: Session, character: characters.CharacterView) -> CharacterResponse:
+def _hero_asset_id(character: characters.CharacterView) -> str | None:
+    """Mirrors web `characterHeroUrl`: approved anchor, else an approved
+    identity portrait, else the front-tagged (else first) reference."""
+    approved = asset_variants_service.approved_entries(character.skill)
+    anchor = next((entry for entry in approved if entry.is_anchor), None)
+    portrait = next(
+        (entry for entry in approved if entry.entry_type == AssetEntryType.IDENTITY_PORTRAIT),
+        None,
+    )
+    hero = anchor or portrait
+    if hero is not None:
+        return hero.asset_id
+    references = [entry for entry in character.reference_assets if entry.get("asset_id")]
+    front = next((entry for entry in references if entry.get("view") == "front"), None)
+    picked = front or (references[0] if references else None)
+    return str(picked["asset_id"]) if picked else None
+
+
+def _character_response(
+    session: Session, character: characters.CharacterView, *, summary: bool = False
+) -> CharacterResponse:
     return CharacterResponse(
         id=character.id,
         name=character.name,
@@ -249,8 +273,9 @@ def _character_response(session: Session, character: characters.CharacterView) -
             if entry.get("asset_id")
         ],
         voice_description=character.voice_description,
-        looks=asset_variant_presenter.variant_views(session, character.skill),
+        looks=[] if summary else asset_variant_presenter.variant_views(session, character.skill),
         anchor_entry_id=asset_variant_presenter.anchor_entry_id(character.skill),
+        hero_url=media_urls.asset_url(session, _hero_asset_id(character)),
         status=character.status,
         visibility=character.visibility,
         access_credits=character.access_credits,

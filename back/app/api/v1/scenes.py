@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, DbSession, rate_limited
+from app.api.schemas.asset_variants import LibraryListView
 from app.api.schemas.scenes import (
     SceneCreateRequest,
     SceneReferenceAsset,
@@ -45,9 +46,11 @@ def list_scenes(
     user: CurrentUser,
     session: DbSession,
     _: Annotated[None, Depends(rate_limited("public_read"))],
+    view: Annotated[LibraryListView, Query()] = "full",
 ) -> list[SceneResponse]:
     return [
-        _scene_response(session, scene) for scene in scenes.list_scenes(session, user_id=user.id)
+        _scene_response(session, scene, summary=view == "summary")
+        for scene in scenes.list_scenes(session, user_id=user.id)
     ]
 
 
@@ -153,7 +156,9 @@ def withdraw_scene(
     return _scene_response(session, scene)
 
 
-def _scene_response(session: Session, scene: scenes.SceneView) -> SceneResponse:
+def _scene_response(
+    session: Session, scene: scenes.SceneView, *, summary: bool = False
+) -> SceneResponse:
     return SceneResponse(
         id=scene.id,
         name=scene.name,
@@ -169,7 +174,7 @@ def _scene_response(session: Session, scene: scenes.SceneView) -> SceneResponse:
             for entry in scene.reference_assets
             if entry.get("asset_id")
         ],
-        variants=asset_variant_presenter.variant_views(session, scene.skill),
+        variants=[] if summary else asset_variant_presenter.variant_views(session, scene.skill),
         anchor_entry_id=asset_variant_presenter.anchor_entry_id(scene.skill),
         status=scene.status,
         visibility=scene.visibility,

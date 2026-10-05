@@ -4258,6 +4258,20 @@
         "operationId": "list_characters_v1_characters_get",
         "parameters": [
           {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "full",
+                "summary"
+              ],
+              "type": "string",
+              "default": "full",
+              "title": "View"
+            }
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,
@@ -5364,6 +5378,20 @@
         "summary": "List Scenes",
         "operationId": "list_scenes_v1_scenes_get",
         "parameters": [
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "full",
+                "summary"
+              ],
+              "type": "string",
+              "default": "full",
+              "title": "View"
+            }
+          },
           {
             "name": "authorization",
             "in": "header",
@@ -30005,6 +30033,17 @@
               }
             ],
             "title": "Anchor Entry Id"
+          },
+          "hero_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hero Url"
           },
           "status": {
             "$ref": "#/components/schemas/CreationSkillStatus",
