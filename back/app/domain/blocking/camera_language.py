@@ -61,11 +61,34 @@ _MOVE_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 
+# Which side of the subject the camera sees (`vocabulary.CameraSide`) and
+# how high it sits (`CameraHeight`) — read so a shot's references can match
+# its angle (`asset_variants.ReferenceHints`, AC-3). First match wins.
+_SIDE_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"过肩.{0,8}右|右.{0,3}过肩"), "ots_right"),
+    (re.compile(r"过肩"), "ots_left"),
+    (re.compile(r"背影|背面|背对|背身|身后|后背|从后方|后方拍"), "back"),
+    (re.compile(r"左侧(面|脸|身|拍)|从左侧|左边侧面"), "left"),
+    (re.compile(r"右侧(面|脸|身|拍)|从右侧|右边侧面"), "right"),
+    (re.compile(r"侧面|侧脸|侧身|侧拍|侧影|侧写"), "right"),
+    (re.compile(r"正面|正脸|正对|迎面"), "front"),
+)
+_HEIGHT_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"鸟瞰|顶拍|顶视|俯瞰|正上方"), "overhead"),
+    (re.compile(r"俯拍|俯视|俯角|高机位|居高"), "high"),
+    (re.compile(r"贴地|地面机位|极低"), "ground"),
+    (re.compile(r"仰拍|仰视|仰角|低机位|低角度"), "low"),
+    (re.compile(r"平视|平拍"), "eye"),
+)
+
+
 @dataclass(frozen=True, slots=True)
 class CameraCue:
     size: str | None
     preset: str | None
     intensity: float
+    side: str | None = None
+    height: str | None = None
 
     @property
     def empty(self) -> bool:
@@ -73,7 +96,8 @@ class CameraCue:
 
 
 def parse_camera_text(text: str) -> CameraCue:
-    """One script camera block → shot size, move preset and speed."""
+    """One script camera block → shot size, move preset, speed, and the
+    side / height the camera sees the subject from."""
     text = str(text or "")
     size = next((token for word, token in _SIZE_WORDS if word in text), None)
     preset = next((token for pattern, token in _MOVE_RULES if pattern.search(text)), None)
@@ -85,7 +109,9 @@ def parse_camera_text(text: str) -> CameraCue:
         intensity = 0.8
     else:
         intensity = 0.5
-    return CameraCue(size=size, preset=preset, intensity=intensity)
+    side = next((token for pattern, token in _SIDE_RULES if pattern.search(text)), None)
+    height = next((token for pattern, token in _HEIGHT_RULES if pattern.search(text)), None)
+    return CameraCue(size=size, preset=preset, intensity=intensity, side=side, height=height)
 
 
 def _reverse(labels: dict[str, str]) -> dict[str, str]:

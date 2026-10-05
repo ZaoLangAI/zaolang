@@ -85,17 +85,18 @@ def _orbit(
 def test_a_dry_run_prices_one_image_per_pose(
     client: TestClient, db: Session, author: User, dispatched: list[str]
 ) -> None:
-    card, entry_id = _card(
-        client, db, author, "scenes", {"entry_type": "master"}
-    )
+    card, entry_id = _card(client, db, author, "scenes", {"entry_type": "master"})
     body = _orbit(
         client, author, "scenes", card["id"], entry_id, [{"azimuth": 180}, {"azimuth": 90}]
     ).json()
     from app.domain.jobs import service as jobs_service
 
-    assert body["credits"] == jobs_service.quote_for(
-        db, operation=Operation.IMAGE_TO_IMAGE, quality_tier="standard", output_count=2
-    ).credits
+    assert (
+        body["credits"]
+        == jobs_service.quote_for(
+            db, operation=Operation.IMAGE_TO_IMAGE, quality_tier="standard", output_count=2
+        ).credits
+    )
     assert [p["azimuth"] for p in body["poses"]] == [180, 90]
     assert body["job_id"] is None and dispatched == []
 
@@ -171,7 +172,10 @@ def test_a_scene_orbit_routes_each_pass_to_the_camera_model_and_files_shots(
     db.expire_all()
     skill = db.get(CreationSkill, card["id"])
     shots = [e for e in av.entries(skill) if e.source_job_id == job.id]
-    assert sorted((e.camera_json["azimuth"], e.view) for e in shots) == [(90, None), (180, "reverse")]
+    assert sorted((e.camera_json["azimuth"], e.view) for e in shots) == [
+        (90, None),
+        (180, "reverse"),
+    ]
     assert all(e.entry_type == AssetEntryType.SHOT for e in shots)
     assert all(e.status == AssetEntryStatus.APPROVED for e in shots)
     edges = graph_service.edges(db, skill)

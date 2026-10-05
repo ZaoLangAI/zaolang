@@ -136,7 +136,9 @@ def test_a_front_single_figure_is_orbited_directly(db: Session, author: User) ->
     assert len(lines) == 1
     assert lines[0].params["source_entry_id"] == figure.id
     assert lines[0].params["camera_from_sheet"] is False
-    assert lines[0].params["camera_poses"] == [{"azimuth": 180, "elevation": 0, "distance": "medium"}]
+    assert lines[0].params["camera_poses"] == [
+        {"azimuth": 180, "elevation": 0, "distance": "medium"}
+    ]
 
 
 def test_slots_restrict_the_plan_and_a_new_look_carries_its_outfit(

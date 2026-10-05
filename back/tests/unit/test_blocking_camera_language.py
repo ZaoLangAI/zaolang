@@ -54,3 +54,17 @@ def test_vendor_tokens_normalize(
     raw: object, kind: str, allowed: tuple[str, ...], expected: str | None
 ) -> None:
     assert normalize_token(raw, allowed, kind) == expected
+
+
+def test_side_and_height_are_read_from_camera_text() -> None:
+    from app.domain.blocking.camera_language import parse_camera_text
+
+    back = parse_camera_text("全景，背影，缓慢推进")
+    assert (back.size, back.side, back.height) == ("full", "back", None)
+    assert parse_camera_text("中景，左侧面平视").side == "left"
+    assert parse_camera_text("近景，侧脸").side == "right"
+    assert parse_camera_text("过肩镜头，越过男主右肩").side == "ots_right"
+    assert parse_camera_text("大全景，鸟瞰").height == "overhead"
+    assert parse_camera_text("仰拍，缓慢上摇").height == "low"
+    # Where someone stands in frame is not a camera side.
+    assert parse_camera_text("中景，人物站在画面左侧").side is None

@@ -853,6 +853,16 @@ class ReferenceHints:
 
     shot: str | None = None
     emotion: str | None = None
+    # Which side / height the shot sees the subject from (blocking
+    # `CameraSide` / `CameraHeight`, AC-3).
+    side: str | None = None
+    height: str | None = None
+
+    @property
+    def pose(self) -> camera_vocab.CameraPose | None:
+        """The shot's viewpoint on the camera grid, when it names a side or
+        a height."""
+        return camera_vocab.from_blocking(self.side, self.height, self.shot)
 
     @property
     def framing(self) -> str | None:
@@ -883,12 +893,21 @@ def default_subset(
     `emotion`; a wide shot leads with the sheet and views; otherwise a
     matching expression sheet follows the anchor. Scene: a close shot
     leads with the shots (details, reverse angles) before the master.
+
+    A shot with a viewpoint (`hints.pose`, AC-3) ranks the angled images —
+    sheet (0°), views and posed shots, masters (0°) — by how close their pose
+    is to it (`camera.angular_distance`), so a back shot leads with the back
+    view and a reverse shot with the reverse plate. A close shot facing the
+    subject (within 90°) still leads with the face; one from behind does not.
     """
     target = variant or find_default(skill)
     target_entries = _approved(list(target.entries)) if target else []
     card_anchor = anchor(skill)
     framing = hints.framing if hints else None
     emotion = hints.emotion if hints else None
+    shot_pose = hints.pose if hints else None
+    if shot_pose is not None:
+        return _angled_subset(skill, target, target_entries, card_anchor, shot_pose, framing)
 
     if is_character(skill):
         lead: list[SkillAssetEntry] = []
@@ -934,6 +953,61 @@ def default_subset(
         limit = MAX_DEFAULT_SCENE_REFERENCES
 
     if not ordered and variant is None:
+        ordered = approved_entries(skill)
+    picked: list[str] = []
+    for entry in ordered:
+        if entry.asset_id not in picked:
+            picked.append(entry.asset_id)
+    return picked[:limit]
+
+
+def _by_angle(
+    entries_: list[SkillAssetEntry], pose: camera_vocab.CameraPose
+) -> list[SkillAssetEntry]:
+    angled = [(entry, entry_pose(entry)) for entry in entries_]
+    ranked = [(e, p) for e, p in angled if p is not None]
+    ranked.sort(key=lambda item: camera_vocab.angular_distance(item[1], pose))
+    return [entry for entry, _ in ranked]
+
+
+def _angled_subset(
+    skill: CreationSkill,
+    target: SkillAssetVariant | None,
+    target_entries: list[SkillAssetEntry],
+    card_anchor: SkillAssetEntry | None,
+    pose: camera_vocab.CameraPose,
+    framing: str | None,
+) -> list[str]:
+    if is_character(skill):
+        angled = _by_angle(
+            [
+                e
+                for e in target_entries
+                if e.entry_type
+                in (AssetEntryType.CHARACTER_SHEET, AssetEntryType.VIEW, AssetEntryType.POSE)
+            ],
+            pose,
+        )
+        faces_camera = camera_vocab.angular_distance(pose, camera_vocab.CameraPose(0)) <= 90
+        portrait = identity_portrait(skill)
+        lead: list[SkillAssetEntry] = []
+        if card_anchor is not None and is_approved(card_anchor):
+            same_look = target is not None and card_anchor.variant_id == target.id
+            if same_look or card_anchor.entry_type == AssetEntryType.IDENTITY_PORTRAIT:
+                lead.append(card_anchor)
+        if framing == "close" and faces_camera and portrait is not None:
+            ordered = [portrait, *angled, *lead]
+        else:
+            # The best-matching angle first, then the face to hold identity.
+            ordered = [*angled[:1], *lead, *angled[1:]]
+        ordered += [e for e in target_entries if e.entry_type != AssetEntryType.EXPRESSION_SHEET]
+        limit = MAX_DEFAULT_CHARACTER_REFERENCES
+    else:
+        ordered = _by_angle(target_entries, pose) + target_entries
+        if not ordered and card_anchor is not None:
+            ordered = [card_anchor]
+        limit = MAX_DEFAULT_SCENE_REFERENCES
+    if not ordered and target is None:
         ordered = approved_entries(skill)
     picked: list[str] = []
     for entry in ordered:

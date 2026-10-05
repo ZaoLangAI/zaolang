@@ -35446,6 +35446,43 @@
             ],
             "title": "Reference Emotion"
           },
+          "reference_camera_side": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "front",
+                  "left",
+                  "right",
+                  "back",
+                  "ots_left",
+                  "ots_right"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Camera Side"
+          },
+          "reference_camera_height": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ground",
+                  "low",
+                  "eye",
+                  "high",
+                  "overhead"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Camera Height"
+          },
           "scene_lighting": {
             "anyOf": [
               {

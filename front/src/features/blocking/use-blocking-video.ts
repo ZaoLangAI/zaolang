@@ -114,6 +114,7 @@ export function useBlockingVideo(episodeId: string) {
             },
             linkEpisodeId: episodeId,
             linkBreakpointKey: plan.key,
+            assetPresets: plan.referenceCamera ?? undefined,
             maxCredits: unitCreditsByKey[plan.key] ?? 0,
           });
           patch(plan.key, {
