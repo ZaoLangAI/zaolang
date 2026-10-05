@@ -3877,6 +3877,25 @@
       "adult": "Adult (30–44)",
       "middle_aged": "Middle-aged (45–59)",
       "elderly": "Elderly (60+)"
-    }
+    },
+    "attributesTitle": "Attributes",
+    "periodLabel": "Period",
+    "outfitLabel": "Outfit",
+    "outfitHint": "A short name such as \"wedding dress\" or \"school uniform\".",
+    "stateLabel": "Mood / state",
+    "stateHint": "For example \"injured\", \"in combat\", \"exhausted\".",
+    "sceneNoteLabel": "Scene note",
+    "sceneLinkLabel": "Linked scene",
+    "sceneLinkHint": "Pick a scene card; \"character in scene\" images use its still as a reference.",
+    "sceneLinkNone": "None",
+    "sceneVariantLabel": "Scene variant",
+    "sceneVariantDefault": "Default variant",
+    "customLabel": "Custom attributes",
+    "customKey": "Name",
+    "customValue": "Value",
+    "customAdd": "Add attribute",
+    "customRemove": "Remove attribute",
+    "customIncomplete": "Each custom attribute needs both a name and a value.",
+    "saveAttributes": "Save attributes"
   }
 }

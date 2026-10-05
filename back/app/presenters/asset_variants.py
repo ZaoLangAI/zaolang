@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.api.schemas.asset_variants import AssetEntryView, AssetVariantView
+from app.api.schemas.asset_variants import (
+    AssetEntryView,
+    AssetVariantView,
+    SceneLinkView,
+    VariantAttributes,
+)
 from app.domain.asset_variants import service as asset_variants_service
 from app.models import CreationSkill, SkillAssetEntry, SkillAssetVariant
 from app.models.enums import AssetEntryStatus, AssetEntryType
@@ -31,9 +36,32 @@ def entry_view(session: Session, entry: SkillAssetEntry) -> AssetEntryView:
     )
 
 
+def scene_link_view(session: Session, variant: SkillAssetVariant) -> SceneLinkView | None:
+    if variant.scene_skill_id is None:
+        return None
+    scene = session.get(CreationSkill, variant.scene_skill_id)
+    if scene is None:
+        return None
+    scene_variant = (
+        asset_variants_service.find_variant(scene, variant.scene_variant_id)
+        if variant.scene_variant_id
+        else None
+    )
+    thumb = asset_variants_service.master_or_anchor(scene, scene_variant)
+    return SceneLinkView(
+        scene_id=scene.id,
+        scene_name=scene.title,
+        variant_id=scene_variant.id if scene_variant else None,
+        variant_name=scene_variant.name if scene_variant else None,
+        thumb_url=media_urls.asset_url(session, thumb.asset_id) if thumb else None,
+    )
+
+
 def variant_view(
     session: Session, variant: SkillAssetVariant, *, approved_only: bool = False
 ) -> AssetVariantView:
+    """`approved_only` is the public (unlocked) view: no candidates, no
+    scene link."""
     shown = [
         entry
         for entry in variant.entries
@@ -44,6 +72,8 @@ def variant_view(
         name=variant.name,
         description=variant.description,
         presets=dict(variant.presets_json or {}),
+        attributes=VariantAttributes.model_validate(variant.attributes_json or {}),
+        scene_link=None if approved_only else scene_link_view(session, variant),
         is_default=variant.is_default,
         sort_order=variant.sort_order,
         entries=[entry_view(session, entry) for entry in shown],

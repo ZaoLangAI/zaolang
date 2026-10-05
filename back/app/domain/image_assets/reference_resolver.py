@@ -43,7 +43,7 @@ from app.domain.blocking import camera_language
 from app.domain.characters import service as characters_service
 from app.domain.errors import NotFound
 from app.domain.scenes import service as scenes_service
-from app.models import CreationSkill
+from app.models import CreationSkill, SkillAssetVariant
 from app.models.enums import AssetEntryType, CharacterViewAngle
 
 
@@ -93,6 +93,24 @@ OUTFIT_ONLY_ROLE = "（只取服装）"
 MAX_BORROWED_REFERENCES = 3
 
 
+def _target_look(look: SkillAssetVariant) -> dict[str, Any]:
+    """`params["target_look"]` (`TargetLook`): what the prompt needs to know
+    about the look a job files into — name (non-default only), outfit text,
+    age stage, period and the free-text attributes (P3)."""
+    presets = look.presets_json or {}
+    attributes = look.attributes_json or {}
+    return {
+        "name": None if look.is_default else look.name,
+        "description": look.description,
+        "age_stage": presets.get("age_stage"),
+        "period": presets.get("period"),
+        "outfit": attributes.get("outfit"),
+        "state": attributes.get("state"),
+        "scene_note": attributes.get("scene_note"),
+        "custom": [dict(item) for item in attributes.get("custom") or []],
+    }
+
+
 def _borrow_identity_reference(
     session: Session, *, user_id: str, params: dict[str, Any]
 ) -> dict[str, str]:
@@ -118,13 +136,10 @@ def _borrow_identity_reference(
     skill = character.skill
     variant_id = params.get("target_variant_id")
     look = asset_variants_service.find_variant(skill, str(variant_id)) if variant_id else None
-    age_stage = (look.presets_json or {}).get("age_stage") if look is not None else None
-    if look is not None and (not look.is_default or look.description or age_stage):
-        params["target_look"] = {
-            "name": None if look.is_default else look.name,
-            "description": look.description,
-            "age_stage": age_stage,
-        }
+    if look is not None:
+        target_look = _target_look(look)
+        if not look.is_default or any(target_look.values()):
+            params["target_look"] = target_look
     if params.get("reference_asset_ids") or params.get("character_expressions"):
         return {}
 

@@ -27,6 +27,7 @@ from app.domain.image_assets.vocabulary import (
     SCENE_PRESET_AXES,
     SCENE_PRESET_TABLES,
     age_stage_fragments,
+    character_period_fragments,
     expression_grid,
     scene_preset_label,
     scene_presets_from,
@@ -123,13 +124,45 @@ def _age_fragments(params: dict[str, Any]) -> tuple[str, str]:
     return age_stage_fragments(look.get("age_stage"))
 
 
-def _target_look(params: dict[str, Any]) -> tuple[str, str]:
-    """`(outfit name, outfit description)` for a sheet pass: the job's
-    `character_outfit_label`, else the target look's name; the description
-    only ever comes from the look (`reference_resolver` writes it)."""
+LOOK_STATE_SENTENCE = "人物状态：{state}。"
+# A sheet stays on a white background; the scene is mood, not a backdrop.
+LOOK_SCENE_NOTE_SENTENCE = "所处情境：{note}（只影响服装与状态，背景仍按版式要求）。"
+LOOK_CUSTOM_SENTENCE = "其他设定：{items}。"
+
+
+def _look_attribute_fragments(params: dict[str, Any]) -> tuple[str, str]:
+    """The target look's period, state, scene note and custom attributes
+    (P3) as `(prompt sentences, negative)`; empty when it has none."""
     raw = params.get("target_look")
     look: dict[str, Any] = raw if isinstance(raw, dict) else {}
-    name = str(params.get("character_outfit_label") or look.get("name") or "").strip()
+    period, negative = character_period_fragments(look.get("period"))
+    sentences = [period] if period else []
+    state = str(look.get("state") or "").strip()
+    if state:
+        sentences.append(LOOK_STATE_SENTENCE.format(state=state))
+    note = str(look.get("scene_note") or "").strip()
+    if note:
+        sentences.append(LOOK_SCENE_NOTE_SENTENCE.format(note=note))
+    custom = [
+        f"{item.get('key')}：{item.get('value')}"
+        for item in look.get("custom") or []
+        if isinstance(item, dict) and item.get("key") and item.get("value")
+    ]
+    if custom:
+        sentences.append(LOOK_CUSTOM_SENTENCE.format(items="；".join(custom)))
+    return "".join(sentences), negative
+
+
+def _target_look(params: dict[str, Any]) -> tuple[str, str]:
+    """`(outfit name, outfit description)` for a sheet pass: the job's
+    `character_outfit_label`, else the target look's outfit attribute, else
+    its name; the description only ever comes from the look
+    (`reference_resolver` writes it)."""
+    raw = params.get("target_look")
+    look: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    name = str(
+        params.get("character_outfit_label") or look.get("outfit") or look.get("name") or ""
+    ).strip()
     description = str(look.get("description") or "").strip().rstrip("。．.")
     return name, description
 
@@ -250,10 +283,13 @@ def compose(
         )
     if asset_pass is AssetPass.CHARACTER_EXPRESSIONS:
         prompt_out, negative_out = _compose_expressions(prompt, negative, _expressions(params))
-        age, age_negative = _age_fragments(params)
-        if age:
-            prompt_out = _join(prompt_out, age)
-            negative_out = merge_negative(negative_out, age_negative)
+        for fragment, fragment_negative in (
+            _age_fragments(params),
+            _look_attribute_fragments(params),
+        ):
+            if fragment:
+                prompt_out = _join(prompt_out, fragment)
+                negative_out = merge_negative(negative_out, fragment_negative)
         return prompt_out, negative_out
     if asset_pass is AssetPass.SCENE:
         return _compose_scene(
@@ -302,10 +338,14 @@ def _compose_character_sheet(
     age, age_negative = _age_fragments(params)
     if age and age not in prompt:
         prompt = _join(prompt, age)
+    attributes, attributes_negative = _look_attribute_fragments(params)
+    if attributes and attributes not in prompt:
+        prompt = _join(prompt, attributes)
     if CHARACTER_SHEET_LAYOUT_SUFFIX not in prompt:
         prompt = _join(prompt, CHARACTER_SHEET_LAYOUT_SUFFIX)
     prompt, negative_out = apply_visual_medium(prompt, negative)
-    return prompt, merge_negative(negative_out, age_negative)
+    negative_out = merge_negative(negative_out, age_negative)
+    return prompt, merge_negative(negative_out, attributes_negative)
 
 
 def expression_layout(expressions: list[str]) -> str:

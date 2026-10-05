@@ -405,6 +405,12 @@ class TargetLook(ApiModel):
     name: str | None = Field(default=None, max_length=40)
     description: str | None = Field(default=None, max_length=2000)
     age_stage: AgeStage | None = None
+    # Look attributes (P3, `asset_variants.service._check_attributes`).
+    period: ScenePeriod | None = None
+    outfit: str | None = Field(default=None, max_length=20)
+    state: str | None = Field(default=None, max_length=40)
+    scene_note: str | None = Field(default=None, max_length=60)
+    custom: list[dict[str, str]] = Field(default_factory=list, max_length=8)
 
 
 def _check_selection(picked: list[str], allowed: list[str], *, field: str, noun: str) -> None:

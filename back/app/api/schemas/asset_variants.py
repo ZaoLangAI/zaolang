@@ -10,7 +10,13 @@ from typing import Any, Literal
 from pydantic import Field
 
 from app.api.schemas.common import ApiModel
-from app.domain.asset_variants.service import MAX_VARIANT_NAME_LEN
+from app.domain.asset_variants.service import (
+    LOOK_ATTRIBUTE_LIMITS,
+    MAX_CUSTOM_ATTRIBUTES,
+    MAX_CUSTOM_KEY_LEN,
+    MAX_CUSTOM_VALUE_LEN,
+    MAX_VARIANT_NAME_LEN,
+)
 from app.domain.image_assets.vocabulary import (
     MAX_CHARACTER_EXPRESSIONS,
     AgeStage,
@@ -35,6 +41,31 @@ class VariantPresets(ApiModel):
     age_stage: AgeStage | None = None
 
 
+class CustomAttribute(ApiModel):
+    key: str = Field(max_length=MAX_CUSTOM_KEY_LEN)
+    value: str = Field(max_length=MAX_CUSTOM_VALUE_LEN)
+
+
+class VariantAttributes(ApiModel):
+    """Free-text look attributes (P3) — each becomes a prompt sentence. A
+    scene variant takes only `custom` (the service rejects the rest)."""
+
+    outfit: str | None = Field(default=None, max_length=LOOK_ATTRIBUTE_LIMITS["outfit"])
+    state: str | None = Field(default=None, max_length=LOOK_ATTRIBUTE_LIMITS["state"])
+    scene_note: str | None = Field(default=None, max_length=LOOK_ATTRIBUTE_LIMITS["scene_note"])
+    custom: list[CustomAttribute] = Field(default_factory=list, max_length=MAX_CUSTOM_ATTRIBUTES)
+
+
+class SceneLinkView(ApiModel):
+    """The scene card a look is set in (owner's own editor only)."""
+
+    scene_id: str
+    scene_name: str
+    variant_id: str | None = None
+    variant_name: str | None = None
+    thumb_url: str | None = None
+
+
 class AssetEntryView(ApiModel):
     id: str
     asset_id: str
@@ -54,6 +85,9 @@ class AssetVariantView(ApiModel):
     name: str
     description: str | None = None
     presets: dict[str, Any] = Field(default_factory=dict)
+    attributes: VariantAttributes = Field(default_factory=VariantAttributes)
+    # Owner-only: an unlocked marketplace card never shows it.
+    scene_link: SceneLinkView | None = None
     is_default: bool
     sort_order: int
     entries: list[AssetEntryView] = Field(default_factory=list)
@@ -63,12 +97,22 @@ class AssetVariantCreateRequest(ApiModel):
     name: str = Field(min_length=1, max_length=MAX_VARIANT_NAME_LEN)
     description: str | None = Field(default=None, max_length=2000)
     presets: VariantPresets | None = None
+    attributes: VariantAttributes | None = None
+    scene_id: str | None = Field(default=None, max_length=40)
+    scene_variant_id: str | None = Field(default=None, max_length=40)
 
 
 class AssetVariantUpdateRequest(ApiModel):
+    """`attributes` replaces the whole set; `scene_id: null` leaves the link
+    as is — send `clear_scene` to unset it."""
+
     name: str | None = Field(default=None, min_length=1, max_length=MAX_VARIANT_NAME_LEN)
     description: str | None = Field(default=None, max_length=2000)
     presets: VariantPresets | None = None
+    attributes: VariantAttributes | None = None
+    scene_id: str | None = Field(default=None, max_length=40)
+    scene_variant_id: str | None = Field(default=None, max_length=40)
+    clear_scene: bool = False
     sort_order: int | None = Field(default=None, ge=0, le=1000)
     make_default: bool = False
 
