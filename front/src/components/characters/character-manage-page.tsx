@@ -1,71 +1,45 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import { useState } from 'react';
-
-import { AssetVariantsPanel } from '@/components/library/asset-variants-panel';
-import { Card } from '@/components/ui/primitives';
-import type { Character } from '@/lib/api/types';
+import { AssetGraphWorkspace } from '@/components/asset-graph/asset-graph-workspace';
+import type { AssetGraph } from '@/lib/api/types';
 import { characterImageStudioHref, characterManageHref } from '@/lib/characters';
 
 /**
- * `/create/characters/[id]`: one character's looks (造型) and the images
- * filed under each — the page that replaced the library's looks drawer.
- * Studio jump-outs return here (`returnTo`), so 生成到此处 lands back on the
- * same card instead of the library grid.
+ * `/create/characters/[id]` body: the character's looks and images as a
+ * relation graph (`AssetGraphWorkspace`). Studio jump-outs return here.
  */
 export function CharacterManagePage({
   initial,
   initialLookId,
 }: {
-  initial: Character;
+  initial: AssetGraph;
   /** `?look=`: the look to open on. */
   initialLookId?: string | null;
 }) {
-  const t = useTranslations('characters');
-  const [character, setCharacter] = useState(initial);
-  const returnTo = characterManageHref(character.id);
-
+  const returnTo = characterManageHref(initial.card_id);
   return (
-    <div className="flex flex-col gap-6">
-      {character.description || character.voice_description ? (
-        <Card className="flex flex-col gap-1.5 p-4">
-          {character.description ? (
-            <p className="whitespace-pre-line text-sm text-muted">{character.description}</p>
-          ) : null}
-          {character.voice_description ? (
-            <p className="text-xs text-muted">
-              {t('voiceLabel')}: {character.voice_description}
-            </p>
-          ) : null}
-        </Card>
-      ) : null}
-      <AssetVariantsPanel
-        kind="character"
-        card={character}
-        variants={character.looks ?? []}
-        anchorEntryId={character.anchor_entry_id}
-        initialVariantId={initialLookId}
-        onCardChange={setCharacter}
-        generateHref={(look) =>
-          characterImageStudioHref({
-            characterId: character.id,
-            name: character.name,
-            appearance: [character.description, look.is_default ? null : look.description]
-              .filter(Boolean)
-              .join('。'),
-            variantId: look.id,
-            returnTo,
-          })
-        }
-        portraitHref={characterImageStudioHref({
-          characterId: character.id,
-          name: character.name,
-          appearance: character.description,
-          portrait: true,
+    <AssetGraphWorkspace
+      kind="character"
+      initial={initial}
+      initialLookId={initialLookId}
+      generateHref={(look) =>
+        characterImageStudioHref({
+          characterId: initial.card_id,
+          name: initial.name,
+          appearance: [initial.description, look.is_default ? null : look.description]
+            .filter(Boolean)
+            .join('。'),
+          variantId: look.id,
           returnTo,
-        })}
-      />
-    </div>
+        })
+      }
+      portraitHref={characterImageStudioHref({
+        characterId: initial.card_id,
+        name: initial.name,
+        appearance: initial.description,
+        portrait: true,
+        returnTo,
+      })}
+    />
   );
 }

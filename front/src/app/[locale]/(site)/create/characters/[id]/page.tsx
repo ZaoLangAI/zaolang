@@ -6,7 +6,7 @@ import { CharacterManagePage } from '@/components/characters/character-manage-pa
 import { BackLink } from '@/components/ui/back-link';
 import { PageHeading } from '@/components/ui/primitives';
 import { isSignedIn, serverFetchOrNull } from '@/lib/api/server';
-import type { Character } from '@/lib/api/types';
+import type { AssetGraph } from '@/lib/api/types';
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -26,9 +26,12 @@ export default async function CharacterManageRoute({ params, searchParams }: Par
   const t = await getTranslations('characters');
   if (!(await isSignedIn())) return <SignInPrompt />;
 
-  const character = await serverFetchOrNull<Character>(`/v1/characters/${encodeURIComponent(id)}`, {
-    authenticated: true,
-  });
+  const character = await serverFetchOrNull<AssetGraph>(
+    `/v1/characters/${encodeURIComponent(id)}/graph`,
+    {
+      authenticated: true,
+    },
+  );
   if (!character) notFound();
 
   return (

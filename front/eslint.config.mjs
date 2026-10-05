@@ -15,15 +15,20 @@ const heavyDependencyBoundaries = [
     packages: ['@xyflow/react'],
     allow: [
       'src/components/admin/workflows/**',
+      'src/components/asset-graph/**',
       'src/components/lineage/**',
       'src/features/canvas/**',
     ],
     reason:
-      'graph-rendering weight belongs only to the admin workflow canvas, the lineage graph (loaded via next/dynamic from LineageDialog) or the studio canvas route — import it there, not from a route that never renders a graph.',
+      'graph-rendering weight belongs only to the admin workflow canvas, the lineage graph (loaded via next/dynamic from LineageDialog), the card management graph (next/dynamic from asset-graph-workspace) or the studio canvas route — import it there, not from a route that never renders a graph.',
   },
   {
     packages: ['@dagrejs/dagre'],
-    allow: ['src/components/admin/workflows/**', 'src/components/lineage/**'],
+    allow: [
+      'src/components/admin/workflows/**',
+      'src/components/asset-graph/**',
+      'src/components/lineage/**',
+    ],
     reason:
       'graph-layout weight belongs only to the admin workflow canvas or the lineage graph (loaded via next/dynamic from LineageDialog) — import it there, not from a route that never lays out a graph.',
   },

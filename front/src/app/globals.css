@@ -42,6 +42,17 @@
      as neutral/muted rather than joining the four saturated content hues. */
   --script-breakpoint: #9a958c;
 
+  /* Relation graph (角色库 management page): one hue per relation type.
+     Kept distinct from the status colours for the same reason as the script
+     legend; scene axes reuse the nearest of these in `asset-graph/relations.ts`. */
+  --relation-age: #e8a35a;
+  --relation-outfit: #c090e8;
+  --relation-emotion: #e88ec0;
+  --relation-scene: #6fa8e0;
+  --relation-period: #5cc9cf;
+  --relation-edit: #9fd36a;
+  --relation-custom: #9a958c;
+
   /* Cinematic media sits on a dark page, so overlays only need to deepen it. */
   --poster-scrim: linear-gradient(180deg, rgb(8 11 13 / 0%) 38%, rgb(8 11 13 / 88%) 100%);
   --poster-tint: rgb(8 11 13 / 35%);
@@ -86,6 +97,15 @@
   --script-dialogue: #a8296e;
   --script-breakpoint: #726b60;
 
+  /* Relation graph hues, darkened for AA contrast on the pale page. */
+  --relation-age: #8a5410;
+  --relation-outfit: #7a3aa8;
+  --relation-emotion: #a8296e;
+  --relation-scene: #1d5f96;
+  --relation-period: #146b70;
+  --relation-edit: #3f6e14;
+  --relation-custom: #726b60;
+
   /* The same poster on a pale page needs a stronger scrim for legible captions. */
   --poster-scrim: linear-gradient(180deg, rgb(26 23 20 / 0%) 30%, rgb(26 23 20 / 82%) 100%);
   --poster-tint: rgb(26 23 20 / 8%);
@@ -120,6 +140,13 @@
   --color-script-camera: var(--script-camera);
   --color-script-dialogue: var(--script-dialogue);
   --color-script-breakpoint: var(--script-breakpoint);
+  --color-relation-age: var(--relation-age);
+  --color-relation-outfit: var(--relation-outfit);
+  --color-relation-emotion: var(--relation-emotion);
+  --color-relation-scene: var(--relation-scene);
+  --color-relation-period: var(--relation-period);
+  --color-relation-edit: var(--relation-edit);
+  --color-relation-custom: var(--relation-custom);
   --color-skeleton: var(--skeleton);
   --color-track: var(--track);
   --color-overlay: var(--overlay);

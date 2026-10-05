@@ -6,7 +6,7 @@ import { SceneManagePage } from '@/components/scenes/scene-manage-page';
 import { BackLink } from '@/components/ui/back-link';
 import { PageHeading } from '@/components/ui/primitives';
 import { isSignedIn, serverFetchOrNull } from '@/lib/api/server';
-import type { Scene } from '@/lib/api/types';
+import type { AssetGraph } from '@/lib/api/types';
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -26,7 +26,7 @@ export default async function SceneManageRoute({ params, searchParams }: Params)
   const t = await getTranslations('scenes');
   if (!(await isSignedIn())) return <SignInPrompt />;
 
-  const scene = await serverFetchOrNull<Scene>(`/v1/scenes/${encodeURIComponent(id)}`, {
+  const scene = await serverFetchOrNull<AssetGraph>(`/v1/scenes/${encodeURIComponent(id)}/graph`, {
     authenticated: true,
   });
   if (!scene) notFound();

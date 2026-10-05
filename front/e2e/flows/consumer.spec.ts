@@ -168,13 +168,26 @@ test.describe('creation', () => {
     await page.getByRole('button', { name: '保存并管理造型' }).click();
 
     await expect(page).toHaveURL(/\/create\/characters\/sk_[^/?]+$/);
-    await expect(page.getByRole('heading', { name })).toBeVisible();
+    await expect(page.getByRole('heading', { name, level: 1 })).toBeVisible();
     const cardUrl = page.url();
     const cardId = cardUrl.split('/').pop() ?? '';
 
     // A pre-page 去定稿 link (`?manage=`) still lands on the card.
     await page.goto(`/zh-CN/create/characters?manage=${cardId}`, { waitUntil: 'load' });
     await expect(page).toHaveURL(cardUrl);
+
+    // The management page is a relation graph: add a look from the
+    // overview panel, then link it to the default look without dragging.
+    const lookName = `${name}老年`;
+    await page.getByPlaceholder('如：婚礼、战甲、少年时期').fill(lookName);
+    await page.getByRole('button', { name: '创建' }).click();
+    await expect(page.locator('.react-flow__node-look')).toHaveCount(2);
+    await page.getByLabel('方向').selectOption('in');
+    await page.getByLabel('另一端').selectOption({ label: '默认造型' });
+    await page.getByRole('button', { name: '年龄演变' }).click();
+    await page.getByRole('button', { name: '添加关系' }).click();
+    await expect(page.locator('.react-flow__edge')).toHaveCount(1);
+    await expect(page.getByRole('button', { name: /默认造型.*年龄演变/ })).toBeVisible();
 
     await page.getByRole('link', { name: '返回角色库' }).click();
     await expect(page).toHaveURL(/\/create\/characters$/);

@@ -28,7 +28,7 @@ Not here → `zaolang-frontend-ui` (components), `zaolang-i18n-region` (locale f
 
 1. Components use semantic classes (`bg-surface`, `text-muted`), never a literal `#…` / `rgb(`.
 2. Dark values are locked. A new colour = new token in dark, light, and `@theme inline`; missing one silently inherits.
-3. Light must pass WCAG AA (4.5:1 body, 3:1 large); compute before changing light `--primary`. `--script-*` tokens aren't axe-scanned (gated route) — recompute by hand.
+3. Light must pass WCAG AA (4.5:1 body, 3:1 large); compute before changing light `--primary`. `--script-*` and `--relation-*` (card management graph, `front/src/components/asset-graph/relations.ts`) tokens aren't axe-scanned (gated / signed-in routes) — recompute by hand; rerun `ios/tools/gen-colors.py` after adding one.
 4. SSR is flicker-free: `data-theme` from the cookie; `themeInitScript` resolves `system` before paint. Inject only via `useServerInsertedHTML` — a React `<script>` child errors in React 19; an effect flashes.
 5. Switching also sets `color-scheme` and `<meta name="theme-color">` (`themeColor`), inside `document.startViewTransition` unless `shouldSkipViewTransition` (unsupported, reduced motion, hidden tab — it throws there); first mount applies with no transition. axe scans wait for running transitions (`front/e2e/support/axe.ts`) — a mid-fade scan reports false contrast failures.
 6. Theme + reduce-motion persist in cookies — the only source SSR reads. `syncThemePreference` also PATCHes the account `theme`, authenticated (normal refresh-and-retry), only when `getAccessToken()` is set, and never on console routes (`ADMIN_PATH` anchored to the locale-less root, so `/profile/admin` still syncs). Web never applies `user.theme` back; the account copy is write-only here.

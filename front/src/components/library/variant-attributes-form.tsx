@@ -97,7 +97,6 @@ export function VariantAttributesForm({
           <div className="grid grid-cols-2 gap-2">
             <Select
               label={t('ageStageLabel')}
-              hint={t('ageStageHint')}
               value={ageStage}
               onChange={(event) => setAgeStage(event.target.value)}
               options={[
@@ -121,6 +120,7 @@ export function VariantAttributesForm({
               ]}
             />
           </div>
+          <p className="-mt-1 text-xs text-muted">{t('ageStageHint')}</p>
           <TextInput
             label={t('outfitLabel')}
             hint={t('outfitHint')}
