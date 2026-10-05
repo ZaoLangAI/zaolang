@@ -3426,7 +3426,22 @@
     "blockingStale": "The blockout needs rebuilding",
     "linkLook": "Look",
     "linkSceneVariant": "Variant",
-    "syncToLibrary": "Sync to character"
+    "syncToLibrary": "Sync to character",
+    "dubSpeakers": "Character voices",
+    "dubNarration": "(no speaker)",
+    "dubLines": "{count} line(s)",
+    "dubVoice": "Voice",
+    "dubDefaultVoice": "default",
+    "dubGlobalVoice": "Use the batch voice",
+    "dubSourceLook": "voice of the linked look",
+    "dubSourceDefault": "character's default voice",
+    "dubSourcePicked": "picked",
+    "dubSourceGlobal": "batch voice",
+    "dubSourceNoVoices": "character has no voices — batch voice",
+    "dubSourceUnlinked": "not linked to a character — batch voice",
+    "dubCloneNote": "Cloned voices are re-cloned for every line, so they take longer.",
+    "dubGlobalVoiceLabel": "Batch voice",
+    "dubGlobalVoiceHint": "Used for lines whose speaker has no character voice."
   },
   "search": {
     "recentSearches": "Recent searches",

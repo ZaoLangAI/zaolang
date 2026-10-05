@@ -54,6 +54,6 @@
 
 ## Batch generation
 
-18. `use-script-batch.ts` quotes, submits one item at a time, tracks each job, supports pause/resume, and stamps `link_episode_id` + `link_breakpoint_key` on every submit so results bind back. Audio (`audio_generation`) dubs dialogue lines in one voice for the whole batch; `dubbedDialogueKeys` skips lines already voiced.
+18. `use-script-batch.ts` quotes, submits one item at a time, tracks each job, supports pause/resume, and stamps `link_episode_id` + `link_breakpoint_key` on every submit so results bind back. Audio (`audio_generation`) dubs dialogue lines per speaker: `voice-plan.ts` maps each speaker → the script character's linked card → the voice bound to its `look_id` look, else the card's default voice (overridable per speaker in the dialog, `speaker-voices.tsx`), sent as `voice_profile_id`; speakers without one use the batch's 通用音色 (`extra.voice`). `dubbedDialogueKeys` skips lines already voiced. 同步到角色库 on a linked character chip drafts the card's description / voice description from this script (`character-describe-dialog.tsx`).
 19. `script-batch-dialog.tsx` quotes via `POST /v1/generation-jobs/quote:batch` (exact per-line sum, skipped for an empty batch). Quote/quoting/failed state and the effective voice (falls back to the roster's first) are derived during render from the settled request — no setState-in-effect.
 20. Keep pending/bound logic pure in `batch-plan.ts` (vitest-covered).

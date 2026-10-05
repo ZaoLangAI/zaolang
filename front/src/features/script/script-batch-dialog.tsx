@@ -12,7 +12,9 @@ import type { Locale } from '@/i18n/routing';
 import { formatCount } from '@/lib/format';
 import { FALLBACK_VOICES, unionVoices, useGenerationModels } from '@/lib/use-generation-models';
 
+import { SpeakerVoiceTable, useSpeakerCardVoices } from './speaker-voices';
 import type { BatchKind, BatchParams, BatchQuote } from './use-script-batch';
+import { voiceAssignments, type SpeakerLink } from './voice-plan';
 import {
   DEFAULT_AUDIO_PARAMS,
   DEFAULT_CHARACTER_PARAMS,
@@ -64,6 +66,7 @@ export function ScriptBatchDialog({
   skipLinked,
   skipUnreferenced,
   existingRefByLabel,
+  speakers,
   onClose,
   onConfirm,
 }: {
@@ -73,14 +76,13 @@ export function ScriptBatchDialog({
   skipUnreferenced: number;
   /** Script character name → library card id. Those rows default to skip. */
   existingRefByLabel?: Record<string, string>;
+  /** `kind: 'audio'`: who speaks the pending lines (`dialogueSpeakers`). */
+  speakers?: SpeakerLink[];
   onClose: () => void;
   onConfirm: (params: BatchParams, quote: BatchQuote, skippedLabels: string[]) => void;
 }) {
   const t = useTranslations('scriptStudio');
   const tCredits = useTranslations('credits');
-  // Reuses the audio studio's own voice-picker copy rather than duplicating
-  // it under `scriptStudio` — same "音色"/"选择生成语音使用的音色。" strings.
-  const tAudio = useTranslations('remixPage');
   const locale = useLocale() as Locale;
   const [params, setParams] = useState<BatchParams>(() => defaultsFor(kind ?? 'characters'));
   // The last settled quote fetch, tagged with the request it answered
@@ -122,13 +124,29 @@ export function ScriptBatchDialog({
     return union.length > 0 ? union : [...FALLBACK_VOICES];
   }, [audioModelOptions]);
 
+  // Per-speaker character voices (`voice-plan.ts`); a speaker with none
+  // dubs with the global voice below.
+  // Keyed on content: the editor rebuilds `speakers` every render, and a new
+  // identity would re-run the quote effect forever.
+  const speakersKey = kind === 'audio' ? JSON.stringify(speakers ?? []) : '[]';
+  const speakerList = useMemo(() => JSON.parse(speakersKey) as SpeakerLink[], [speakersKey]);
+  const { voicesByCard, loading: speakerVoicesLoading } = useSpeakerCardVoices(speakerList);
+  const [voiceOverrides, setVoiceOverrides] = useState<Record<string, string>>({});
+  const voiceBySpeaker = useMemo(
+    () => voiceAssignments(speakerList, voicesByCard, voiceOverrides),
+    [speakerList, voicesByCard, voiceOverrides],
+  );
+
   // Derived rather than corrected in an effect: an audio batch always
   // quotes and submits a voice the current roster actually offers.
   const effectiveParams = useMemo(() => {
-    if (kind !== 'audio' || audioVoices.length === 0) return params;
-    if (params.voice && audioVoices.includes(params.voice)) return params;
-    return { ...params, voice: audioVoices[0] };
-  }, [kind, audioVoices, params]);
+    if (kind !== 'audio') return params;
+    const voice =
+      audioVoices.length === 0 || (params.voice && audioVoices.includes(params.voice))
+        ? params.voice
+        : audioVoices[0];
+    return { ...params, voice, voiceBySpeaker };
+  }, [kind, audioVoices, params, voiceBySpeaker]);
 
   // An empty batch is free, so it needs no fetch at all.
   const quoteRequest = useMemo<QuoteRequest | null>(
@@ -234,8 +252,8 @@ export function ScriptBatchDialog({
               />
             ) : (
               <Select
-                label={tAudio('voice')}
-                hint={tAudio('voiceHint')}
+                label={t('dubGlobalVoiceLabel')}
+                hint={t('dubGlobalVoiceHint')}
                 value={effectiveParams.voice ?? audioVoices[0]}
                 options={audioVoices.map((value) => ({ value, label: value }))}
                 onChange={(event) =>
@@ -273,6 +291,18 @@ export function ScriptBatchDialog({
               </>
             ) : null}
           </div>
+        ) : null}
+
+        {kind === 'audio' ? (
+          <SpeakerVoiceTable
+            speakers={speakerList}
+            voicesByCard={voicesByCard}
+            loading={speakerVoicesLoading}
+            overrides={voiceOverrides}
+            onOverride={(speaker, voiceId) =>
+              setVoiceOverrides((current) => ({ ...current, [speaker]: voiceId }))
+            }
+          />
         ) : null}
 
         {quoting && !quote ? (

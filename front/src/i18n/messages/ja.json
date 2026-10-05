@@ -3426,7 +3426,22 @@
     "blockingStale": "ブロックアウトの再構築が必要です",
     "linkLook": "衣装",
     "linkSceneVariant": "バリエーション",
-    "syncToLibrary": "キャラクターに同期"
+    "syncToLibrary": "キャラクターに同期",
+    "dubSpeakers": "キャラクターの声",
+    "dubNarration": "（話者なし）",
+    "dubLines": "{count} 行",
+    "dubVoice": "声",
+    "dubDefaultVoice": "デフォルト",
+    "dubGlobalVoice": "共通の声を使う",
+    "dubSourceLook": "衣装に紐づく声",
+    "dubSourceDefault": "キャラクターのデフォルトの声",
+    "dubSourcePicked": "手動で指定",
+    "dubSourceGlobal": "共通の声",
+    "dubSourceNoVoices": "声が未設定のため共通の声",
+    "dubSourceUnlinked": "キャラクター未連携のため共通の声",
+    "dubCloneNote": "クローンの声は台詞ごとに複製されるため時間がかかります。",
+    "dubGlobalVoiceLabel": "共通の声",
+    "dubGlobalVoiceHint": "キャラクターの声がない台詞に使います。"
   },
   "search": {
     "recentSearches": "最近の検索",
