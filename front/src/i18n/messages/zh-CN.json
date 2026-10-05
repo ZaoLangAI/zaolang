@@ -1758,7 +1758,22 @@
     "startLooks": "开始创建造型",
     "saveAndManage": "保存并管理造型",
     "manageEyebrow": "角色管理",
-    "backToLibrary": "返回角色库"
+    "backToLibrary": "返回角色库",
+    "describeOpen": "根据剧本 AI 生成",
+    "describeLinked": "已有 {count} 个剧本关联了这个角色，可据此生成角色描述与音色描述。",
+    "describeTitle": "根据剧本生成角色描述",
+    "describeHint": "读取关联剧本中的角色设定与台词，生成后可修改，确认后才会写入角色。",
+    "describeSource": "参考剧本",
+    "describeAllScripts": "全部关联剧本（{count} 个，以最新为准）",
+    "describeFields": "生成内容",
+    "describeGenerate": "生成",
+    "describeRegenerate": "重新生成",
+    "describeApply": "使用生成结果",
+    "describeCurrent": "当前{field}",
+    "describeDraft": "生成的{field}",
+    "describeEmpty": "（暂无）",
+    "describeNoLinks": "还没有剧本关联这个角色。先在文案创作里把剧本角色关联到角色库。",
+    "describeFailed": "生成失败，请稍后重试"
   },
   "collectionPage": {
     "eyebrow": "MY LIBRARY",
@@ -3410,7 +3425,8 @@
     "openBlockingHint": "用 3D 白膜预演机位与走位，再作为参考视频生成。",
     "blockingStale": "白膜需要按新文案重建",
     "linkLook": "使用造型",
-    "linkSceneVariant": "使用变体"
+    "linkSceneVariant": "使用变体",
+    "syncToLibrary": "同步到角色库"
   },
   "search": {
     "recentSearches": "最近搜索",

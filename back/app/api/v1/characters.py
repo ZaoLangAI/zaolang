@@ -11,12 +11,16 @@ from app.api.deps import CurrentUser, DbSession, rate_limited
 from app.api.schemas.characters import (
     CharacterActionClip,
     CharacterCreateRequest,
+    CharacterDescribeRequest,
+    CharacterDescribeResponse,
     CharacterPublishRequest,
     CharacterReferenceAsset,
     CharacterReferenceAssetUpdateRequest,
     CharacterResponse,
+    CharacterScriptLinkView,
     CharacterUpdateRequest,
 )
+from app.domain.characters import script_context
 from app.domain.characters import service as characters
 from app.presenters import asset_variants as asset_variant_presenter
 from app.presenters import media_urls
@@ -64,6 +68,56 @@ def get_character(
 ) -> CharacterResponse:
     character = characters.get_character(session, user_id=user.id, character_id=character_id)
     return _character_response(session, character)
+
+
+@router.get("/characters/{character_id}/script-links", response_model=list[CharacterScriptLinkView])
+def list_character_script_links(
+    character_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
+) -> list[CharacterScriptLinkView]:
+    """Scripts that link this card — what 「AI 生成」 can draft from."""
+    characters.get_character(session, user_id=user.id, character_id=character_id)
+    return [
+        CharacterScriptLinkView(
+            episode_id=link.episode_id,
+            episode_title=link.episode_title,
+            series_title=link.series_title,
+            character_name=link.character_name,
+            look_id=link.look_id,
+            dialogue_count=len(link.dialogue_lines),
+        )
+        for link in script_context.linked_scripts(
+            session, user_id=user.id, character_id=character_id
+        )
+    ]
+
+
+@router.post("/characters/{character_id}/describe", response_model=CharacterDescribeResponse)
+def describe_character(
+    character_id: str,
+    payload: CharacterDescribeRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("script_studio_write"))],
+) -> CharacterDescribeResponse:
+    """Drafts the description / voice description from the linked scripts.
+    Saves nothing: the draft goes back to the edit form for the author."""
+    draft, links = script_context.draft_profile(
+        session,
+        user_id=user.id,
+        character_id=character_id,
+        episode_id=payload.episode_id,
+        fields=tuple(payload.fields),
+    )
+    # The agent run row is the only write; keep it for replay/audit.
+    session.commit()
+    return CharacterDescribeResponse(
+        description=draft.description,
+        voice_description=draft.voice_description,
+        episode_ids=[link.episode_id for link in links],
+    )
 
 
 @router.patch("/characters/{character_id}", response_model=CharacterResponse)

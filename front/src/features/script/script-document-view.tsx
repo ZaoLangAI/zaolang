@@ -2,12 +2,14 @@
 
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
-import { Fragment, useEffect } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 
+import { CharacterDescribeDialog } from '@/components/characters/character-describe-dialog';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import type { Character, Scene } from '@/lib/api/types';
-import { characterSheetAsset } from '@/lib/characters';
+import { api } from '@/lib/api/client';
+import { characterHeroUrl } from '@/lib/characters';
 import type { ScenePresets } from '@/features/image-assets/vocabulary';
 import { parseScenePresets } from '@/features/script/scene-heading';
 import { useResource } from '@/lib/use-resource';
@@ -117,7 +119,7 @@ function thumbUrl(
   if (!refId) return null;
   if (kind === 'character') {
     const character = characters.find((item) => item.id === refId);
-    return character ? (characterSheetAsset(character)?.url ?? null) : null;
+    return character ? characterHeroUrl(character) : null;
   }
   const scene = scenes.find((item) => item.id === refId);
   return scene?.reference_assets?.[0]?.url ?? null;
@@ -174,6 +176,9 @@ export function ScriptDocumentView({
   }, [libraryRevision]);
 
   const characterItems = characters.data ?? [];
+  // 「同步到角色库」: the linked card whose profile is being drafted from this script.
+  const [syncCardId, setSyncCardId] = useState<string | null>(null);
+  const syncCard = characterItems.find((item) => item.id === syncCardId) ?? null;
   const sceneItems = scenes.data ?? [];
 
   const saveLogline = (next: string) => onSaveContent?.({ ...document, logline: next });
@@ -295,6 +300,16 @@ export function ScriptDocumentView({
                         {t('batchRetry')}
                       </Button>
                     ) : null}
+                    {onLink && episodeId && character.character_ref_id ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="self-start"
+                        onClick={() => setSyncCardId(character.character_ref_id)}
+                      >
+                        {t('syncToLibrary')}
+                      </Button>
+                    ) : null}
                     {onLink ? (
                       <ScriptLinkPicker
                         kind="character"
@@ -399,6 +414,27 @@ export function ScriptDocumentView({
           );
         })}
       </div>
+      {syncCard && episodeId ? (
+        <CharacterDescribeDialog
+          open
+          onClose={() => setSyncCardId(null)}
+          characterId={syncCard.id}
+          episodeId={episodeId}
+          current={{
+            description: syncCard.description ?? '',
+            voiceDescription: syncCard.voice_description ?? '',
+          }}
+          onApply={async (next) => {
+            await api.patch(`/v1/characters/${syncCard.id}`, {
+              ...(next.description !== undefined ? { description: next.description } : {}),
+              ...(next.voiceDescription !== undefined
+                ? { voice_description: next.voiceDescription }
+                : {}),
+            });
+            characters.refetch();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

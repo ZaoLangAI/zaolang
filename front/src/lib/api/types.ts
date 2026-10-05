@@ -127,6 +127,8 @@ export type DistributionChannel = S['DistributionChannel'];
 export type PublicationStatus = S['PublicationStatus'];
 
 export type Character = S['CharacterResponse'];
+export type CharacterScriptLink = S['CharacterScriptLinkView'];
+export type CharacterDescribeResponse = S['CharacterDescribeResponse'];
 export type Scene = S['SceneResponse'];
 export type AssetVariant = S['AssetVariantView'];
 export type AssetEntry = S['AssetEntryView'];

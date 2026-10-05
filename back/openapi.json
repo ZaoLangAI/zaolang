@@ -4475,6 +4475,138 @@
         }
       }
     },
+    "/v1/characters/{character_id}/script-links": {
+      "get": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "List Character Script Links",
+        "description": "Scripts that link this card — what 「AI 生成」 can draft from.",
+        "operationId": "list_character_script_links_v1_characters__character_id__script_links_get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CharacterScriptLinkView"
+                  },
+                  "title": "Response List Character Script Links V1 Characters  Character Id  Script Links Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/characters/{character_id}/describe": {
+      "post": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Describe Character",
+        "description": "Drafts the description / voice description from the linked scripts.\nSaves nothing: the draft goes back to the edit form for the author.",
+        "operationId": "describe_character_v1_characters__character_id__describe_post",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CharacterDescribeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CharacterDescribeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/characters/{character_id}/reference-assets/{asset_id}": {
       "patch": {
         "tags": [
@@ -27489,6 +27621,73 @@
         ],
         "title": "CharacterCreateRequest"
       },
+      "CharacterDescribeRequest": {
+        "properties": {
+          "episode_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode Id"
+          },
+          "fields": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "description",
+                "voice_description"
+              ]
+            },
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 1,
+            "title": "Fields"
+          }
+        },
+        "type": "object",
+        "title": "CharacterDescribeRequest"
+      },
+      "CharacterDescribeResponse": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "voice_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Description"
+          },
+          "episode_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Episode Ids"
+          }
+        },
+        "type": "object",
+        "title": "CharacterDescribeResponse",
+        "description": "A draft only — nothing is saved until the author PATCHes the card."
+      },
       "CharacterPublishRequest": {
         "properties": {
           "portrait_consent": {
@@ -27759,6 +27958,51 @@
           "name"
         ],
         "title": "CharacterResponse"
+      },
+      "CharacterScriptLinkView": {
+        "properties": {
+          "episode_id": {
+            "type": "string",
+            "title": "Episode Id"
+          },
+          "episode_title": {
+            "type": "string",
+            "title": "Episode Title"
+          },
+          "series_title": {
+            "type": "string",
+            "title": "Series Title"
+          },
+          "character_name": {
+            "type": "string",
+            "title": "Character Name"
+          },
+          "look_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Look Id"
+          },
+          "dialogue_count": {
+            "type": "integer",
+            "title": "Dialogue Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "episode_id",
+          "episode_title",
+          "series_title",
+          "character_name"
+        ],
+        "title": "CharacterScriptLinkView",
+        "description": "A script whose cast links this card (`script_context.linked_scripts`)."
       },
       "CharacterUpdateRequest": {
         "properties": {

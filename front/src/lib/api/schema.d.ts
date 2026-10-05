@@ -1133,6 +1133,47 @@ export interface paths {
         patch: operations["update_character_v1_characters__character_id__patch"];
         trace?: never;
     };
+    "/v1/characters/{character_id}/script-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Character Script Links
+         * @description Scripts that link this card — what 「AI 生成」 can draft from.
+         */
+        get: operations["list_character_script_links_v1_characters__character_id__script_links_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/characters/{character_id}/describe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Describe Character
+         * @description Drafts the description / voice description from the linked scripts.
+         *     Saves nothing: the draft goes back to the edit form for the author.
+         */
+        post: operations["describe_character_v1_characters__character_id__describe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/characters/{character_id}/reference-assets/{asset_id}": {
         parameters: {
             query?: never;
@@ -7566,6 +7607,25 @@ export interface components {
             /** Voice Description */
             voice_description?: string | null;
         };
+        /** CharacterDescribeRequest */
+        CharacterDescribeRequest: {
+            /** Episode Id */
+            episode_id?: string | null;
+            /** Fields */
+            fields?: ("description" | "voice_description")[];
+        };
+        /**
+         * CharacterDescribeResponse
+         * @description A draft only — nothing is saved until the author PATCHes the card.
+         */
+        CharacterDescribeResponse: {
+            /** Description */
+            description?: string | null;
+            /** Voice Description */
+            voice_description?: string | null;
+            /** Episode Ids */
+            episode_ids?: string[];
+        };
         /** CharacterPublishRequest */
         CharacterPublishRequest: {
             /**
@@ -7663,6 +7723,27 @@ export interface components {
              * @default 0
              */
             access_credits: number;
+        };
+        /**
+         * CharacterScriptLinkView
+         * @description A script whose cast links this card (`script_context.linked_scripts`).
+         */
+        CharacterScriptLinkView: {
+            /** Episode Id */
+            episode_id: string;
+            /** Episode Title */
+            episode_title: string;
+            /** Series Title */
+            series_title: string;
+            /** Character Name */
+            character_name: string;
+            /** Look Id */
+            look_id?: string | null;
+            /**
+             * Dialogue Count
+             * @default 0
+             */
+            dialogue_count: number;
         };
         /** CharacterUpdateRequest */
         CharacterUpdateRequest: {
@@ -16310,6 +16391,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CharacterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_character_script_links_v1_characters__character_id__script_links_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                character_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterScriptLinkView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    describe_character_v1_characters__character_id__describe_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                character_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CharacterDescribeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterDescribeResponse"];
                 };
             };
             /** @description Validation Error */

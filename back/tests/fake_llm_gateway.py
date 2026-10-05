@@ -644,6 +644,8 @@ def _copy(prompt: str) -> dict[str, Any]:
     except (TypeError, ValueError):
         payload = {}
     if isinstance(payload, dict):
+        if payload.get("character_profile") == "describe":
+            return _copy_character_describe(payload)
         if "blocking_route" in payload:
             return _copy_blocking_route(payload)
         if "max_length" in payload:
@@ -663,6 +665,32 @@ def _copy(prompt: str) -> dict[str, Any]:
         "title": f"未命名作品 {digest}",
         "description": "由造浪智能网关生成的作品，保留完整创作链与署名。",
         "tags": ["cinematic", "ai-generated", "remix"],
+    }
+
+
+# A name containing this makes the fake describe return nothing usable, so
+# tests can drive `character_profile.describe`'s "no draft" path.
+CHARACTER_DESCRIBE_EMPTY_MARKER = "无从描述"
+
+
+def _copy_character_describe(payload: dict[str, Any]) -> dict[str, Any]:
+    """Mirrors `character_profile.SYSTEM_PROMPT`'s shape: a description led
+    by the medium sentence and built from the newest script's traits, and a
+    voice description inferred from the dialogue — empty for fields not
+    asked for."""
+    name = str(payload.get("name") or "")
+    if CHARACTER_DESCRIBE_EMPTY_MARKER in name:
+        return {"description": "", "voice_description": ""}
+    fields = payload.get("fields") or []
+    scripts = payload.get("scripts") or []
+    newest = scripts[0] if scripts and isinstance(scripts[0], dict) else {}
+    traits = str(newest.get("traits") or "").strip()
+    lines = [str(line) for line in newest.get("lines") or []]
+    description = traits or f"真人写实影视短剧造型，{name}"
+    voice = f"年轻女声，音色清亮，语速偏快（fake，参考 {len(lines)} 句台词）"
+    return {
+        "description": description if "description" in fields else "",
+        "voice_description": voice if "voice_description" in fields else "",
     }
 
 

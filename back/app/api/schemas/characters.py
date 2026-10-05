@@ -9,6 +9,7 @@ a character library UI needs to show "draft / 审核中 / 已发布".
 from __future__ import annotations
 
 import datetime as dt
+from typing import Literal
 
 from pydantic import Field
 
@@ -81,3 +82,35 @@ class CharacterResponse(Timestamped):
     status: CreationSkillStatus = CreationSkillStatus.DRAFT
     visibility: CreationSkillVisibility = CreationSkillVisibility.PRIVATE
     access_credits: int = 0
+
+
+DescribeField = Literal["description", "voice_description"]
+
+
+class CharacterScriptLinkView(ApiModel):
+    """A script whose cast links this card (`script_context.linked_scripts`)."""
+
+    episode_id: str
+    episode_title: str
+    series_title: str
+    character_name: str
+    look_id: str | None = None
+    dialogue_count: int = 0
+
+
+def _both_fields() -> list[DescribeField]:
+    return ["description", "voice_description"]
+
+
+class CharacterDescribeRequest(ApiModel):
+    # Only this script; omitted = every linked script, newest first.
+    episode_id: str | None = Field(default=None, max_length=40)
+    fields: list[DescribeField] = Field(default_factory=_both_fields, min_length=1, max_length=2)
+
+
+class CharacterDescribeResponse(ApiModel):
+    """A draft only — nothing is saved until the author PATCHes the card."""
+
+    description: str | None = None
+    voice_description: str | None = None
+    episode_ids: list[str] = Field(default_factory=list)
