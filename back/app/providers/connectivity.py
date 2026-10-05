@@ -215,6 +215,16 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
                 Operation.TEXT_TO_IMAGE.value,
                 Operation.IMAGE_TO_IMAGE.value,
             }:
+                if endpoint.protocol == "fal":
+                    # The multi-angle LoRA: same queue submit + cancel as the
+                    # audio apps (flat app path), with a posed test image.
+                    return _probe_fal_audio(
+                        client,
+                        endpoint,
+                        started,
+                        probe_type,
+                        body=fal_media.probe_image_body(_probe_png_data_uri()),
+                    )
                 if endpoint.protocol == "dmxapi":
                     dmx_body: dict[str, object] = {
                         "model": endpoint.model,
@@ -483,7 +493,12 @@ def _cancel_fal_audio_probe(
 
 
 def _probe_fal_audio(
-    client: httpx.Client, endpoint: LlmProviderEndpoint, started: float, probe_type: str
+    client: httpx.Client,
+    endpoint: LlmProviderEndpoint,
+    started: float,
+    probe_type: str,
+    *,
+    body: dict[str, Any] | None = None,
 ) -> ConnectivityResult:
     """Shared fal queue probe for every audio-shaped capability this
     protocol serves (`AUDIO_GENERATION`'s voice-clone, `MUSIC_GENERATION`'s
@@ -494,7 +509,7 @@ def _probe_fal_audio(
     """
     response = client.post(
         media_request_path(endpoint.base_url, fal_media.probe_audio_path(endpoint.model)),
-        json=fal_media.probe_audio_body(endpoint.model),
+        json=body if body is not None else fal_media.probe_audio_body(endpoint.model),
     )
     if response.status_code >= 400:
         return _media_response(

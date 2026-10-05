@@ -262,9 +262,11 @@ const PROTOCOL_OPERATIONS: Record<MediaProtocol, readonly OperationValue[]> = {
   ],
   // `minimax/h3-max` provides the three video tags; `minimax/voice-clone`
   // provides `audio_generation`; `minimax-music/v2.6`/`elevenlabs/sound-
-  // effects/v2` provide `music_generation` — see backend
-  // `_FAL_CAPABILITIES`.
+  // effects/v2` provide `music_generation`; `fal-ai/qwen-image-edit-2511-
+  // multiple-angles` provides `image_to_image` (camera control, image-only
+  // input) — see backend `_FAL_CAPABILITIES`.
   fal: [
+    'image_to_image',
     'text_to_video',
     'image_to_video',
     'video_to_video',

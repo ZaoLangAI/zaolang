@@ -1,6 +1,7 @@
 """fal.ai queue media provider for MiniMax H3 Max (video), MiniMax Voice
-Clone (audio_generation), and MiniMax Music 2.6 / ElevenLabs Sound Effects
-V2 (music_generation).
+Clone (audio_generation), MiniMax Music 2.6 / ElevenLabs Sound Effects
+V2 (music_generation), and Qwen-Image-Edit-2511 Multiple Angles
+(image_to_image camera control).
 
 Speaks `POST https://queue.fal.run/{fal app id}/{route}` +
 `GET .../requests/{id}/status` + `GET .../requests/{id}/response` +
@@ -30,6 +31,15 @@ Four model families, each its own `ProviderCapability`/catalog entry:
   effect plus an explicit `duration_seconds` (0.5-22s) — the one model in
   this module whose music/SFX call takes a billable duration knob.
 
+- `fal-ai/qwen-image-edit-2511-multiple-angles` (`_IMAGE_MODELS`): re-renders
+  the first reference image from another camera pose. The pose arrives as
+  `request.extra["camera_pose"]` (server-written per pass by
+  `workflows.nodes.execute_asset_planning`, never client input) and maps to
+  `horizontal_angle`/`vertical_angle`/`zoom` via
+  `app.domain.image_assets.camera.to_fal`. The prompt rides along as
+  `additional_prompt`. `supports_camera_control` is what makes the router
+  prefer it for a posed pass.
+
 All three audio families share one fal app path shape (no route segment,
 unlike the video routes) and one queue submit/poll/cancel skeleton — see
 `_audio_app_path`/`FalMediaProvider._audio_route_and_body`.
@@ -56,6 +66,7 @@ from app.providers.base import (
     GenerationResult,
     ProviderReference,
     probe_audio_duration_ms,
+    probe_image_size,
 )
 from app.storage import s3
 
@@ -65,6 +76,7 @@ FAL_H3_MAX_MODEL = "minimax/h3-max"
 FAL_VOICE_CLONE_MODEL = "minimax/voice-clone"
 FAL_MUSIC_MODEL = "minimax-music/v2.6"
 FAL_SFX_MODEL = "elevenlabs/sound-effects/v2"
+FAL_MULTI_ANGLE_MODEL = "fal-ai/qwen-image-edit-2511-multiple-angles"
 
 ROUTE_TEXT_TO_VIDEO = "text-to-video"
 ROUTE_IMAGE_TO_VIDEO = "image-to-video"
@@ -80,10 +92,29 @@ ROUTE_VOICE_CLONE = "voice-clone"
 ROUTE_MUSIC = "music"
 ROUTE_SFX = "sfx"
 VALID_AUDIO_ROUTES = frozenset({ROUTE_VOICE_CLONE, ROUTE_MUSIC, ROUTE_SFX})
+# Like the audio routes, the image route only namespaces the task id; the
+# app path has no route segment (`_flat_app_path`).
+ROUTE_MULTI_ANGLE = "multi-angle"
+VALID_IMAGE_ROUTES = frozenset({ROUTE_MULTI_ANGLE})
 _VIDEO_MODELS = frozenset({FAL_H3_MAX_MODEL})
 _MUSIC_MODELS = frozenset({FAL_MUSIC_MODEL})
 _SFX_MODELS = frozenset({FAL_SFX_MODEL})
 _AUDIO_MODELS = frozenset({FAL_VOICE_CLONE_MODEL}) | _MUSIC_MODELS | _SFX_MODELS
+_IMAGE_MODELS = frozenset({FAL_MULTI_ANGLE_MODEL})
+# The LoRA re-renders one subject image; anything after it is ignored.
+MULTI_ANGLE_MAX_REFERENCES = 1
+_ADDITIONAL_PROMPT_MAX_CHARS = 800
+# fal bills per megapixel; ~1MP keeps one pass at the catalog's per-image
+# price while staying sharp enough for a reference sheet.
+_MULTI_ANGLE_SIZE_BY_ASPECT: dict[str, tuple[int, int]] = {
+    "1:1": (1024, 1024),
+    "16:9": (1344, 768),
+    "9:16": (768, 1344),
+    "4:3": (1152, 864),
+    "3:4": (864, 1152),
+    "21:9": (1536, 640),
+    "2:1": (1408, 704),
+}
 
 _PROMPT_EXPANSION_MODE = "balanced"
 _T2V_FALLBACK_RATIO = "16:9"
@@ -136,6 +167,12 @@ def music_style_for_model(model: str) -> frozenset[str] | None:
     return None
 
 
+def supports_camera_control(model: str) -> bool:
+    """Whether this fal model takes an explicit camera pose (see
+    `ProviderCapability.camera_control`)."""
+    return canonical_model(model) in _IMAGE_MODELS
+
+
 def canonical_model(model: str) -> str:
     """Strip a full fal app id down to the catalog model.
 
@@ -165,7 +202,8 @@ def encode_task_id(route: str, request_id: str) -> str:
 
 def decode_task_id(external_task_id: str) -> tuple[str, str]:
     route, separator, request_id = external_task_id.partition("#")
-    if not separator or route not in (VALID_ROUTES | VALID_AUDIO_ROUTES) or not request_id:
+    valid = VALID_ROUTES | VALID_AUDIO_ROUTES | VALID_IMAGE_ROUTES
+    if not separator or route not in valid or not request_id:
         raise ValueError(f"invalid fal task id: {external_task_id}")
     return route, request_id
 
@@ -430,6 +468,42 @@ def build_sfx_body(request: GenerationRequest) -> dict[str, Any]:
     return body
 
 
+def build_multi_angle_body(request: GenerationRequest) -> dict[str, Any]:
+    """`fal-ai/qwen-image-edit-2511-multiple-angles` create body: the first
+    image reference re-rendered from `extra["camera_pose"]`.
+
+    A posed pass is the only thing the router sends here (the camera hard
+    filter), so a missing pose or image is a programming error surfaced as
+    an invalid request, not a silent front view."""
+    from app.domain.image_assets import camera
+
+    pose = camera.parse((request.extra or {}).get("camera_pose"))
+    if pose is None:
+        raise ValueError(f"{FAL_MULTI_ANGLE_MODEL} requires extra.camera_pose")
+    images = [ref for ref in _resolved_references(request) if ref.media_type == "image"]
+    if not images:
+        raise ValueError(f"{FAL_MULTI_ANGLE_MODEL} requires an image reference")
+    width, height = _MULTI_ANGLE_SIZE_BY_ASPECT.get(
+        request.aspect_ratio, _MULTI_ANGLE_SIZE_BY_ASPECT["1:1"]
+    )
+    body: dict[str, Any] = {
+        "image_urls": [_presign(ref) for ref in images[:MULTI_ANGLE_MAX_REFERENCES]],
+        **camera.to_fal(pose),
+        "image_size": {"width": width, "height": height},
+        "num_images": 1,
+        "output_format": "png",
+        "enable_safety_checker": True,
+    }
+    prompt = request.prompt.strip()
+    if prompt:
+        body["additional_prompt"] = prompt[:_ADDITIONAL_PROMPT_MAX_CHARS]
+    if request.negative_prompt and request.negative_prompt.strip():
+        body["negative_prompt"] = request.negative_prompt.strip()[:_ADDITIONAL_PROMPT_MAX_CHARS]
+    if request.seed is not None:
+        body["seed"] = request.seed
+    return body
+
+
 def probe_audio_body(model: str = FAL_VOICE_CLONE_MODEL) -> dict[str, Any]:
     """Minimal connectivity body for whichever of the three audio families
     `model` names — fal's own published sample reference clip for voice
@@ -443,6 +517,19 @@ def probe_audio_body(model: str = FAL_VOICE_CLONE_MODEL) -> dict[str, Any]:
         "audio_url": (
             "https://storage.googleapis.com/falserverless/model_tests/zonos/demo_voice_zonos.wav"
         ),
+    }
+
+
+def probe_image_body(image_url: str) -> dict[str, Any]:
+    """Connectivity probe body for the multi-angle model: one tiny image,
+    turned to its right side. Cancelled right after the queue accepts it."""
+    return {
+        "image_urls": [image_url],
+        "horizontal_angle": 90.0,
+        "vertical_angle": 0.0,
+        "zoom": 5.0,
+        "num_images": 1,
+        "image_size": {"width": 512, "height": 512},
     }
 
 
@@ -493,6 +580,20 @@ def _video_url_from_result(payload: dict[str, Any]) -> str | None:
     return None
 
 
+def _image_url_from_result(payload: dict[str, Any]) -> str | None:
+    images = payload.get("images")
+    if isinstance(images, list):
+        for item in images:
+            if isinstance(item, str) and item:
+                return item
+            if isinstance(item, dict) and isinstance(item.get("url"), str) and item["url"]:
+                return str(item["url"])
+    image = payload.get("image")
+    if isinstance(image, dict) and isinstance(image.get("url"), str) and image["url"]:
+        return str(image["url"])
+    return None
+
+
 def _audio_url_from_result(payload: dict[str, Any]) -> str | None:
     audio = payload.get("audio")
     if isinstance(audio, str) and audio:
@@ -518,9 +619,9 @@ class _EndpointCredentials:
 
 
 class FalMediaProvider(GenerationProvider):
-    """One video or audio (voice-clone / music / SFX) capability of one
-    `protocol="fal"` media endpoint — `self._model` decides which family;
-    see the module docstring for the four."""
+    """One video, audio (voice-clone / music / SFX) or multi-angle image
+    capability of one `protocol="fal"` media endpoint — `self._model` decides
+    which family; see the module docstring."""
 
     kind = "commercial_api"
 
@@ -554,9 +655,13 @@ class FalMediaProvider(GenerationProvider):
     def submit(self, request: GenerationRequest) -> GenerationResult:
         started = time.perf_counter()
         is_audio = self._model in _AUDIO_MODELS
+        is_image = self._model in _IMAGE_MODELS
         try:
             if is_audio:
                 route, body = self._audio_route_and_body(request)
+                path = _audio_app_path(self._model)
+            elif is_image:
+                route, body = ROUTE_MULTI_ANGLE, build_multi_angle_body(request)
                 path = _audio_app_path(self._model)
             else:
                 route = resolve_route(request)
@@ -612,12 +717,12 @@ class FalMediaProvider(GenerationProvider):
         return GenerationResult(
             succeeded=False,
             pending=True,
-            mime_type="audio/mpeg" if is_audio else "video/mp4",
+            mime_type="image/png" if is_image else "audio/mpeg" if is_audio else "video/mp4",
             # An audio call's real duration (clone/music/SFX alike) is only
             # known once the clip is downloaded in `poll()`
             # (`probe_audio_duration_ms`) — unlike video, where the
             # requested `duration_seconds` is itself the generated length.
-            duration_ms=None if is_audio else request.duration_seconds * 1000,
+            duration_ms=(None if is_audio or is_image else request.duration_seconds * 1000),
             latency_ms=self._elapsed_ms(started),
             external_task_id=encode_task_id(route, request_id),
             metadata={"provider": self.name, "model": self._model, "route": route},
@@ -635,12 +740,14 @@ class FalMediaProvider(GenerationProvider):
         except ValueError as exc:
             return self._failure(started, "PROVIDER_INVALID_RESPONSE", str(exc))
         is_audio = route in VALID_AUDIO_ROUTES
+        is_image = route in VALID_IMAGE_ROUTES
+        is_flat = is_audio or is_image
 
         try:
             with self._client() as client:
                 status_path = (
                     _audio_status_path(self._model, request_id)
-                    if is_audio
+                    if is_flat
                     else _status_path(self._model, route, request_id)
                 )
                 response = client.get(media_request_path(self._creds.base_url, status_path))
@@ -681,7 +788,7 @@ class FalMediaProvider(GenerationProvider):
             with self._client() as client:
                 result_path = (
                     _audio_result_path(self._model, request_id)
-                    if is_audio
+                    if is_flat
                     else _result_path(self._model, route, request_id)
                 )
                 result_response = client.get(media_request_path(self._creds.base_url, result_path))
@@ -703,12 +810,20 @@ class FalMediaProvider(GenerationProvider):
         if result_error:
             return self._failure(started, "PROVIDER_TASK_FAILED", result_error)
         media_url = (
-            _audio_url_from_result(result_payload)
+            _image_url_from_result(result_payload)
+            if is_image
+            else _audio_url_from_result(result_payload)
             if is_audio
             else _video_url_from_result(result_payload)
         )
         if not media_url:
-            missing_code = "missing_audio_url" if is_audio else "missing_video_url"
+            missing_code = (
+                "missing_image"
+                if is_image
+                else "missing_audio_url"
+                if is_audio
+                else "missing_video_url"
+            )
             return self._failure(started, "PROVIDER_INVALID_RESPONSE", missing_code)
 
         try:
@@ -727,8 +842,35 @@ class FalMediaProvider(GenerationProvider):
             )
 
         if not media_bytes:
-            code = "empty_audio_content" if is_audio else "empty_video_content"
+            code = (
+                "missing_image"
+                if is_image
+                else "empty_audio_content"
+                if is_audio
+                else "empty_video_content"
+            )
             return self._failure(started, "PROVIDER_INVALID_RESPONSE", code)
+
+        if is_image:
+            # `attempt_number` keeps every pose pass of one job apart.
+            object_key = f"generated/{request.job_id}/output_{request.attempt_number}.png"
+            s3.put_object(object_key, media_bytes, content_type="image/png")
+            width, height = probe_image_size(media_bytes)
+            return GenerationResult(
+                succeeded=True,
+                object_key=object_key,
+                mime_type="image/png",
+                width=width,
+                height=height,
+                latency_ms=self._elapsed_ms(started),
+                external_task_id=external_task_id,
+                metadata={
+                    "provider": self.name,
+                    "model": self._model,
+                    "route": route,
+                    "upstream_status": status,
+                },
+            )
 
         if is_audio:
             object_key = f"generated/{request.job_id}/output_{request.attempt_number}.mp3"
@@ -778,7 +920,7 @@ class FalMediaProvider(GenerationProvider):
             return False
         cancel_path = (
             _audio_cancel_path(self._model, request_id)
-            if route in VALID_AUDIO_ROUTES
+            if route in VALID_AUDIO_ROUTES | VALID_IMAGE_ROUTES
             else _cancel_path(self._model, route, request_id)
         )
         try:

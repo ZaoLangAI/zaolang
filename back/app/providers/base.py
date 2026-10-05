@@ -372,6 +372,26 @@ class ProviderCapability:
     # output_count`): 1 for every model except a group-capable one
     # (Seedream's sequential image generation).
     max_outputs_per_call: int = 1
+    # Takes an explicit camera pose (`extra.camera_pose`) instead of reading
+    # the move from the prompt — today only fal's Qwen-Image-Edit-2511
+    # multiple-angles LoRA (`fal_media.supports_camera_control`). The router
+    # prefers these for a posed pass and keeps them away from any other
+    # request (`router._request_constraint_failure`).
+    camera_control: bool = False
+
+
+def probe_image_size(payload: bytes) -> tuple[int | None, int | None]:
+    """A just-generated image's pixel size, `(None, None)` when undecodable —
+    never fails an otherwise-successful generation."""
+    import io
+
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        with Image.open(io.BytesIO(payload)) as image:
+            return image.width, image.height
+    except (UnidentifiedImageError, OSError):
+        return None, None
 
 
 def probe_audio_duration_ms(payload: bytes, mime_type: str) -> int | None:

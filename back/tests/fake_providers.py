@@ -141,6 +141,22 @@ class FakePaidApiProvider(GenerationProvider):
         )
 
 
+class FakeCameraApiProvider(FakePaidApiProvider):
+    """A camera-control image route (stands in for fal's multi-angle LoRA):
+    records the pose it was asked for so tests can assert each pass got its
+    own."""
+
+    name = "fake_camera_api"
+
+    def submit(self, request: GenerationRequest) -> GenerationResult:
+        result = super().submit(request)
+        pose = (request.extra or {}).get("camera_pose")
+        if result.succeeded:
+            result.metadata["camera_pose"] = dict(pose) if isinstance(pose, dict) else None
+            result.metadata["model"] = "fake-multi-angle"
+        return result
+
+
 class FakeVideoAnalysisProvider(GenerationProvider):
     """`video_analysis`'s own shape: `output_json`, never `object_key`."""
 
@@ -187,6 +203,7 @@ REGISTRY: dict[str, GenerationProvider] = {
     FakeOpenWorkflowProvider.name: FakeOpenWorkflowProvider(),
     FakePaidApiProvider.name: FakePaidApiProvider(),
     FakeVideoAnalysisProvider.name: FakeVideoAnalysisProvider(),
+    FakeCameraApiProvider.name: FakeCameraApiProvider(),
 }
 
 

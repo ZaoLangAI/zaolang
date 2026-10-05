@@ -1092,6 +1092,38 @@ VENDOR_MODEL_CATALOG: dict[VendorId, list[ModelCatalogEntry]] = {
             ),
         ),
         ModelCatalogEntry(
+            model="fal-ai/qwen-image-edit-2511-multiple-angles",
+            display_name="Qwen Image Edit 2511 · 多机位",
+            kind="media",
+            protocol="fal",
+            input_modalities=("image",),
+            output_modalities=("image",),
+            notes=(
+                "fal.ai Qwen-Image-Edit-2511 + Multiple-Angles LoRA（Apache-2.0）：把一张"
+                "参考图按指定机位重绘——方位 0-360°（0 正面/90 右侧/180 背面/270 左侧）、"
+                "俯仰 -30~90°、景别 zoom 0-10，训练覆盖 8 方位×4 俯仰×3 景别共 96 个机位。"
+                "只取第一张参考图；机位由服务端按每个 pass 写入 extra.camera_pose，"
+                "路由只在带机位的资产任务里优先选它，其余请求一律不会派到这里。"
+                "输入模态只选「图片」，否则会多派生出 text_to_image。"
+                "官方按百万像素计费（$0.035/MP），本平台按约 1MP 出图折算为按张。"
+                "query/cancel 沿用本协议的 fal queue 骨架，尚未对 live 凭证确认。"
+            ),
+            doc_url="https://fal.ai/models/fal-ai/qwen-image-edit-2511-multiple-angles/api",
+            pricing_doc_url="https://fal.ai/models/fal-ai/qwen-image-edit-2511-multiple-angles",
+            suggested_timeout_ms=60_000,
+            price_items=(
+                PriceItem(
+                    key="image_generation",
+                    unit="per_image",
+                    label="多机位重绘（约 1MP/张）",
+                    default_micro_usd=_usd_micro_usd(0.035),
+                    source_currency="USD",
+                    source_amount="$0.035/百万像素",
+                    quoted_on="2026-10",
+                ),
+            ),
+        ),
+        ModelCatalogEntry(
             model="minimax/voice-clone",
             display_name="MiniMax Voice Clone",
             kind="media",

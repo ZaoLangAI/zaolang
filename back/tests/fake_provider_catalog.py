@@ -42,6 +42,22 @@ def build_fake_catalog() -> dict[str, ProviderCapability]:
             max_image_references=9,
             provider_factory=lambda: fake_providers.get_provider("fake_paid_api"),
         ),
+        # Camera-control image route: only ever eligible for a posed pass
+        # (`router._request_constraint_failure`), so it never changes routing
+        # for any other test.
+        "fake_camera_api": ProviderCapability(
+            name="fake_camera_api",
+            kind=ProviderKind.COMMERCIAL_API,
+            operations=frozenset({Operation.IMAGE_TO_IMAGE}),
+            tiers=frozenset({QualityTier.PREVIEW, QualityTier.STANDARD, QualityTier.CINEMATIC}),
+            quality_prior=0.9,
+            typical_latency_ms=12_000,
+            unit_cost_micro_usd=35000,
+            model_or_workflow="fake-multi-angle",
+            max_image_references=1,
+            camera_control=True,
+            provider_factory=lambda: fake_providers.get_provider("fake_camera_api"),
+        ),
         "fake_video_analysis": ProviderCapability(
             name="fake_video_analysis",
             kind=ProviderKind.COMMERCIAL_API,

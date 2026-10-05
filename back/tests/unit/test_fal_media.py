@@ -670,3 +670,140 @@ def test_music_cancel_puts_the_music_cancel_path(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(httpx.Client, "put", fake_put)
     assert _music_provider().cancel("music#music-req-1") is True
     assert captured == ["/minimax-music/v2.6/requests/music-req-1/cancel"]
+
+
+# --- Qwen-Image-Edit-2511 multiple angles (camera control) -------------------
+
+from app.providers.fal_media import (  # noqa: E402
+    FAL_MULTI_ANGLE_MODEL,
+    build_multi_angle_body,
+    probe_image_body,
+    supports_camera_control,
+)
+
+
+def _multi_angle_provider() -> FalMediaProvider:
+    return FalMediaProvider(
+        endpoint_id="ep-fal-angle",
+        capability_tag=Operation.IMAGE_TO_IMAGE.value,
+        model=FAL_MULTI_ANGLE_MODEL,
+        base_url="https://queue.fal.run",
+        api_key="test-key",
+        timeout_ms=5_000,
+    )
+
+
+def _posed_request(**overrides: object) -> GenerationRequest:
+    values: dict[str, object] = {
+        "references": [
+            ProviderReference(object_key="uploads/front.png", media_type="image"),
+            ProviderReference(object_key="uploads/portrait.png", media_type="image"),
+        ],
+        "extra": {"camera_pose": {"azimuth": 90, "elevation": 30, "distance": "close"}},
+        "aspect_ratio": "3:4",
+        "prompt": "保持人物身份一致，只改变机位",
+        "attempt_number": 2,
+    }
+    values.update(overrides)
+    return _request(Operation.IMAGE_TO_IMAGE.value, **values)
+
+
+def test_only_the_multi_angle_model_takes_camera_control() -> None:
+    assert supports_camera_control(FAL_MULTI_ANGLE_MODEL)
+    assert supports_camera_control(f"/{FAL_MULTI_ANGLE_MODEL}/")
+    assert not supports_camera_control(FAL_H3_MAX_MODEL)
+
+
+def test_multi_angle_body_maps_the_pose_and_keeps_one_image(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(s3, "presign_get", lambda key, expires_in: f"https://cdn/{key}")
+    body = build_multi_angle_body(_posed_request())
+    assert body["image_urls"] == ["https://cdn/uploads/front.png"]
+    assert body["horizontal_angle"] == 90.0
+    assert body["vertical_angle"] == 30.0
+    assert body["zoom"] == 8.0
+    assert body["image_size"] == {"width": 864, "height": 1152}
+    assert body["additional_prompt"] == "保持人物身份一致，只改变机位"
+    assert body["output_format"] == "png"
+
+
+def test_multi_angle_body_needs_a_pose_and_an_image() -> None:
+    with pytest.raises(ValueError, match="camera_pose"):
+        build_multi_angle_body(_posed_request(extra={}))
+    with pytest.raises(ValueError, match="image reference"):
+        build_multi_angle_body(_posed_request(references=[]))
+
+
+def test_multi_angle_submit_posts_to_the_flat_app_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(s3, "presign_get", lambda key, expires_in: f"https://cdn/{key}")
+    posted: dict[str, object] = {}
+
+    def fake_post(self, url, json=None):  # type: ignore[no-untyped-def]
+        posted["url"] = url
+        posted["json"] = json
+        return _FakeResponse(json_body={"request_id": "req-angle"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = _multi_angle_provider().submit(_posed_request())
+    assert result.pending
+    assert result.mime_type == "image/png"
+    assert result.duration_ms is None
+    assert result.external_task_id == "multi-angle#req-angle"
+    assert str(posted["url"]).endswith(f"/{FAL_MULTI_ANGLE_MODEL}")
+
+
+def test_multi_angle_submit_without_pose_is_an_invalid_request() -> None:
+    result = _multi_angle_provider().submit(_posed_request(extra={}))
+    assert not result.succeeded
+    assert result.failure_code == "PROVIDER_INVALID_RESPONSE"
+
+
+def test_multi_angle_poll_stores_a_png_per_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (64, 48), (10, 20, 30)).save(buffer, format="PNG")
+    png = buffer.getvalue()
+    gets: list[str] = []
+
+    def fake_get(self, url):  # type: ignore[no-untyped-def]
+        gets.append(str(url))
+        if str(url).endswith("/status"):
+            return _FakeResponse(json_body={"status": "COMPLETED"})
+        if str(url).endswith("/response"):
+            return _FakeResponse(json_body={"images": [{"url": "https://fal.media/out.png"}]})
+        return _FakeResponse(content=png)
+
+    stored: dict[str, object] = {}
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    monkeypatch.setattr(
+        s3, "put_object", lambda key, data, content_type: stored.update(key=key, ct=content_type)
+    )
+    result = _multi_angle_provider().poll("multi-angle#req-angle", _posed_request())
+    assert result.succeeded
+    assert result.mime_type == "image/png"
+    assert (result.width, result.height) == (64, 48)
+    assert stored == {"key": "generated/job-image_to_image/output_2.png", "ct": "image/png"}
+    assert any(url.endswith(f"/{FAL_MULTI_ANGLE_MODEL}/requests/req-angle/status") for url in gets)
+
+
+def test_multi_angle_task_ids_decode_and_cancel(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert decode_task_id("multi-angle#abc") == ("multi-angle", "abc")
+    put: dict[str, str] = {}
+
+    def fake_put(self, url):  # type: ignore[no-untyped-def]
+        put["url"] = str(url)
+        return _FakeResponse(status_code=202)
+
+    monkeypatch.setattr(httpx.Client, "put", fake_put)
+    assert _multi_angle_provider().cancel("multi-angle#abc")
+    assert put["url"].endswith(f"/{FAL_MULTI_ANGLE_MODEL}/requests/abc/cancel")
+
+
+def test_probe_image_body_is_a_small_posed_render() -> None:
+    body = probe_image_body("data:image/png;base64,AAA")
+    assert body["image_urls"] == ["data:image/png;base64,AAA"]
+    assert body["horizontal_angle"] == 90.0
