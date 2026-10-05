@@ -23,7 +23,10 @@ from app.domain.image_assets.vocabulary import (
     SceneWeather,
 )
 from app.models.enums import (
+    CHARACTER_ENTRY_TYPES,
     CHARACTER_JOB_VIEWS,
+    SCENE_ENTRY_TYPES,
+    AssetEntryType,
     CharacterViewAngle,
     ImageAssetKind,
     JobStatus,
@@ -574,6 +577,20 @@ class GenerationParams(ApiModel):
     # prompt builder writes into a sheet / 换装 prompt. Any client-sent
     # value is discarded.
     target_look: TargetLook | None = None
+    # `asset_kind=character|scene` (P6, `asset_derive`): an image of the
+    # target card this job starts from — always reference 1
+    # (`reference_resolver._source_entry_reference`). Write-back links the
+    # output to it with an auto graph edge.
+    source_entry_id: str | None = Field(default=None, max_length=40)
+    # 调整修改: redraw `source_entry_id` changing only what the prompt says;
+    # the output is filed like the source (same look, type, view).
+    asset_edit: bool = False
+    # How write-back files the output (e.g. `pose` for a character placed in
+    # a scene, `shot` for a scene), instead of the view/label mapping.
+    asset_output_entry_type: AssetEntryType | None = None
+    # `in_scene`: the character placed in its look's linked scene (the
+    # scene's master is borrowed as an environment-only reference).
+    asset_output_mode: Literal["in_scene"] | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -593,6 +610,30 @@ class GenerationParams(ApiModel):
                 raise ValueError("定妆照不能与侧面/背面视角同时生成。")
         if self.target_variant_id and not (is_character or is_scene):
             raise ValueError("target_variant_id 仅适用于 asset_kind=character/scene。")
+        derive = bool(
+            self.source_entry_id
+            or self.asset_edit
+            or self.asset_output_entry_type
+            or self.asset_output_mode
+        )
+        if derive and not (is_character or is_scene):
+            raise ValueError("基于参考图的调整/派生仅适用于 asset_kind=character/scene。")
+        if (self.asset_edit or self.asset_output_mode) and not self.source_entry_id:
+            raise ValueError("调整修改与角色入场景需要指定 source_entry_id。")
+        if self.asset_edit and (
+            self.asset_output_mode
+            or self.character_expressions
+            or self.character_portrait
+            or self.character_views not in (None, [CharacterViewAngle.FRONT])
+            or self.scene_variants
+        ):
+            raise ValueError("调整修改不能同时指定其他生成方式。")
+        if self.asset_output_mode and not is_character:
+            raise ValueError("角色入场景仅适用于 asset_kind=character。")
+        if self.asset_output_entry_type is not None:
+            allowed = CHARACTER_ENTRY_TYPES if is_character else SCENE_ENTRY_TYPES
+            if self.asset_output_entry_type not in allowed:
+                raise ValueError("输出的参考图类型与卡片类别不匹配。")
         if self.target_variant_id and self.character_outfit_label:
             raise ValueError("目标造型与造型名称只能指定一个。")
         if self.target_variant_id and self.scene_variants:

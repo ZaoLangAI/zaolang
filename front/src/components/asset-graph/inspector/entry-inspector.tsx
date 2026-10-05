@@ -10,9 +10,13 @@ import {
   type CardKind,
 } from '@/components/library/entry-actions';
 import { MediaLightbox } from '@/components/ui/media-lightbox';
-import type { AssetEntry, AssetGraph, AssetVariant } from '@/lib/api/types';
+import { Badge } from '@/components/ui/primitives';
+import type { AssetEntry, AssetGenerateResponse, AssetGraph, AssetVariant } from '@/lib/api/types';
+import { cn } from '@/lib/cn';
 
 import type { AssetGraphActions } from '../use-asset-graph';
+import { versionIndex } from '../versions';
+import { GeneratePanel } from './generate-panel';
 import { useNodeNames } from './node-names';
 import { AddRelationForm, RelationsList } from './relations-list';
 import { InspectorSection } from './section';
@@ -27,7 +31,9 @@ export function EntryInspector({
   busy,
   actions,
   onSelectEdge,
+  onSelectVersion,
   onDeleted,
+  onGenerated,
 }: {
   graph: AssetGraph;
   kind: CardKind;
@@ -36,12 +42,20 @@ export function EntryInspector({
   busy: boolean;
   actions: AssetGraphActions;
   onSelectEdge: (edgeId: string) => void;
+  /** Show another version of this image here. */
+  onSelectVersion: (entryId: string) => void;
   onDeleted: () => void;
+  onGenerated: (response: AssetGenerateResponse) => void;
 }) {
   const t = useTranslations('assetGraph');
   const tMedia = useTranslations('media');
   const name = useNodeNames(graph);
   const [lightbox, setLightbox] = useState(false);
+  const { headOf, versions } = versionIndex(graph);
+  const group = versions.get(headOf.get(entry.id) ?? entry.id) ?? [entry];
+  const pendingVersions = (graph.pending ?? []).filter(
+    (job) => job.mode === 'edit' && group.some((e) => e.id === job.source_entry_id),
+  ).length;
 
   return (
     <div className="flex flex-col gap-4">
@@ -56,6 +70,46 @@ export function EntryInspector({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={entry.url} alt="" className="max-h-80 w-full object-contain" />
         </button>
+      ) : null}
+
+      {group.length > 1 || pendingVersions ? (
+        <InspectorSection title={t('sectionVersions', { count: group.length })}>
+          <p className="text-xs text-muted">{t('versionsHint')}</p>
+          <ul className="flex flex-wrap gap-1.5">
+            {group.map((version) => (
+              <li key={version.id}>
+                <button
+                  type="button"
+                  aria-label={t('openVersion')}
+                  aria-current={version.id === entry.id}
+                  onClick={() => onSelectVersion(version.id)}
+                  className={cn(
+                    'relative size-16 overflow-hidden rounded-[var(--radius-sm)] border bg-surface-soft focus-visible:outline-2',
+                    version.id === entry.id
+                      ? 'border-primary ring-2 ring-primary/30'
+                      : 'border-border',
+                    version.status === 'candidate' && 'border-dashed',
+                  )}
+                >
+                  {version.url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={version.url} alt="" className="h-full w-full object-cover" />
+                  ) : null}
+                  {version.status !== 'candidate' ? (
+                    <span className="absolute left-0.5 top-0.5">
+                      <Badge tone="primary">{t('versionCurrent')}</Badge>
+                    </span>
+                  ) : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {pendingVersions ? (
+            <p className="text-xs text-primary">
+              {t('versionPending', { count: pendingVersions })}
+            </p>
+          ) : null}
+        </InspectorSection>
       ) : null}
 
       <InspectorSection title={t('sectionEntry')}>
@@ -77,6 +131,17 @@ export function EntryInspector({
             showImage={false}
           />
         </ul>
+      </InspectorSection>
+
+      <InspectorSection title={t('sectionGenerate')}>
+        <GeneratePanel
+          key={entry.id}
+          graph={graph}
+          kind={kind}
+          entry={entry}
+          variant={variant}
+          onSubmitted={onGenerated}
+        />
       </InspectorSection>
 
       <InspectorSection title={t('sectionRelations')}>

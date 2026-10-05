@@ -43,6 +43,10 @@ class AssetPass(StrEnum):
     CHARACTER_COMPLETION = "character_completion"
     CHARACTER_EXPRESSIONS = "character_expressions"
     SCENE = "scene"
+    # P6: redraw `source_entry_id` changing only what the prompt says.
+    ASSET_EDIT = "asset_edit"
+    # P6: the character from reference 1 placed in its look's linked scene.
+    CHARACTER_IN_SCENE = "character_in_scene"
     OTHER = "other"
 
 
@@ -235,6 +239,16 @@ def _expressions(params: dict[str, Any]) -> list[str]:
 def resolve_pass(
     params: dict[str, Any], *, asset_kind: str | None, character_view: str | None
 ) -> AssetPass:
+    if params.get("asset_edit") and asset_kind in (
+        ImageAssetKind.CHARACTER.value,
+        ImageAssetKind.SCENE.value,
+    ):
+        return AssetPass.ASSET_EDIT
+    if (
+        asset_kind == ImageAssetKind.CHARACTER.value
+        and params.get("asset_output_mode") == "in_scene"
+    ):
+        return AssetPass.CHARACTER_IN_SCENE
     if asset_kind == ImageAssetKind.CHARACTER.value:
         if character_view in CHARACTER_COMPLETION_FIXED_PROMPTS:
             return AssetPass.CHARACTER_COMPLETION
@@ -271,6 +285,13 @@ def compose(
             CHARACTER_COMPLETION_FIXED_PROMPTS[character_view],
             merge_negative(negative, CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT),
         )
+    if asset_pass is AssetPass.ASSET_EDIT:
+        return (
+            ASSET_EDIT_TEMPLATE.format(instruction=prompt.strip().rstrip("。．.")),
+            merge_negative(negative, ASSET_EDIT_NEGATIVE),
+        )
+    if asset_pass is AssetPass.CHARACTER_IN_SCENE:
+        return _compose_character_in_scene(prompt, negative, params)
     if asset_pass is AssetPass.IDENTITY_PORTRAIT:
         return _compose_identity_portrait(prompt, negative, has_reference=has_reference)
     if asset_pass is AssetPass.CHARACTER_SHEET:
@@ -296,6 +317,39 @@ def compose(
             prompt, negative, scene_presets_from(params), has_reference=has_reference
         )
     return prompt, negative
+
+
+# 调整修改 (P6): the instruction is the whole intent; everything it does not
+# name stays as reference 1 has it — including a sheet's own layout.
+ASSET_EDIT_TEMPLATE = (
+    "以参考图1为基础，只做以下修改：{instruction}。"
+    "未提及的部分（人物身份与五官、服装、构图与版式、背景与光线）保持与参考图1完全一致。"
+)
+ASSET_EDIT_NEGATIVE = "换成另一个人，构图改变，版式改变，新增无关元素"
+# 角色入场景 (P6): reference 1 is the character, the last reference the
+# linked scene (`reference_resolver.SCENE_ONLY_ROLE`).
+IN_SCENE_PREFIX = "以参考图1中的人物为准，严格保持五官、发型发色、肤色、体型与服装完全一致；"
+IN_SCENE_LAYOUT = (
+    "将人物自然地置于参考图中场景的环境与光线里（只取场景，不要照搬场景图里的其他人物），"
+    "单张画面，全身或中景构图，人物与环境的透视、光影一致"
+)
+IN_SCENE_NEGATIVE = "设定图版式，三视图，分格拼贴，色板，多个相同人物，纯白背景"
+
+
+def _compose_character_in_scene(
+    prompt: str, negative: str | None, params: dict[str, Any]
+) -> tuple[str, str]:
+    prompt = IN_SCENE_PREFIX + _strip_sheet_layout(prompt)
+    for fragment, _ in (_age_fragments(params), _look_attribute_fragments(params)):
+        if fragment and fragment not in prompt:
+            prompt = _join(prompt, fragment)
+    prompt = _join(prompt, IN_SCENE_LAYOUT)
+    prompt, negative_out = apply_visual_medium(prompt, negative)
+    age_negative = _age_fragments(params)[1]
+    attributes_negative = _look_attribute_fragments(params)[1]
+    for extra in (IN_SCENE_NEGATIVE, age_negative, attributes_negative):
+        negative_out = merge_negative(negative_out, extra)
+    return prompt, negative_out
 
 
 def _compose_identity_portrait(
@@ -439,6 +493,10 @@ def sanitize_enhancements(
     Enforced in Python on purpose: an operator-published `AgentSkill` can
     replace every rule the system prompt states, but not this.
     """
+    if asset_pass is AssetPass.ASSET_EDIT:
+        # An edit does exactly what the author asked; planner additions
+        # would be unrequested changes.
+        return []
     kept: list[str] = []
     period = params.get("scene_period")
     foreign_periods = _other_period_markers(str(period)) if isinstance(period, str) else []
@@ -446,7 +504,12 @@ def sanitize_enhancements(
         text = str(item or "").strip()
         if not text:
             continue
-        sheetless = (AssetPass.CHARACTER_EXPRESSIONS, AssetPass.IDENTITY_PORTRAIT, AssetPass.SCENE)
+        sheetless = (
+            AssetPass.CHARACTER_EXPRESSIONS,
+            AssetPass.IDENTITY_PORTRAIT,
+            AssetPass.SCENE,
+            AssetPass.CHARACTER_IN_SCENE,
+        )
         if asset_pass in sheetless and any(marker in text for marker in _SHEET_MARKERS):
             continue
         if foreign_periods and any(marker in text for marker in foreign_periods):

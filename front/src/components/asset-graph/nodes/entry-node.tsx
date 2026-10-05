@@ -4,6 +4,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useTranslations } from 'next-intl';
 
 import { Badge } from '@/components/ui/primitives';
+import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/cn';
 
 import { ENTRY_HEIGHT, ENTRY_WIDTH, type EntryNode } from '../graph-model';
@@ -12,6 +13,7 @@ import { ENTRY_HEIGHT, ENTRY_WIDTH, type EntryNode } from '../graph-model';
  * relations (调整修改 / 派生 from this exact image). */
 export function EntryNodeCard({ data, selected }: NodeProps<EntryNode>) {
   const t = useTranslations('assetVariants');
+  const tGraph = useTranslations('assetGraph');
   const { entry } = data;
   const candidate = entry.status === 'candidate';
   return (
@@ -43,6 +45,12 @@ export function EntryNodeCard({ data, selected }: NodeProps<EntryNode>) {
         ) : candidate ? (
           <span className="absolute left-1 top-1">
             <Badge>{t('candidate')}</Badge>
+          </span>
+        ) : null}
+        {data.versionCount > 1 || data.pendingVersions ? (
+          <span className="absolute bottom-1 right-1 inline-flex items-center gap-1 rounded-full bg-surface/90 px-1.5 text-[10px] text-text">
+            {data.pendingVersions ? <Spinner className="size-2.5" /> : null}
+            {tGraph('versionBadge', { count: data.versionCount + data.pendingVersions })}
           </span>
         ) : null}
       </div>

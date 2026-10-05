@@ -297,6 +297,14 @@ def _check_attributes(skill: CreationSkill, attributes: dict[str, Any] | None) -
     return clean
 
 
+def check_variant_fields(
+    skill: CreationSkill, *, presets: dict[str, Any] | None, attributes: dict[str, Any] | None
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """`(presets, attributes)` validated for this card kind without writing
+    anything — a derive's dry run prices a look that does not exist yet."""
+    return _check_presets(skill, presets), _check_attributes(skill, attributes)
+
+
 def set_scene_link(
     session: Session,
     skill: CreationSkill,
@@ -516,17 +524,23 @@ def file_generated(
     label: str | None = None,
     expressions: list[str] | None = None,
     source_job_id: str | None = None,
+    candidate: bool = False,
 ) -> SkillAssetEntry:
     """Files a generated image: approved when its slot holds no approved
     image yet (and the caps leave room), otherwise a candidate beside it.
-    Never replaces or evicts anything."""
+    Never replaces or evicts anything. `candidate` always files a candidate
+    — a new version of an existing image (调整修改, P6) waits for 定稿."""
     mates = slot_mates(skill, variant, entry_type=entry_type, view=view, expressions=expressions)
     in_variant, in_skill = _approved_counts(skill, variant)
     room = in_variant < MAX_ENTRIES_PER_VARIANT and (
         not is_character(skill) or in_skill < MAX_ENTRIES_PER_SKILL
     )
     taken = any(is_approved(m) and m.asset_id != asset_id for m in mates)
-    status = AssetEntryStatus.APPROVED if room and not taken else AssetEntryStatus.CANDIDATE
+    status = (
+        AssetEntryStatus.APPROVED
+        if room and not taken and not candidate
+        else AssetEntryStatus.CANDIDATE
+    )
     return add_entry(
         session,
         skill,

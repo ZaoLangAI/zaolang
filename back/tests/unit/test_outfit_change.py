@@ -15,6 +15,16 @@ from app.models import Asset, CreationSkill, SkillAssetEntry, User
 from app.models.base import new_id
 from app.models.enums import AssetEntryType, MediaType
 
+# A look with no presets or attributes (P3 fields of `target_look`).
+NO_ATTRIBUTES = {
+    "age_stage": None,
+    "period": None,
+    "outfit": None,
+    "state": None,
+    "scene_note": None,
+    "custom": [],
+}
+
 
 def _asset(db: Session, owner: User) -> Asset:
     asset = Asset(
@@ -79,7 +89,7 @@ def test_an_empty_look_with_a_portrait_starts_from_the_face_and_its_outfit_refer
     assert params["target_look"] == {
         "name": "婚礼",
         "description": "白色缎面婚纱，头纱",
-        "age_stage": None,
+        **NO_ATTRIBUTES,
     }
 
 
@@ -111,7 +121,7 @@ def test_the_default_look_only_passes_its_description(db: Session, author: User)
     skill, default, *_ = _card(db, author)
     av.update_variant(db, skill, default, description="灰色风衣")
     params = _resolve(db, author, skill, target_variant_id=default.id)
-    assert params["target_look"] == {"name": None, "description": "灰色风衣", "age_stage": None}
+    assert params["target_look"] == {"name": None, "description": "灰色风衣", **NO_ATTRIBUTES}
     # Not a 换装: no face-only fallback, the sheet job keeps no borrowed refs.
     assert not params.get("reference_asset_ids")
 

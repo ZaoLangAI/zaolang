@@ -314,6 +314,8 @@ def append_reference_asset(
     source_job_id: str | None = None,
     variant_id: str | None = None,
     generated: bool = False,
+    entry_type: str | None = None,
+    copy_from_entry_id: str | None = None,
 ) -> SceneView:
     """Files one image under a variant — the P0 `(view, label)` shape,
     translated: `variant_id` (a variant of this card) wins, else `presets` (or
@@ -328,12 +330,16 @@ def append_reference_asset(
     variant that already has an approved one is kept as a candidate
     (`asset_variants.service.file_generated`).
 
+    P6 write-back overrides, as for characters: `copy_from_entry_id` files it
+    like that entry (same variant and type), `entry_type` sets the type.
+
     Called by the scene library UI and by
     `app.workflows.nodes.execute_asset_output_link`.
     """
     skill = _owned_scene_skill(session, user_id=user_id, scene_id=scene_id)
     _validate_reference_assets(session, user_id=user_id, asset_ids=[asset_id])
     clean_label = (label or "").strip() or None
+    output_type = entry_type
     variant = (
         asset_variants_service.find_variant(skill, variant_id) if variant_id else None
     ) or asset_variants_service.find_or_create_variant(
@@ -350,6 +356,29 @@ def append_reference_asset(
     else:
         entry_type = AssetEntryType.SHOT.value
         entry_view = view if positional else None
+    source = (
+        asset_variants_service.find_entry(skill, copy_from_entry_id) if copy_from_entry_id else None
+    )
+    if source is not None:
+        variant = source.variant
+        entry_type, entry_view = source.entry_type, source.view
+    elif output_type:
+        entry_type, entry_view = output_type, None
+    if generated and source is not None:
+        # An adjust is a new version of `source`: always a candidate.
+        entry = asset_variants_service.file_generated(
+            session,
+            skill,
+            variant,
+            asset_id=asset_id,
+            entry_type=entry_type,
+            view=entry_view,
+            expressions=list(source.expressions_json or []) or None,
+            source_job_id=source_job_id,
+            candidate=True,
+        )
+        asset_variants_service.claim_anchor(session, skill, entry)
+        return SceneView(skill)
     file = asset_variants_service.file_generated if generated else asset_variants_service.add_entry
     entry = file(
         session,

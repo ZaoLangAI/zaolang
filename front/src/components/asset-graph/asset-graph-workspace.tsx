@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { useTranslations } from 'next-intl';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import type { CardKind } from '@/components/library/entry-actions';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,8 @@ const AssetGraphCanvas = dynamic(
   () => import('./asset-graph-canvas').then((module) => module.AssetGraphCanvas),
   { ssr: false, loading: () => <Skeleton className="h-full w-full rounded-none" /> },
 );
+
+const PENDING_POLL_MS = 3000;
 
 /** Auto-expand a small card so its images are visible on arrival. */
 const AUTO_EXPAND_LOOKS = 3;
@@ -93,6 +95,18 @@ export function AssetGraphWorkspace({
       return next;
     });
   }, []);
+  // While jobs are filling the card, refetch it so finished images (and
+  // their auto edges) replace the placeholders.
+  const pendingCount = graph.pending?.length ?? 0;
+  const { refresh } = actions;
+  useEffect(() => {
+    if (!pendingCount) return;
+    const timer = window.setInterval(() => {
+      void refresh().catch(() => undefined);
+    }, PENDING_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [pendingCount, refresh]);
+
   const toggleAll = (expand: boolean) =>
     setExpanded(expand ? new Set((graph.variants ?? []).map((v) => v.id)) : new Set());
 
@@ -143,7 +157,15 @@ export function AssetGraphWorkspace({
       busy={busy}
       actions={actions}
       onSelectEdge={(id) => select({ type: 'edge', id })}
+      onSelectVersion={(id) => select({ type: 'entry', id })}
       onDeleted={toCard}
+      onGenerated={(response) => {
+        if (response.variant_id) {
+          const look = response.variant_id;
+          setExpanded((current) => new Set(current).add(look));
+        }
+        void actions.refresh();
+      }}
     />
   ) : selectedEdge ? (
     <EdgeInspector

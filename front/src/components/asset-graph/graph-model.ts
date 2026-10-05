@@ -11,6 +11,8 @@ import type {
 
 import type { CardKind } from '@/components/library/entry-actions';
 
+import { versionIndex } from './versions';
+
 /**
  * Pure mapping from the `/graph` payload to React Flow nodes and edges (no
  * positions — `layout.ts` adds them). Two levels:
@@ -118,16 +120,18 @@ export function isApprovedEntry(entry: AssetEntry): boolean {
   return entry.status !== 'candidate';
 }
 
+/** `childCount`: image nodes drawn inside an expanded look (version heads
+ * plus pending jobs); defaults to every entry. */
 export function lookSize(
   variant: AssetVariant,
   kind: CardKind,
   expanded: boolean,
-  extraEntries = 0,
+  childCount?: number,
 ): { width: number; height: number } {
   const rows = shownRowCount(attributeRows(variant, kind));
   const head = LOOK_HEADER + (rows ? rows * LOOK_ROW + LOOK_ROWS_PAD : 0);
   if (!expanded) return { width: LOOK_WIDTH, height: head + LOOK_STRIP + LOOK_FOOTER };
-  const count = (variant.entries ?? []).length + extraEntries;
+  const count = childCount ?? (variant.entries ?? []).length;
   const gridRows = Math.ceil(count / ENTRY_COLUMNS);
   const width = Math.max(
     LOOK_WIDTH,
@@ -172,6 +176,10 @@ export interface LookNodeData extends Record<string, unknown> {
 export interface EntryNodeData extends Record<string, unknown> {
   entry: AssetEntry;
   isAnchor: boolean;
+  /** How many versions this node folds (itself included). */
+  versionCount: number;
+  /** 调整修改 jobs still producing a new version of it. */
+  pendingVersions: number;
 }
 
 export interface PendingNodeData extends Record<string, unknown> {
@@ -216,8 +224,17 @@ export function buildGraph(
   for (const variant of variants) {
     for (const entry of variant.entries ?? []) lookOfEntry.set(entry.id, variant.id);
   }
+  const { headOf, versions } = versionIndex(graph);
+  const head = (entryId: string) => headOf.get(entryId) ?? entryId;
+  // An adjust's job is a new version of its source, not a node of its own.
+  const pendingVersions = new Map<string, number>();
   const pendingByLook = new Map<string, AssetGraphPendingJob[]>();
   for (const job of graph.pending ?? []) {
+    if (job.mode === 'edit' && job.source_entry_id && headOf.has(job.source_entry_id)) {
+      const target = head(job.source_entry_id);
+      pendingVersions.set(target, (pendingVersions.get(target) ?? 0) + 1);
+      continue;
+    }
     const look =
       job.target_variant_id ??
       (job.source_entry_id ? lookOfEntry.get(job.source_entry_id) : undefined) ??
@@ -230,7 +247,8 @@ export function buildGraph(
   for (const variant of variants) {
     const isExpanded = expanded.has(variant.id);
     const pending = pendingByLook.get(variant.id) ?? [];
-    const size = lookSize(variant, kind, isExpanded, isExpanded ? pending.length : 0);
+    const heads = (variant.entries ?? []).filter((entry) => head(entry.id) === entry.id);
+    const size = lookSize(variant, kind, isExpanded, heads.length + pending.length);
     nodes.push({
       id: variantNodeId(variant.id),
       type: 'look',
@@ -251,10 +269,7 @@ export function buildGraph(
       },
     });
     if (!isExpanded) continue;
-    const children: Array<AssetEntry | AssetGraphPendingJob> = [
-      ...(variant.entries ?? []),
-      ...pending,
-    ];
+    const children: Array<AssetEntry | AssetGraphPendingJob> = [...heads, ...pending];
     children.forEach((child, index) => {
       const position = childPosition(variant, kind, index);
       if ('job_id' in child) {
@@ -281,8 +296,14 @@ export function buildGraph(
         position,
         width: ENTRY_WIDTH,
         height: ENTRY_HEIGHT,
-        selected: selection.type === 'entry' && selection.id === child.id,
-        data: { entry: child, isAnchor: child.id === graph.anchor_entry_id },
+        // Selecting any version highlights the node that folds it.
+        selected: selection.type === 'entry' && head(selection.id) === child.id,
+        data: {
+          entry: child,
+          isAnchor: (versions.get(child.id) ?? []).some((e) => e.id === graph.anchor_entry_id),
+          versionCount: versions.get(child.id)?.length ?? 1,
+          pendingVersions: pendingVersions.get(child.id) ?? 0,
+        },
       });
     });
   }
@@ -290,6 +311,7 @@ export function buildGraph(
   const edges: RelationEdge[] = [];
   const rankPairs: Array<[string, string]> = [];
   const hints = new Map<string, RelationEdge>();
+  const drawnPairs = new Set<string>();
   for (const edge of graph.edges ?? []) {
     const data: RelationEdgeData = {
       relations: edge.relations,
@@ -311,19 +333,19 @@ export function buildGraph(
       continue;
     }
     if (edge.level !== 'entry') continue;
-    const sourceLook = lookOfEntry.get(edge.source_id);
-    const targetLook = lookOfEntry.get(edge.target_id);
+    // Edges between versions of one image (调整修改) are not drawn; the rest
+    // attach to the nodes that fold their ends.
+    const source = head(edge.source_id);
+    const target = head(edge.target_id);
+    if (source === target) continue;
+    const sourceLook = lookOfEntry.get(source);
+    const targetLook = lookOfEntry.get(target);
     if (!sourceLook || !targetLook) continue;
     if (expanded.has(sourceLook) && expanded.has(targetLook)) {
-      edges.push(
-        relationEdge(
-          edge,
-          entryNodeId(edge.source_id),
-          entryNodeId(edge.target_id),
-          data,
-          selected,
-        ),
-      );
+      const pair = `${source}>${target}`;
+      if (drawnPairs.has(pair)) continue;
+      drawnPairs.add(pair);
+      edges.push(relationEdge(edge, entryNodeId(source), entryNodeId(target), data, selected));
       continue;
     }
     if (sourceLook === targetLook) continue;

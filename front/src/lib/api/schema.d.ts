@@ -1635,6 +1635,74 @@ export interface paths {
         patch: operations["update_scene_edge"];
         trace?: never;
     };
+    "/v1/characters/{card_id}/entries/{entry_id}:adjust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Adjust Entry */
+        post: operations["adjust_character_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/characters/{card_id}/entries/{entry_id}:derive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Derive Entry */
+        post: operations["derive_character_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/entries/{entry_id}:adjust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Adjust Entry */
+        post: operations["adjust_scene_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/entries/{entry_id}:derive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Derive Entry */
+        post: operations["derive_scene_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/characters/{card_id}/looks/{look_id}:fill": {
         parameters: {
             query?: never;
@@ -6581,6 +6649,47 @@ export interface components {
             /** Lease Token */
             lease_token: string;
         };
+        /** AssetAdjustRequest */
+        AssetAdjustRequest: {
+            /** Instruction */
+            instruction: string;
+            /** @default standard */
+            quality_tier: components["schemas"]["QualityTier"];
+            /** Aspect Ratio */
+            aspect_ratio?: string | null;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+        };
+        /**
+         * AssetDeriveRequest
+         * @description Exactly one of `target_variant_id` / `new_variant`.
+         */
+        AssetDeriveRequest: {
+            /**
+             * Output
+             * @enum {string}
+             */
+            output: "character_sheet" | "identity_portrait" | "expression_sheet" | "in_scene" | "master" | "shot";
+            /** Target Variant Id */
+            target_variant_id?: string | null;
+            new_variant?: components["schemas"]["NewVariantDraftRequest"] | null;
+            /** Prompt Extra */
+            prompt_extra?: string | null;
+            /** Expressions */
+            expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
+            /** @default standard */
+            quality_tier: components["schemas"]["QualityTier"];
+            /** Aspect Ratio */
+            aspect_ratio?: string | null;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+        };
         /** AssetEdgeCreateRequest */
         AssetEdgeCreateRequest: {
             /**
@@ -6707,6 +6816,35 @@ export interface components {
             source_job_id?: string | null;
             /** Created At */
             created_at?: string | null;
+        };
+        /**
+         * AssetGenerateResponse
+         * @description The quote (like `quote:batch`), and on a submit what was created.
+         */
+        AssetGenerateResponse: {
+            /** Credits */
+            credits: number;
+            /** Available Credits */
+            available_credits: number;
+            /** Period Remaining */
+            period_remaining?: number | null;
+            /** Within Spend Limit */
+            within_spend_limit: boolean;
+            /** Sufficient */
+            sufficient: boolean;
+            /** Relations */
+            relations?: components["schemas"]["AssetRelation"][];
+            /** Job Id */
+            job_id?: string | null;
+            /** Variant Id */
+            variant_id?: string | null;
+            /** Edge Id */
+            edge_id?: string | null;
+            /**
+             * Replayed
+             * @default false
+             */
+            replayed: boolean;
         };
         /**
          * AssetGraphCaps
@@ -9783,6 +9921,16 @@ export interface components {
             /** Reference Labels */
             reference_labels?: components["schemas"]["ReferenceLabel"][] | null;
             target_look?: components["schemas"]["TargetLook"] | null;
+            /** Source Entry Id */
+            source_entry_id?: string | null;
+            /**
+             * Asset Edit
+             * @default false
+             */
+            asset_edit: boolean;
+            asset_output_entry_type?: components["schemas"]["AssetEntryType"] | null;
+            /** Asset Output Mode */
+            asset_output_mode?: "in_scene" | null;
             /** Extra */
             extra?: {
                 [key: string]: unknown;
@@ -11084,6 +11232,19 @@ export interface components {
             handled_at?: string | null;
             /** Download Url */
             download_url?: string | null;
+        };
+        /** NewVariantDraftRequest */
+        NewVariantDraftRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            presets?: components["schemas"]["VariantPresets"] | null;
+            attributes?: components["schemas"]["VariantAttributes"] | null;
+            /** Scene Id */
+            scene_id?: string | null;
+            /** Scene Variant Id */
+            scene_variant_id?: string | null;
         };
         /**
          * NodeTypeView
@@ -18050,6 +18211,162 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetEdgeView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adjust_character_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetAdjustRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetGenerateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    derive_character_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetDeriveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetGenerateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adjust_scene_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetAdjustRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetGenerateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    derive_scene_entry: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                card_id: string;
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetDeriveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetGenerateResponse"];
                 };
             };
             /** @description Validation Error */

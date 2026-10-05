@@ -7038,6 +7038,378 @@
         }
       }
     },
+    "/v1/characters/{card_id}/entries/{entry_id}:adjust": {
+      "post": {
+        "tags": [
+          "asset-graph"
+        ],
+        "summary": "Adjust Entry",
+        "operationId": "adjust_character_entry",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetAdjustRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetGenerateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/characters/{card_id}/entries/{entry_id}:derive": {
+      "post": {
+        "tags": [
+          "asset-graph"
+        ],
+        "summary": "Derive Entry",
+        "operationId": "derive_character_entry",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetDeriveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetGenerateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenes/{card_id}/entries/{entry_id}:adjust": {
+      "post": {
+        "tags": [
+          "asset-graph"
+        ],
+        "summary": "Adjust Entry",
+        "operationId": "adjust_scene_entry",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetAdjustRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetGenerateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenes/{card_id}/entries/{entry_id}:derive": {
+      "post": {
+        "tags": [
+          "asset-graph"
+        ],
+        "summary": "Derive Entry",
+        "operationId": "derive_scene_entry",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetDeriveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetGenerateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/characters/{card_id}/looks/{look_id}:fill": {
       "post": {
         "tags": [
@@ -25161,6 +25533,149 @@
         ],
         "title": "ApplyCommandsRequest"
       },
+      "AssetAdjustRequest": {
+        "properties": {
+          "instruction": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Instruction"
+          },
+          "quality_tier": {
+            "$ref": "#/components/schemas/QualityTier",
+            "default": "standard"
+          },
+          "aspect_ratio": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{1,2}:\\d{1,2}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aspect Ratio"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "instruction"
+        ],
+        "title": "AssetAdjustRequest"
+      },
+      "AssetDeriveRequest": {
+        "properties": {
+          "output": {
+            "type": "string",
+            "enum": [
+              "character_sheet",
+              "identity_portrait",
+              "expression_sheet",
+              "in_scene",
+              "master",
+              "shot"
+            ],
+            "title": "Output"
+          },
+          "target_variant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Variant Id"
+          },
+          "new_variant": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NewVariantDraftRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prompt_extra": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Extra"
+          },
+          "expressions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "neutral",
+                    "smile",
+                    "laugh",
+                    "smirk",
+                    "restrained",
+                    "breakdown",
+                    "anger",
+                    "shock",
+                    "fear",
+                    "sad",
+                    "shy",
+                    "cold_gaze"
+                  ]
+                },
+                "type": "array",
+                "maxItems": 9,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expressions"
+          },
+          "quality_tier": {
+            "$ref": "#/components/schemas/QualityTier",
+            "default": "standard"
+          },
+          "aspect_ratio": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{1,2}:\\d{1,2}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aspect Ratio"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "output"
+        ],
+        "title": "AssetDeriveRequest",
+        "description": "Exactly one of `target_variant_id` / `new_variant`."
+      },
       "AssetEdgeCreateRequest": {
         "properties": {
           "level": {
@@ -25621,6 +26136,91 @@
           "status"
         ],
         "title": "AssetEntryView"
+      },
+      "AssetGenerateResponse": {
+        "properties": {
+          "credits": {
+            "type": "integer",
+            "title": "Credits"
+          },
+          "available_credits": {
+            "type": "integer",
+            "title": "Available Credits"
+          },
+          "period_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Remaining"
+          },
+          "within_spend_limit": {
+            "type": "boolean",
+            "title": "Within Spend Limit"
+          },
+          "sufficient": {
+            "type": "boolean",
+            "title": "Sufficient"
+          },
+          "relations": {
+            "items": {
+              "$ref": "#/components/schemas/AssetRelation"
+            },
+            "type": "array",
+            "title": "Relations"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "variant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Id"
+          },
+          "edge_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edge Id"
+          },
+          "replayed": {
+            "type": "boolean",
+            "title": "Replayed",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "credits",
+          "available_credits",
+          "within_spend_limit",
+          "sufficient"
+        ],
+        "title": "AssetGenerateResponse",
+        "description": "The quote (like `quote:batch`), and on a submit what was created."
       },
       "AssetGraphCaps": {
         "properties": {
@@ -33768,6 +34368,45 @@
               }
             ]
           },
+          "source_entry_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Entry Id"
+          },
+          "asset_edit": {
+            "type": "boolean",
+            "title": "Asset Edit",
+            "default": false
+          },
+          "asset_output_entry_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssetEntryType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "asset_output_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "in_scene"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Output Mode"
+          },
           "extra": {
             "additionalProperties": true,
             "type": "object",
@@ -37005,6 +37644,77 @@
           "created_at"
         ],
         "title": "MyDataRequestView"
+      },
+      "NewVariantDraftRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "presets": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VariantPresets"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attributes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VariantAttributes"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "scene_variant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Variant Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "NewVariantDraftRequest"
       },
       "NodeTypeView": {
         "properties": {

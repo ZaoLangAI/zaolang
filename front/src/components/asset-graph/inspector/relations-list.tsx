@@ -10,6 +10,7 @@ import type { AssetGraph } from '@/lib/api/types';
 import type { CardKind } from '@/components/library/entry-actions';
 
 import { RelationFields, relationDraftValid, type RelationDraft } from '../relation-fields';
+import { versionIndex } from '../versions';
 import { RELATION_COLOR, relationLabelKey } from '../relations';
 import { useNodeNames } from './node-names';
 
@@ -28,15 +29,23 @@ export function RelationsList({
 }) {
   const t = useTranslations('assetGraph');
   const name = useNodeNames(graph);
+  // An image's relations are its whole version group's, minus the edges
+  // between those versions (`versions.ts`).
+  const { headOf } = versionIndex(graph);
+  const group = (id: string) => (level === 'entry' ? (headOf.get(id) ?? id) : id);
+  const mine = group(nodeId);
   const edges = (graph.edges ?? []).filter(
-    (edge) => edge.level === level && (edge.source_id === nodeId || edge.target_id === nodeId),
+    (edge) =>
+      edge.level === level &&
+      group(edge.source_id) !== group(edge.target_id) &&
+      (group(edge.source_id) === mine || group(edge.target_id) === mine),
   );
   if (!edges.length) return <p className="text-xs text-muted">{t('noRelations')}</p>;
   return (
     <ul className="flex flex-col gap-1.5">
       {edges.map((edge) => {
-        const outgoing = edge.source_id === nodeId;
-        const other = name(level, outgoing ? edge.target_id : edge.source_id);
+        const outgoing = group(edge.source_id) === mine;
+        const other = name(level, group(outgoing ? edge.target_id : edge.source_id));
         return (
           <li key={edge.id}>
             <button
@@ -91,18 +100,23 @@ export function AddRelationForm({
   const [direction, setDirection] = useState<'out' | 'in'>('out');
   const [other, setOther] = useState('');
   const [draft, setDraft] = useState<RelationDraft>({ relations: [], label: '' });
+  const { headOf } = versionIndex(graph);
+  const self = level === 'entry' ? (headOf.get(nodeId) ?? nodeId) : nodeId;
+  // Images: one option per version group (its node in the graph).
   const candidates =
     level === 'variant'
       ? (graph.variants ?? []).map((v) => v.id)
-      : (graph.variants ?? []).flatMap((v) => (v.entries ?? []).map((e) => e.id));
-  const options = candidates.filter((id) => id !== nodeId);
+      : (graph.variants ?? []).flatMap((v) =>
+          (v.entries ?? []).map((e) => e.id).filter((id) => headOf.get(id) === id),
+        );
+  const options = candidates.filter((id) => id !== self);
   if (!options.length) return null;
 
   const submit = async () => {
     const created = await onCreate({
       level,
-      source_id: direction === 'out' ? nodeId : other,
-      target_id: direction === 'out' ? other : nodeId,
+      source_id: direction === 'out' ? self : other,
+      target_id: direction === 'out' ? other : self,
       relations: draft.relations,
       label: draft.label.trim() || null,
     });

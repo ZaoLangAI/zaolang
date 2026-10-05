@@ -9,10 +9,13 @@ from typing import Literal
 
 from pydantic import Field
 
-from app.api.schemas.asset_variants import AssetVariantView
+from app.api.schemas.asset_variants import AssetVariantView, VariantAttributes, VariantPresets
 from app.api.schemas.common import ApiModel
+from app.domain.asset_graph.derive import MAX_INSTRUCTION_LEN, DeriveOutput
 from app.domain.asset_graph.service import MAX_EDGE_LABEL_LEN, MAX_RELATIONS_PER_EDGE
-from app.models.enums import AssetEdgeOrigin, AssetGraphLevel, AssetRelation
+from app.domain.asset_variants.service import MAX_VARIANT_NAME_LEN
+from app.domain.image_assets.vocabulary import MAX_CHARACTER_EXPRESSIONS, CharacterExpression
+from app.models.enums import AssetEdgeOrigin, AssetGraphLevel, AssetRelation, QualityTier
 
 
 class AssetEdgeView(ApiModel):
@@ -74,3 +77,54 @@ class AssetEdgeUpdateRequest(ApiModel):
     )
     label: str | None = Field(default=None, max_length=MAX_EDGE_LABEL_LEN)
     clear_label: bool = False
+
+
+# ---- adjust / derive (P6) --------------------------------------------------------
+
+
+class AssetAdjustRequest(ApiModel):
+    instruction: str = Field(min_length=1, max_length=MAX_INSTRUCTION_LEN)
+    quality_tier: QualityTier = QualityTier.STANDARD
+    aspect_ratio: str | None = Field(default=None, pattern=r"^\d{1,2}:\d{1,2}$")
+    # `true` (the default) only prices; `false` submits one job.
+    dry_run: bool = True
+
+
+class NewVariantDraftRequest(ApiModel):
+    name: str = Field(min_length=1, max_length=MAX_VARIANT_NAME_LEN)
+    description: str | None = Field(default=None, max_length=2000)
+    presets: VariantPresets | None = None
+    attributes: VariantAttributes | None = None
+    scene_id: str | None = Field(default=None, max_length=40)
+    scene_variant_id: str | None = Field(default=None, max_length=40)
+
+
+class AssetDeriveRequest(ApiModel):
+    """Exactly one of `target_variant_id` / `new_variant`."""
+
+    output: DeriveOutput
+    target_variant_id: str | None = Field(default=None, max_length=40)
+    new_variant: NewVariantDraftRequest | None = None
+    prompt_extra: str | None = Field(default=None, max_length=MAX_INSTRUCTION_LEN)
+    expressions: list[CharacterExpression] | None = Field(
+        default=None, min_length=1, max_length=MAX_CHARACTER_EXPRESSIONS
+    )
+    quality_tier: QualityTier = QualityTier.STANDARD
+    aspect_ratio: str | None = Field(default=None, pattern=r"^\d{1,2}:\d{1,2}$")
+    dry_run: bool = True
+
+
+class AssetGenerateResponse(ApiModel):
+    """The quote (like `quote:batch`), and on a submit what was created."""
+
+    credits: int
+    available_credits: int
+    period_remaining: int | None = None
+    within_spend_limit: bool
+    sufficient: bool
+    # Derive: what the look-level edge would say (source look → target look).
+    relations: list[AssetRelation] = Field(default_factory=list)
+    job_id: str | None = None
+    variant_id: str | None = None
+    edge_id: str | None = None
+    replayed: bool = False
