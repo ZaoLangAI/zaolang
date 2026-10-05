@@ -180,6 +180,7 @@ def validate_generation_params(
     forced_model: str | None = None,
     extra: Mapping[str, Any] | None = None,
     licensed_source: bool = False,
+    voice_profile: bool = False,
 ) -> None:
     """Shared C-end / sandbox rules. Raises `ValueError` on illegal combinations.
 
@@ -256,7 +257,9 @@ def validate_generation_params(
         # itself carries the identity, so `voice` becomes optional once one
         # is attached (some clone models still take an optional style/voice
         # hint alongside it, but never require it).
-        if not has_valid_voice and not references:
+        # A character voice (`voice_profile_id`) supplies voice or sample at
+        # submit (`characters.voice_resolver`).
+        if not has_valid_voice and not references and not voice_profile:
             raise ValueError("音频生成必须指定音色，或提供声音克隆参考音频。")
     if operation == Operation.MUSIC_GENERATION:
         # No reference asset of any kind — v1 is a plain text-to-music/SFX
@@ -591,6 +594,16 @@ class GenerationParams(ApiModel):
     # `in_scene`: the character placed in its look's linked scene (the
     # scene's master is borrowed as an environment-only reference).
     asset_output_mode: Literal["in_scene"] | None = None
+    # `audio_generation` (P7): speak with this character voice — its model,
+    # preset voice and knobs (or clone sample) replace `forced_model`,
+    # `extra.voice/emotion/speed` and the references at submit
+    # (`characters.voice_resolver`).
+    voice_profile_id: str | None = Field(default=None, max_length=40)
+    # This job is that voice's preview: write-back sets its preview audio.
+    target_voice_id: str | None = Field(default=None, max_length=40)
+    # Server-written at submit: the voice's card (graph pending jobs). Any
+    # client-sent value is discarded.
+    voice_card_id: str | None = Field(default=None, max_length=40)
     extra: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -766,6 +779,11 @@ class GenerationModelOption(ApiModel):
     resolutions: list[Literal["480p", "720p", "1080p", "2K"]] | None = None
     default_resolution: Literal["480p", "720p", "1080p", "2K"] | None = None
     voices: list[str] | None = None
+    # `audio_generation`: which per-request knobs the model takes
+    # (`speed` / `emotion`) and the closed `emotion` values — what a
+    # character voice (P7) may store (`model_catalog.voice_capabilities`).
+    voice_params: list[Literal["speed", "emotion"]] = Field(default_factory=list)
+    voice_emotions: list[str] = Field(default_factory=list)
     # Separate images one call can return — >1 only for a model that can
     # serve a scene variant group (`GenerationParams.scene_variants`).
     max_outputs_per_call: int = 1
@@ -807,6 +825,7 @@ class GenerationJobCreateRequest(ApiModel):
             forced_model=self.params.forced_model,
             extra=self.params.extra,
             licensed_source=bool(self.source_work_id),
+            voice_profile=bool(self.params.voice_profile_id or self.params.target_voice_id),
         )
         return self
 

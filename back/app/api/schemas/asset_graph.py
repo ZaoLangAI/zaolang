@@ -10,6 +10,7 @@ from typing import Literal
 from pydantic import Field
 
 from app.api.schemas.asset_variants import AssetVariantView, VariantAttributes, VariantPresets
+from app.api.schemas.character_voices import CharacterVoiceView
 from app.api.schemas.common import ApiModel
 from app.domain.asset_graph.derive import MAX_INSTRUCTION_LEN, DeriveOutput
 from app.domain.asset_graph.service import MAX_EDGE_LABEL_LEN, MAX_RELATIONS_PER_EDGE
@@ -37,6 +38,7 @@ class AssetGraphCaps(ApiModel):
     max_entries_per_variant: int
     max_entries: int | None = None
     max_edges: int
+    max_voices: int | None = None
 
 
 class AssetGraphPendingJob(ApiModel):
@@ -47,6 +49,7 @@ class AssetGraphPendingJob(ApiModel):
     mode: str | None = None
     target_variant_id: str | None = None
     source_entry_id: str | None = None
+    target_voice_id: str | None = None
 
 
 class AssetGraphResponse(ApiModel):
@@ -58,11 +61,13 @@ class AssetGraphResponse(ApiModel):
     variants: list[AssetVariantView] = Field(default_factory=list)
     edges: list[AssetEdgeView] = Field(default_factory=list)
     pending: list[AssetGraphPendingJob] = Field(default_factory=list)
+    # A character's voices (P7); always empty for a scene.
+    voices: list[CharacterVoiceView] = Field(default_factory=list)
     caps: AssetGraphCaps
 
 
 class AssetEdgeCreateRequest(ApiModel):
-    level: Literal["variant", "entry"]
+    level: Literal["variant", "entry", "voice"]
     source_id: str = Field(max_length=40)
     target_id: str = Field(max_length=40)
     relations: list[AssetRelation] = Field(min_length=1, max_length=MAX_RELATIONS_PER_EDGE)

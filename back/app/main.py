@@ -24,6 +24,7 @@ from app.api.v1 import (
     auth,
     blocking,
     canvas,
+    character_voices,
     characters,
     community,
     credits,
@@ -67,6 +68,7 @@ def build_router() -> APIRouter:
     router.include_router(prompts.router)
     router.include_router(shortform.router)
     router.include_router(characters.router)
+    router.include_router(character_voices.router)
     router.include_router(scenes.router)
     router.include_router(asset_variants.router)
     router.include_router(asset_graph.router)

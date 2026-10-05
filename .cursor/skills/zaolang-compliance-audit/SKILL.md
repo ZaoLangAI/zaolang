@@ -33,7 +33,7 @@ Not here → `zaolang-admin-console` (admin write pattern), `zaolang-media-asset
 4. Export URL lives 900 s (`signed_export_url`); bundle purged after 30 days. Never log/email the URL.
 5. `BackupRecord` has two writers sharing `run_database_backup`: admin `POST /backups` (`Admin` + confirm, `triggered_by_user_id`, audit `data.backup`) and Beat `run_scheduled_backup` (no user, no audit).
 6. Retention windows = `*_RETENTION_DAYS`; only processed webhooks, system logs by `updated_at` (last fold), only events of terminal jobs whose `updated_at` is past the window; 5000-row batches. Never purge `AuditLog`/`CreditLedgerEntry`.
-7. Consent: audio ref in `audio_generation` needs `VOICE`; `depicts_real_person` image/video ref needs `PORTRAIT`; `jobs.service.submit` → `assert_reference_consents` → `AssetRightsRequired`. Audit (`consent.declare`/`revoke`) carries status only.
+7. Consent: audio ref in `audio_generation` needs `VOICE`; `depicts_real_person` image/video ref needs `PORTRAIT`; `jobs.service.submit` → `assert_reference_consents` → `AssetRightsRequired`. A clone character voice (`characters.voices`, P7) checks the sample's active `VOICE` consent when it is created, and its jobs re-check it at submit like any clone. Audit (`consent.declare`/`revoke`) carries status only.
 8. Log Center CSV export is client-side, not audited.
 9. MinIO lifecycle rules (`back/app/storage/s3.py:lifecycle_rules`) must never match published objects.
 

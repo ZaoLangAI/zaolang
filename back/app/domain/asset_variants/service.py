@@ -266,9 +266,18 @@ def _check_attributes(skill: CreationSkill, attributes: dict[str, Any] | None) -
                 f"属性内容过长（最多 {limit} 个字）。", fields={f"attributes.{key}": "过长"}
             )
         clean[key] = value
+    custom = check_custom_attributes(raw.get("custom"))
+    if custom:
+        clean["custom"] = custom
+    return clean
+
+
+def check_custom_attributes(items: Any) -> list[dict[str, str]]:
+    """Trimmed, validated custom key-values (`[{key, value}]`); blank rows
+    are dropped. Shared by looks / variants and voices."""
     custom: list[dict[str, str]] = []
     seen: set[str] = set()
-    for item in raw.get("custom") or []:
+    for item in items or []:
         key = str((item or {}).get("key") or "").strip()
         value = str((item or {}).get("value") or "").strip()
         if not key and not value:
@@ -292,9 +301,7 @@ def _check_attributes(skill: CreationSkill, attributes: dict[str, Any] | None) -
         raise ValidationFailed(
             f"最多 {MAX_CUSTOM_ATTRIBUTES} 条自定义属性。", fields={"attributes.custom": "数量过多"}
         )
-    if custom:
-        clean["custom"] = custom
-    return clean
+    return custom
 
 
 def check_variant_fields(

@@ -132,6 +132,12 @@ class PriceItem:
     markup_note: str = ""
 
 
+# `tts-pro`'s `emotion` field (Volcano TTS through DMXAPI).
+TTS_PRO_EMOTIONS: tuple[str, ...] = ("happy", "angry", "fear", "surprise")
+# OpenAI `/v1/audio/speech` `speed` bounds.
+VOICE_SPEED_RANGE: tuple[float, float] = (0.25, 4.0)
+
+
 @dataclass(frozen=True, slots=True)
 class ModelCatalogEntry:
     """One vendor's known model, for the admin picker only.
@@ -181,6 +187,12 @@ class ModelCatalogEntry:
     # `tts-pro` below) — a curated, representative subset is still more
     # useful to a caller than none at all.
     voices: tuple[str, ...] | None = None
+    # Which per-request voice knobs the provider adapter forwards for this
+    # model (`extra.speed` / `extra.emotion`) — a character voice profile
+    # (P7) only stores and offers these. `voice_emotions` is the closed
+    # `emotion` vocabulary when `"emotion"` is listed.
+    voice_params: tuple[str, ...] = ()
+    voice_emotions: tuple[str, ...] = ()
     # Pre-fills the admin timeout field when an operator picks this model.
     # Zero means "leave the form's existing / kind-default timeout alone".
     suggested_timeout_ms: int = 0
@@ -836,6 +848,7 @@ VENDOR_MODEL_CATALOG: dict[VendorId, list[ModelCatalogEntry]] = {
             output_modalities=("audio",),
             notes="标准音质，11 种预置音色，与 gpt-4o-mini-tts 同一 /v1/audio/speech 端点。",
             voices=_OPENAI_TTS_VOICES,
+            voice_params=("speed",),
             doc_url="https://doc.dmxapi.cn/openai-tts.html",
             pricing_doc_url="https://platform.openai.com/docs/pricing",
             price_items=(
@@ -863,6 +876,7 @@ VENDOR_MODEL_CATALOG: dict[VendorId, list[ModelCatalogEntry]] = {
             output_modalities=("audio",),
             notes="高清音质，11 种预置音色，同一 /v1/audio/speech 端点，价格是 tts-1 的两倍。",
             voices=_OPENAI_TTS_VOICES,
+            voice_params=("speed",),
             doc_url="https://doc.dmxapi.cn/openai-tts.html",
             pricing_doc_url="https://platform.openai.com/docs/pricing",
             price_items=(
@@ -895,6 +909,8 @@ VENDOR_MODEL_CATALOG: dict[VendorId, list[ModelCatalogEntry]] = {
                 "列表），studio 按此展示候选音色供选择，而非穷举全部。"
             ),
             doc_url="https://doc.dmxapi.cn/tts-pro.html",
+            voice_params=("emotion",),
+            voice_emotions=TTS_PRO_EMOTIONS,
             voices=(
                 "柔美女友",
                 "妩媚女生",
@@ -1239,3 +1255,15 @@ def voices_for_model(model: str) -> tuple[str, ...] | None:
             if entry.model.strip().lower() == lowered and entry.voices:
                 return entry.voices
     return None
+
+
+def voice_capabilities(model: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """`(voice_params, voice_emotions)` for a raw model string, the same
+    case-insensitive lookup `voices_for_model` does; empty for an unknown
+    model."""
+    lowered = model.strip().lower()
+    for entries in VENDOR_MODEL_CATALOG.values():
+        for entry in entries:
+            if entry.model.strip().lower() == lowered and entry.voice_params:
+                return entry.voice_params, entry.voice_emotions
+    return (), ()

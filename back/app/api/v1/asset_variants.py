@@ -27,6 +27,7 @@ from app.api.schemas.asset_variants import (
 )
 from app.domain.asset_variants import service as av
 from app.domain.characters import service as characters_service
+from app.domain.characters import voices as voices_service
 from app.domain.errors import NotFound
 from app.domain.scenes import service as scenes_service
 from app.domain.skill_library import service as skill_library_service
@@ -136,6 +137,11 @@ def _register(
             sort_order=payload.sort_order,
             make_default=payload.make_default,
         )
+        if payload.clear_voice or payload.voice_id is not None:
+            # Graph metadata, but harmless here: the edit already withdraws.
+            voices_service.set_look_voice(
+                session, skill, variant, None if payload.clear_voice else payload.voice_id
+            )
         if payload.clear_scene or payload.scene_id is not None:
             av.set_scene_link(
                 session,

@@ -12,6 +12,7 @@ from app.models.enums import Operation
 from app.providers.base import GenerationRequest, ProviderReference
 from app.providers.dmxapi_media import (
     AUDIO_MODEL_GPT4O_MINI_TTS,
+    AUDIO_MODEL_TTS_1,
     AUDIO_MODEL_TTS_PRO,
     DOUBAO_SEEDANCE_25_MODEL,
     MINIMAX_H3_MODEL,
@@ -931,3 +932,27 @@ def test_seedream_profile_keeps_group_output_off() -> None:
     assert _max_outputs_per_call("dmxapi", SEEDREAM_5_PRO_MODEL, "text_to_image") == 1
     assert _max_outputs_per_call("dmxapi", SEEDREAM_5_PRO_MODEL, "text_to_video") == 1
     assert _max_outputs_per_call("openai", "gpt-image-2", "text_to_image") == 1
+
+
+@pytest.mark.parametrize(
+    ("model", "speed", "expected"),
+    [
+        (AUDIO_MODEL_TTS_1, 1.5, 1.5),
+        (AUDIO_MODEL_TTS_1, 9, 4.0),
+        (AUDIO_MODEL_TTS_PRO, 1.5, None),
+        (AUDIO_MODEL_GPT4O_MINI_TTS, 1.5, None),
+    ],
+)
+def test_speed_is_forwarded_only_where_the_model_takes_it(
+    monkeypatch: pytest.MonkeyPatch, model: str, speed: float, expected: float | None
+) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        assert kwargs["json"].get("speed") == expected
+        return _FakeResponse(content=b"bytes")
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.AUDIO_GENERATION.value, model)
+    result = provider.submit(
+        _request(Operation.AUDIO_GENERATION.value, extra={"voice": "nova", "speed": speed})
+    )
+    assert result.succeeded is True

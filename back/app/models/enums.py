@@ -864,6 +864,8 @@ class AssetGraphLevel(StrEnum):
 
     VARIANT = "variant"
     ENTRY = "entry"
+    # A character's voices (P7).
+    VOICE = "voice"
 
 
 class AssetRelation(StrEnum):
@@ -879,6 +881,8 @@ class AssetRelation(StrEnum):
     STATE = "state"
     # An image adjusted from another (调整修改, P6).
     EDIT = "edit"
+    # A voice derived with other TTS parameters (speed, emotion, model).
+    PARAMS = "params"
     CUSTOM = "custom"
 
 
@@ -903,6 +907,24 @@ SCENE_RELATIONS: frozenset[str] = frozenset(
         AssetRelation.CUSTOM,
     }
 )
+
+
+VOICE_RELATIONS: frozenset[str] = frozenset(
+    {
+        AssetRelation.AGE,
+        AssetRelation.EMOTION,
+        AssetRelation.SCENE,
+        AssetRelation.PARAMS,
+        AssetRelation.CUSTOM,
+    }
+)
+
+
+class VoiceSource(StrEnum):
+    """A character voice is a model's preset voice, or a cloned sample."""
+
+    PRESET = "preset"
+    CLONE = "clone"
 
 
 class AssetEdgeOrigin(StrEnum):

@@ -646,6 +646,8 @@ def _copy(prompt: str) -> dict[str, Any]:
     if isinstance(payload, dict):
         if payload.get("character_profile") == "describe":
             return _copy_character_describe(payload)
+        if payload.get("voice_match"):
+            return _copy_voice_match(payload)
         if "blocking_route" in payload:
             return _copy_blocking_route(payload)
         if "max_length" in payload:
@@ -671,6 +673,25 @@ def _copy(prompt: str) -> dict[str, Any]:
 # A name containing this makes the fake describe return nothing usable, so
 # tests can drive `character_profile.describe`'s "no draft" path.
 CHARACTER_DESCRIBE_EMPTY_MARKER = "无从描述"
+
+
+def _copy_voice_match(payload: dict[str, Any]) -> dict[str, Any]:
+    """Mirrors `character_profile.VOICE_MATCH_SYSTEM_PROMPT`: a 女/女声
+    description picks the first option whose voice name reads female
+    (柔/甜/女/妩), else option 1; a speed only where the option supports it."""
+    description = str(payload.get("voice_description") or "")
+    lines = str(payload.get("options") or "").splitlines()
+    pick = 1
+    if "女" in description:
+        for index, line in enumerate(lines, start=1):
+            if any(mark in line for mark in ("柔", "甜", "女", "妩")):
+                pick = index
+                break
+    chosen = lines[pick - 1] if 0 < pick <= len(lines) else ""
+    data: dict[str, Any] = {"pick": pick, "reason": f"贴合「{description[:12]}」（fake）"}
+    if "支持 speed" in chosen:
+        data["speed"] = 1.1
+    return data
 
 
 def _copy_character_describe(payload: dict[str, Any]) -> dict[str, Any]:

@@ -4875,6 +4875,430 @@
         }
       }
     },
+    "/v1/characters/{card_id}/voices": {
+      "get": {
+        "tags": [
+          "character-voices"
+        ],
+        "summary": "List Voices",
+        "operationId": "list_voices_v1_characters__card_id__voices_get",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CharacterVoiceView"
+                  },
+                  "title": "Response List Voices V1 Characters  Card Id  Voices Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "character-voices"
+        ],
+        "summary": "Create Voice",
+        "operationId": "create_voice_v1_characters__card_id__voices_post",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CharacterVoiceCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CharacterVoiceView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/characters/{card_id}/voices/{voice_id}": {
+      "patch": {
+        "tags": [
+          "character-voices"
+        ],
+        "summary": "Update Voice",
+        "operationId": "update_voice_v1_characters__card_id__voices__voice_id__patch",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "voice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Voice Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CharacterVoiceUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CharacterVoiceView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "character-voices"
+        ],
+        "summary": "Delete Voice",
+        "operationId": "delete_voice_v1_characters__card_id__voices__voice_id__delete",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "voice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Voice Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/characters/{card_id}/voices/{voice_id}:preview": {
+      "post": {
+        "tags": [
+          "character-voices"
+        ],
+        "summary": "Preview Voice",
+        "operationId": "preview_voice_v1_characters__card_id__voices__voice_id__preview_post",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "voice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Voice Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoicePreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoicePreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/characters/{card_id}/voices:match": {
+      "post": {
+        "tags": [
+          "character-voices"
+        ],
+        "summary": "Match Voice",
+        "operationId": "match_voice_v1_characters__card_id__voices_match_post",
+        "parameters": [
+          {
+            "name": "card_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Card Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceMatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceMatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/scenes": {
       "post": {
         "tags": [
@@ -25682,7 +26106,8 @@
             "type": "string",
             "enum": [
               "variant",
-              "entry"
+              "entry",
+              "voice"
             ],
             "title": "Level"
           },
@@ -26253,6 +26678,17 @@
           "max_edges": {
             "type": "integer",
             "title": "Max Edges"
+          },
+          "max_voices": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Voices"
           }
         },
         "type": "object",
@@ -26267,7 +26703,8 @@
         "type": "string",
         "enum": [
           "variant",
-          "entry"
+          "entry",
+          "voice"
         ],
         "title": "AssetGraphLevel",
         "description": "Which nodes a `SkillAssetEdge` joins: looks / variants, or images."
@@ -26314,6 +26751,17 @@
               }
             ],
             "title": "Source Entry Id"
+          },
+          "target_voice_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Voice Id"
           }
         },
         "type": "object",
@@ -26385,6 +26833,13 @@
             "type": "array",
             "title": "Pending"
           },
+          "voices": {
+            "items": {
+              "$ref": "#/components/schemas/CharacterVoiceView"
+            },
+            "type": "array",
+            "title": "Voices"
+          },
           "caps": {
             "$ref": "#/components/schemas/AssetGraphCaps"
           }
@@ -26410,6 +26865,7 @@
           "weather",
           "state",
           "edit",
+          "params",
           "custom"
         ],
         "title": "AssetRelation",
@@ -26653,6 +27109,23 @@
             "title": "Clear Scene",
             "default": false
           },
+          "voice_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Id"
+          },
+          "clear_voice": {
+            "type": "boolean",
+            "title": "Clear Voice",
+            "default": false
+          },
           "sort_order": {
             "anyOf": [
               {
@@ -26714,6 +27187,17 @@
                 "type": "null"
               }
             ]
+          },
+          "voice_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Id"
           },
           "is_default": {
             "type": "boolean",
@@ -29647,6 +30131,389 @@
         ],
         "title": "CharacterViewAngle",
         "description": "Which pose/angle one of a character's reference images is for.\n\nNamed `*Angle` (not plain `CharacterView`) to avoid colliding with\n`app.domain.characters.service.CharacterView`, the unrelated\n`CreationSkill` projection type. Independent of `ImageAssetKind`: a\n`CHARACTER`-kind job names which of `FRONT`/`SIDE`/`BACK` it is producing\nvia `GenerationParams.character_views` (see\n`app.workflows.nodes.execute_asset_output_advance`), one at a time,\nlooping the shared `asset_graph` back to `asset_planning` between\neach. `GENERAL` is reserved for a plain uploaded reference with no fixed\npose (`characters.service._entries_from_flat_ids`) — a generation job\nnever targets it."
+      },
+      "CharacterVoiceCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "voice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceParams"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attributes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceAttributes"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sample_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Asset Id"
+          },
+          "preview_text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Text"
+          },
+          "look_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 48
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Look Ids"
+          },
+          "derived_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derived From"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CharacterVoiceCreateRequest",
+        "description": "A new voice; with `derived_from`, unspecified fields come from that\nvoice and an auto edge records what changed."
+      },
+      "CharacterVoiceUpdateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "voice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceParams"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attributes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceAttributes"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sample_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Asset Id"
+          },
+          "preview_text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Text"
+          },
+          "look_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 48
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Look Ids"
+          },
+          "make_default": {
+            "type": "boolean",
+            "title": "Make Default",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "CharacterVoiceUpdateRequest"
+      },
+      "CharacterVoiceView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "source": {
+            "$ref": "#/components/schemas/VoiceSource"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "voice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice"
+          },
+          "params": {
+            "$ref": "#/components/schemas/VoiceParams"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/VoiceAttributes"
+          },
+          "sample": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceAudioView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceAudioView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preview_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Text"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": false
+          },
+          "look_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Look Ids"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order",
+            "default": 0
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "source"
+        ],
+        "title": "CharacterVoiceView"
       },
       "CheckoutConfirmRequest": {
         "properties": {
@@ -33900,6 +34767,24 @@
             ],
             "title": "Voices"
           },
+          "voice_params": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "speed",
+                "emotion"
+              ]
+            },
+            "type": "array",
+            "title": "Voice Params"
+          },
+          "voice_emotions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Voice Emotions"
+          },
           "max_outputs_per_call": {
             "type": "integer",
             "title": "Max Outputs Per Call",
@@ -34406,6 +35291,42 @@
               }
             ],
             "title": "Asset Output Mode"
+          },
+          "voice_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Profile Id"
+          },
+          "target_voice_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Voice Id"
+          },
+          "voice_card_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Card Id"
           },
           "extra": {
             "additionalProperties": true,
@@ -45115,6 +46036,265 @@
           "visibility"
         ],
         "title": "VisibilityUpdateRequest"
+      },
+      "VoiceAttributes": {
+        "properties": {
+          "age_stage": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "child",
+                  "teen",
+                  "youth",
+                  "adult",
+                  "middle_aged",
+                  "elderly"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Stage"
+          },
+          "emotion": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emotion"
+          },
+          "use": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dialogue",
+                  "inner_monologue",
+                  "narration"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Use"
+          },
+          "custom": {
+            "items": {
+              "$ref": "#/components/schemas/CustomAttribute"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Custom"
+          }
+        },
+        "type": "object",
+        "title": "VoiceAttributes"
+      },
+      "VoiceAudioView": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id"
+        ],
+        "title": "VoiceAudioView"
+      },
+      "VoiceMatchRequest": {
+        "properties": {
+          "voice_description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Description"
+          }
+        },
+        "type": "object",
+        "title": "VoiceMatchRequest"
+      },
+      "VoiceMatchResponse": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "model_label": {
+            "type": "string",
+            "title": "Model Label"
+          },
+          "voice": {
+            "type": "string",
+            "title": "Voice"
+          },
+          "params": {
+            "$ref": "#/components/schemas/VoiceParams"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "model_label",
+          "voice"
+        ],
+        "title": "VoiceMatchResponse",
+        "description": "A proposal only — nothing is saved."
+      },
+      "VoiceParams": {
+        "properties": {
+          "speed": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 4.0,
+                "minimum": 0.25
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed"
+          },
+          "emotion": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emotion"
+          }
+        },
+        "type": "object",
+        "title": "VoiceParams",
+        "description": "Only the knobs the voice's model takes (`voice_capabilities`)."
+      },
+      "VoicePreviewRequest": {
+        "properties": {
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "quality_tier": {
+            "$ref": "#/components/schemas/QualityTier",
+            "default": "standard"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "VoicePreviewRequest"
+      },
+      "VoicePreviewResponse": {
+        "properties": {
+          "credits": {
+            "type": "integer",
+            "title": "Credits"
+          },
+          "available_credits": {
+            "type": "integer",
+            "title": "Available Credits"
+          },
+          "period_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Remaining"
+          },
+          "within_spend_limit": {
+            "type": "boolean",
+            "title": "Within Spend Limit"
+          },
+          "sufficient": {
+            "type": "boolean",
+            "title": "Sufficient"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "replayed": {
+            "type": "boolean",
+            "title": "Replayed",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "credits",
+          "available_credits",
+          "within_spend_limit",
+          "sufficient"
+        ],
+        "title": "VoicePreviewResponse"
+      },
+      "VoiceSource": {
+        "type": "string",
+        "enum": [
+          "preset",
+          "clone"
+        ],
+        "title": "VoiceSource",
+        "description": "A character voice is a model's preset voice, or a cloned sample."
       },
       "WorkAppealRequest": {
         "properties": {

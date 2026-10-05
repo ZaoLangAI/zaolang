@@ -87,6 +87,11 @@ PROMPT_SLOTS: dict[str, tuple[PromptSlot, ...]] = {
             "角色设定整理",
             "根据引用该角色的剧本，为角色库角色整理可复用的角色描述与音色描述。",
         ),
+        PromptSlot(
+            "voice_match",
+            "配音选角",
+            "根据角色的音色描述，从可用的预设音色中挑选最贴合的一个。",
+        ),
     ),
     AgentName.INTENT_ROUTER.value: (
         PromptSlot("classify", "档位判定", "判断需求复杂度并建议生成档位，只降不升。"),

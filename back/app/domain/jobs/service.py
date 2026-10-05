@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.domain.characters import voice_resolver
 from app.domain.consent import service as consent_service
 from app.domain.credits import service as credits_service
 from app.domain.credits.pricing import Quote
@@ -74,7 +75,17 @@ def quote_for(
 # ever merge into these two keys, so a request that is otherwise identical
 # except for server-side reference-merging must not look like a body
 # mismatch below.
-_MUTATED_PARAM_KEYS = frozenset({"reference_asset_ids", "extra", "reference_labels"})
+_MUTATED_PARAM_KEYS = frozenset(
+    {
+        "reference_asset_ids",
+        "extra",
+        "reference_labels",
+        # A character voice pins the model and names its card at submit
+        # (`characters.voice_resolver`).
+        "forced_model",
+        "voice_card_id",
+    }
+)
 
 
 def _is_replay_of(
@@ -228,6 +239,7 @@ def submit(
 
     # Before quoting: a spec mismatch, or an unowned character, must not cost
     # the user a reservation.
+    voice_resolver.apply_voice_profile(session, user_id=user_id, operation=operation, params=params)
     reference_resolver.resolve(session, user_id=user_id, params=params)
     media_service.attach_licensed_source_video(
         session, params=params, source_work_version_id=source_work_version_id
