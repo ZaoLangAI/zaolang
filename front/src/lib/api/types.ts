@@ -137,6 +137,7 @@ export type AssetGraph = S['AssetGraphResponse'];
 export type AssetEdge = S['AssetEdgeView'];
 export type AssetRelation = S['AssetEdgeView']['relations'][number];
 export type AssetGraphPendingJob = S['AssetGraphPendingJob'];
+export type AssetGenerateResponse = S['AssetGenerateResponse'];
 
 export type DramaSeries = S['DramaSeriesResponse'];
 export type DramaEpisode = S['DramaEpisodeResponse'];

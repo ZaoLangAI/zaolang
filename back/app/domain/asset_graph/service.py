@@ -18,6 +18,7 @@ Invariants:
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass
@@ -28,13 +29,15 @@ from sqlalchemy.orm import Session
 
 from app.domain.asset_variants import service as av
 from app.domain.errors import NotFound, ValidationFailed
-from app.models import Asset, CreationSkill, SkillAssetEdge, SkillAssetVariant
+from app.models import Asset, CreationSkill, GenerationJob, SkillAssetEdge, SkillAssetVariant
+from app.models.base import utcnow
 from app.models.enums import (
     CHARACTER_RELATIONS,
     SCENE_RELATIONS,
     AssetEdgeOrigin,
     AssetGraphLevel,
     AssetRelation,
+    JobStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -266,6 +269,94 @@ def relations_between(source: SkillAssetVariant, target: SkillAssetVariant) -> l
     return [str(r) for r in found]
 
 
+def link_job_output(
+    session: Session,
+    skill: CreationSkill,
+    *,
+    asset_id: str,
+    params: dict[str, Any],
+    job_id: str,
+) -> SkillAssetEdge | None:
+    """After write-back filed `asset_id` from a job with `source_entry_id`
+    (P6): the image-level auto edge source → new image. An adjust is an
+    `edit` labelled with its instruction; a derive names what differs
+    between the two looks (`relations_between`), `scene` for a character
+    placed in its scene. Skips (logs) when either image is gone."""
+    source_id = params.get("source_entry_id")
+    if not source_id:
+        return None
+    source = av.find_entry(skill, str(source_id))
+    target = next(
+        (
+            entry
+            for entry in reversed(av.entries(skill))
+            if entry.asset_id == asset_id and entry.source_job_id == job_id
+        ),
+        None,
+    )
+    if source is None or target is None or source.id == target.id:
+        logger.info("job output edge skipped", extra={"job_id": job_id, "skill_id": skill.id})
+        return None
+    label: str | None = None
+    if params.get("asset_edit"):
+        relations: list[str] = [AssetRelation.EDIT]
+        label = str(params.get("prompt") or "").strip()[:MAX_EDGE_LABEL_LEN] or None
+    else:
+        relations = relations_between(source.variant, target.variant)
+        if params.get("asset_output_mode") == "in_scene" and AssetRelation.SCENE not in relations:
+            relations.append(AssetRelation.SCENE)
+    return add_auto_edge(
+        session,
+        skill,
+        level=AssetGraphLevel.ENTRY,
+        source_id=source.id,
+        target_id=target.id,
+        relations=relations,
+        label=label,
+        source_job_id=job_id,
+    )
+
+
+ACTIVE_JOB_STATUSES = (
+    JobStatus.CREATED,
+    JobStatus.QUEUED,
+    JobStatus.SUBMITTED,
+    JobStatus.RUNNING,
+    JobStatus.AWAITING_INPUT,
+)
+PENDING_WINDOW = dt.timedelta(hours=2)
+
+
+def pending_jobs(session: Session, skill: CreationSkill) -> list[dict[str, Any]]:
+    """The owner's still-running jobs filing into this card (last two
+    hours) — the graph's placeholder nodes."""
+    key = "target_character_id" if av.is_character(skill) else "target_scene_id"
+    rows = session.scalars(
+        select(GenerationJob)
+        .where(
+            GenerationJob.user_id == skill.owner_user_id,
+            GenerationJob.status.in_([status.value for status in ACTIVE_JOB_STATUSES]),
+            GenerationJob.created_at >= utcnow() - PENDING_WINDOW,
+            GenerationJob.request_json[key].astext == skill.id,
+        )
+        .order_by(GenerationJob.created_at)
+        .limit(50)
+    ).all()
+    return [
+        {
+            "job_id": job.id,
+            "status": job.status,
+            "mode": "edit"
+            if job.request_json.get("asset_edit")
+            else job.request_json.get("asset_output_mode")
+            or ("derive" if job.request_json.get("source_entry_id") else None),
+            "target_variant_id": job.request_json.get("target_variant_id"),
+            "source_entry_id": job.request_json.get("source_entry_id"),
+        }
+        for job in rows
+    ]
+
+
 @dataclass(frozen=True, slots=True)
 class CardGraph:
     skill: CreationSkill
@@ -282,4 +373,9 @@ def graph(session: Session, skill: CreationSkill) -> CardGraph:
     asset_ids = {entry.asset_id for variant in variants for entry in variant.entries}
     if asset_ids:
         session.scalars(select(Asset).where(Asset.id.in_(asset_ids))).all()
-    return CardGraph(skill=skill, variants=variants, edges=edges(session, skill), pending=[])
+    return CardGraph(
+        skill=skill,
+        variants=variants,
+        edges=edges(session, skill),
+        pending=pending_jobs(session, skill),
+    )

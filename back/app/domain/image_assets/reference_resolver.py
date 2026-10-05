@@ -41,7 +41,7 @@ from sqlalchemy.orm import Session
 from app.domain.asset_variants import service as asset_variants_service
 from app.domain.blocking import camera_language
 from app.domain.characters import service as characters_service
-from app.domain.errors import NotFound
+from app.domain.errors import NotFound, ValidationFailed
 from app.domain.scenes import service as scenes_service
 from app.models import CreationSkill, SkillAssetVariant
 from app.models.enums import AssetEntryType, CharacterViewAngle
@@ -62,12 +62,13 @@ def resolve(
         shot=shot_hint or params.get("reference_shot_size") or _prompt_shot_size(params),
         emotion=emotion_hint or params.get("reference_emotion"),
     )
+    source_roles, foreign_labels = _source_entry_reference(session, user_id=user_id, params=params)
     characters_service.apply_character_refs(session, user_id=user_id, params=params, hints=hints)
     _borrow_expression_reference(session, user_id=user_id, params=params)
-    roles = _borrow_identity_reference(session, user_id=user_id, params=params)
+    roles = {**source_roles, **_borrow_identity_reference(session, user_id=user_id, params=params)}
     scenes_service.apply_scene_refs(session, user_id=user_id, params=params, hints=hints)
     _borrow_scene_reference(session, user_id=user_id, params=params)
-    _label_references(session, user_id=user_id, params=params, roles=roles)
+    _label_references(session, user_id=user_id, params=params, roles=roles, foreign=foreign_labels)
 
 
 def _borrow_expression_reference(session: Session, *, user_id: str, params: dict[str, Any]) -> None:
@@ -90,7 +91,74 @@ def _borrow_expression_reference(session: Session, *, user_id: str, params: dict
 # How the legend tells the model what to take from a borrowed image (P2-3).
 FACE_ONLY_ROLE = "（只取面部与体型，忽略服装）"
 OUTFIT_ONLY_ROLE = "（只取服装）"
+# P6: the image a derive / adjust starts from, and the scene an `in_scene`
+# character is placed into.
+SOURCE_ROLE = "（以此图为基础）"
+SCENE_ONLY_ROLE = "（只取场景环境与光线，忽略其中的人物）"
 MAX_BORROWED_REFERENCES = 3
+MAX_REFERENCES = 9
+
+
+def _source_entry_reference(
+    session: Session, *, user_id: str, params: dict[str, Any]
+) -> tuple[dict[str, str], dict[str, str]]:
+    """`source_entry_id` (P6): an image of the job's own target card, put
+    first in `reference_asset_ids`. An `in_scene` job also borrows the
+    target look's linked scene still (`master_or_anchor`). Another card's
+    image, or an `in_scene` look with no scene, is a 422. Returns the legend
+    roles and the labels of images from cards the job does not name (the
+    linked scene's still)."""
+    entry_id = params.get("source_entry_id")
+    if not entry_id:
+        return {}, {}
+    character = params.get("asset_kind") == "character"
+    card_id = params.get("target_character_id" if character else "target_scene_id")
+    if not card_id:
+        raise ValidationFailed(
+            "基于参考图生成需要指定目标卡片。", fields={"source_entry_id": "缺少卡片"}
+        )
+    skill = (
+        characters_service.get_character(session, user_id=user_id, character_id=str(card_id))
+        if character
+        else scenes_service.get_scene(session, user_id=user_id, scene_id=str(card_id))
+    ).skill
+    entry = asset_variants_service.find_entry(skill, str(entry_id))
+    if entry is None:
+        raise ValidationFailed("参考图不在这张卡片上。", fields={"source_entry_id": "图片不存在"})
+    refs = [entry.asset_id] + [
+        str(r) for r in params.get("reference_asset_ids") or [] if str(r) != entry.asset_id
+    ]
+    roles = {entry.asset_id: SOURCE_ROLE}
+    foreign: dict[str, str] = {}
+    if params.get("asset_output_mode") == "in_scene":
+        look_id = params.get("target_variant_id")
+        look = asset_variants_service.find_variant(skill, str(look_id)) if look_id else None
+        scene = (
+            session.get(CreationSkill, look.scene_skill_id)
+            if look and look.scene_skill_id
+            else None
+        )
+        if look is None or scene is None:
+            raise ValidationFailed(
+                "这个造型还没有关联场景，先在造型属性里选择场景。",
+                fields={"target_variant_id": "未关联场景"},
+            )
+        scene_variant = (
+            asset_variants_service.find_variant(scene, look.scene_variant_id)
+            if look.scene_variant_id
+            else None
+        )
+        still = asset_variants_service.master_or_anchor(scene, scene_variant)
+        if still is None:
+            raise ValidationFailed(
+                "关联的场景还没有图片，先为场景生成一张主图。",
+                fields={"target_variant_id": "场景没有图片"},
+            )
+        refs = [r for r in refs if r != still.asset_id] + [still.asset_id]
+        roles[still.asset_id] = SCENE_ONLY_ROLE
+        foreign[still.asset_id] = asset_variants_service.entry_label(scene, still)
+    params["reference_asset_ids"] = refs[:MAX_REFERENCES]
+    return roles, foreign
 
 
 def _target_look(look: SkillAssetVariant) -> dict[str, Any]:
@@ -271,14 +339,18 @@ def _label_references(
     user_id: str,
     params: dict[str, Any],
     roles: dict[str, str] | None = None,
+    foreign: dict[str, str] | None = None,
 ) -> None:
     """Writes `params["reference_labels"]` for every reference this job's
     picked/targeted cards can name; leaves it unset when there are none.
-    `roles` appends what to take from a borrowed image (面部 / 服装)."""
+    `roles` appends what to take from a borrowed image (面部 / 服装);
+    `foreign` names images from cards the job does not name."""
     wanted = {str(asset_id) for asset_id in params.get("reference_asset_ids") or []}
     if not wanted:
         return
-    labels: dict[str, str] = {}
+    labels: dict[str, str] = {
+        asset_id: label for asset_id, label in (foreign or {}).items() if asset_id in wanted
+    }
     for card in _owned_cards(session, user_id=user_id, params=params):
         for entry in asset_variants_service.entries(card):
             if entry.asset_id in wanted and entry.asset_id not in labels:

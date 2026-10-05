@@ -415,6 +415,8 @@ def append_reference_asset(
     expressions: list[str] | None = None,
     generated: bool = False,
     portrait: bool = False,
+    entry_type: str | None = None,
+    copy_from_entry_id: str | None = None,
 ) -> CharacterView:
     """Files one image under a look — the P0 `(view, label)` call shape,
     translated: a non-expression `label` names the look (created on first
@@ -435,12 +437,17 @@ def append_reference_asset(
     same set of expressions) is kept as a candidate beside it
     (`asset_variants.service.file_generated`) for the owner to approve.
 
+    P6 write-back overrides: `copy_from_entry_id` (调整修改) files the image
+    exactly like that entry of this card — same look, type, view and
+    expressions; `entry_type` (派生) sets the type outright.
+
     Called by the character library UI and by
     `app.workflows.nodes.execute_asset_output_link`.
     """
     skill = _owned_character_skill(session, user_id=user_id, character_id=character_id)
     _validate_reference_assets(session, user_id=user_id, asset_ids=[asset_id])
     clean_label = (label or "").strip() or None
+    output_type = entry_type
     entry_type, entry_view = _legacy_entry_type(view, clean_label)
     variant = (
         asset_variants_service.find_variant(skill, variant_id) if variant_id else None
@@ -452,6 +459,15 @@ def append_reference_asset(
     if portrait:
         entry_type, entry_view = AssetEntryType.IDENTITY_PORTRAIT.value, None
         variant = asset_variants_service.ensure_default(session, skill)
+    source = (
+        asset_variants_service.find_entry(skill, copy_from_entry_id) if copy_from_entry_id else None
+    )
+    if source is not None:
+        variant = source.variant
+        entry_type, entry_view = source.entry_type, source.view
+        expressions = list(source.expressions_json or []) or None
+    elif output_type:
+        entry_type, entry_view = output_type, None
     if not generated and entry_type in (AssetEntryType.CHARACTER_SHEET, AssetEntryType.VIEW):
         for stale in [
             e
@@ -460,6 +476,21 @@ def append_reference_asset(
         ]:
             variant.entries.remove(stale)
         session.flush()
+    if generated and source is not None:
+        # An adjust is a new version of `source`: always a candidate.
+        entry = asset_variants_service.file_generated(
+            session,
+            skill,
+            variant,
+            asset_id=asset_id,
+            entry_type=entry_type,
+            view=entry_view,
+            expressions=list(source.expressions_json or []) or None,
+            source_job_id=source_job_id,
+            candidate=True,
+        )
+        asset_variants_service.claim_anchor(session, skill, entry)
+        return CharacterView(skill)
     file = asset_variants_service.file_generated if generated else asset_variants_service.add_entry
     entry = file(
         session,

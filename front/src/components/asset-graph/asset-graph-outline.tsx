@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn';
 
 import { attributeRows, isApprovedEntry, outlineOrder, type GraphSelection } from './graph-model';
 import { useAttributeLabel } from './use-attribute-label';
+import { versionIndex } from './versions';
 
 /**
  * The graph as an indented list for narrow screens (no canvas below `md`):
@@ -29,6 +30,7 @@ export function AssetGraphOutline({
   const t = useTranslations('assetGraph');
   const label = useAttributeLabel();
   const names = new Map((graph.variants ?? []).map((v) => [v.id, v.name]));
+  const { headOf, versions } = versionIndex(graph);
   return (
     <ol className="flex flex-col gap-2">
       {outlineOrder(graph).map(({ variant, depth, parents }) => {
@@ -68,27 +70,34 @@ export function AssetGraphOutline({
               </button>
               {(variant.entries ?? []).length ? (
                 <ul className="mt-2 flex flex-wrap gap-1.5">
-                  {(variant.entries ?? []).map((entry) => (
-                    <li key={entry.id}>
-                      <button
-                        type="button"
-                        aria-label={t('openImage')}
-                        onClick={() => onSelect({ type: 'entry', id: entry.id })}
-                        className={cn(
-                          'size-14 overflow-hidden rounded-[var(--radius-sm)] border bg-surface-soft focus-visible:outline-2',
-                          selection.type === 'entry' && selection.id === entry.id
-                            ? 'border-primary'
-                            : 'border-border',
-                          !approved.includes(entry) && 'border-dashed opacity-70',
-                        )}
-                      >
-                        {entry.url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={entry.url} alt="" className="h-full w-full object-cover" />
+                  {(variant.entries ?? [])
+                    .filter((entry) => headOf.get(entry.id) === entry.id)
+                    .map((entry) => (
+                      <li key={entry.id} className="relative">
+                        <button
+                          type="button"
+                          aria-label={t('openImage')}
+                          onClick={() => onSelect({ type: 'entry', id: entry.id })}
+                          className={cn(
+                            'size-14 overflow-hidden rounded-[var(--radius-sm)] border bg-surface-soft focus-visible:outline-2',
+                            selection.type === 'entry' && headOf.get(selection.id) === entry.id
+                              ? 'border-primary'
+                              : 'border-border',
+                            !approved.includes(entry) && 'border-dashed opacity-70',
+                          )}
+                        >
+                          {entry.url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={entry.url} alt="" className="h-full w-full object-cover" />
+                          ) : null}
+                        </button>
+                        {(versions.get(entry.id)?.length ?? 1) > 1 ? (
+                          <span className="pointer-events-none absolute bottom-0.5 right-0.5 rounded-full bg-surface/90 px-1 text-[10px]">
+                            {t('versionBadge', { count: versions.get(entry.id)?.length ?? 1 })}
+                          </span>
                         ) : null}
-                      </button>
-                    </li>
-                  ))}
+                      </li>
+                    ))}
                 </ul>
               ) : null}
             </div>

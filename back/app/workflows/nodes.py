@@ -21,6 +21,7 @@ from app.agents import copywriter, planner, quality, router, safety
 from app.agents import custom as custom_agent
 from app.agents import intent_router as intent_router_agent
 from app.config import get_settings
+from app.domain.asset_graph import service as asset_graph_service
 from app.domain.asset_variants import service as asset_variants_service
 from app.domain.characters import service as characters_service
 from app.domain.costs import service as costs_service
@@ -48,7 +49,7 @@ from app.domain.skill_library.folding import (
 from app.domain.style_gallery import service as style_gallery_service
 from app.llm import client as llm_client
 from app.llm.client import StreamChunk
-from app.models import Draft, GenerationJob, JobEvent, ProviderAttempt
+from app.models import CreationSkill, Draft, GenerationJob, JobEvent, ProviderAttempt
 from app.models.base import utcnow
 from app.models.enums import (
     IMAGE_ASSET_SKILL_CATEGORIES,
@@ -973,8 +974,10 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                                 # A filled slot keeps its approved image; this
                                 # one becomes a candidate (P2-1).
                                 "generated": True,
+                                **_derive_filing(ctx.params),
                             },
                         )
+                        _link_derived_output(ctx, target_id, str(entry.get("asset_id")))
                 except Exception:
                     logger.exception(
                         "job %s could not attach character output %s",
@@ -1016,8 +1019,10 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                                 or None,
                                 "source_job_id": ctx.job.id,
                                 "generated": True,
+                                **_derive_filing(ctx.params),
                             },
                         )
+                        _link_derived_output(ctx, target_id, str(entry.get("asset_id")))
                 except Exception:
                     logger.exception(
                         "job %s could not attach scene output %s", ctx.job.id, entry.get("asset_id")
@@ -1061,6 +1066,31 @@ def _scene_output_label(params: dict[str, Any], entry: dict[str, Any]) -> str | 
     if isinstance(own, str) and own.strip():
         return own.strip()[:60]
     return scene_preset_label(scene_presets_from(params))[:60] or None
+
+
+def _derive_filing(params: dict[str, Any]) -> dict[str, Any]:
+    """P6 write-back overrides: an adjust is filed like its source image, a
+    derive with an explicit output type as that type."""
+    filing: dict[str, Any] = {}
+    if params.get("asset_edit") and params.get("source_entry_id"):
+        filing["copy_from_entry_id"] = params["source_entry_id"]
+    elif params.get("asset_output_entry_type"):
+        filing["entry_type"] = params["asset_output_entry_type"]
+    return filing
+
+
+def _link_derived_output(ctx: WorkflowContext, card_id: str | None, asset_id: str) -> None:
+    """The auto graph edge from a derive / adjust job's source image to the
+    image it produced (`asset_graph.service.link_job_output`, never raises
+    on a skip). Runs inside the output's own savepoint."""
+    if not card_id or not ctx.params.get("source_entry_id"):
+        return
+    skill = ctx.session.get(CreationSkill, str(card_id))
+    if skill is None or skill.owner_user_id != ctx.job.user_id:
+        return
+    asset_graph_service.link_job_output(
+        ctx.session, skill, asset_id=asset_id, params=ctx.params, job_id=ctx.job.id
+    )
 
 
 def _link_character_output(

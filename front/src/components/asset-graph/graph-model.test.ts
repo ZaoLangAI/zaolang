@@ -13,6 +13,7 @@ import {
   parseNodeId,
 } from './graph-model';
 import { layoutGraph } from './layout';
+import { versionIndex } from './versions';
 
 const entry = (id: string, status: 'approved' | 'candidate' = 'approved') =>
   ({ id, asset_id: id, entry_type: 'other', status, url: `https://cdn/${id}.png` }) as AssetEntry;
@@ -198,5 +199,57 @@ describe('outlineOrder / parseNodeId', () => {
     expect(parseNodeId('v:skv_1')).toEqual({ kind: 'variant', id: 'skv_1' });
     expect(parseNodeId('e:ske_1')).toEqual({ kind: 'entry', id: 'ske_1' });
     expect(parseNodeId('x:1')).toBeNull();
+  });
+});
+
+describe('versions', () => {
+  it('folds an edited image and same-slot candidates into one node', () => {
+    const sheet = { ...entry('sheet'), entry_type: 'character_sheet' } as AssetEntry;
+    const regenerated = {
+      ...entry('regen', 'candidate'),
+      entry_type: 'character_sheet',
+      created_at: '2026-10-05T02:00:00Z',
+    } as AssetEntry;
+    const pose = { ...entry('pose'), entry_type: 'pose' } as AssetEntry;
+    const poseEdit = {
+      ...entry('pose2', 'candidate'),
+      entry_type: 'pose',
+      created_at: '2026-10-05T03:00:00Z',
+    } as AssetEntry;
+    const old = { ...entry('old'), entry_type: 'character_sheet' } as AssetEntry;
+    const data = graph(
+      [look('default', [sheet, regenerated, pose, poseEdit]), look('old', [old])],
+      [
+        { ...edge('ed', 'entry', 'pose', 'pose2'), relations: ['edit'] } as AssetEdge,
+        edge('d1', 'entry', 'regen', 'old'),
+      ],
+    );
+    const { headOf, versions } = versionIndex(data);
+    expect(headOf.get('regen')).toBe('sheet');
+    expect(headOf.get('pose2')).toBe('pose');
+    expect(versions.get('sheet')?.map((e) => e.id)).toEqual(['sheet', 'regen']);
+
+    const built = buildGraph(
+      {
+        ...data,
+        pending: [{ job_id: 'j', status: 'running', mode: 'edit', source_entry_id: 'pose2' }],
+      } as AssetGraph,
+      {
+        expanded: new Set(['default', 'old']),
+        selection: { type: 'entry', id: 'regen' },
+        onToggle: noop,
+      },
+    );
+    const entryNodes = built.nodes.filter((n) => n.type === 'entry');
+    expect(entryNodes.map((n) => n.id)).toEqual(['e:sheet', 'e:pose', 'e:old']);
+    const sheetNode = entryNodes.find((n) => n.id === 'e:sheet');
+    expect(sheetNode?.selected).toBe(true);
+    expect(sheetNode?.type === 'entry' && sheetNode.data.versionCount).toBe(2);
+    const poseNode = entryNodes.find((n) => n.id === 'e:pose');
+    expect(poseNode?.type === 'entry' && poseNode.data.pendingVersions).toBe(1);
+    // No pending node for an edit; the edit edge is not drawn; the derive
+    // edge from a version attaches to its head.
+    expect(built.nodes.some((n) => n.type === 'pending')).toBe(false);
+    expect(built.edges.map((e) => [e.source, e.target])).toEqual([['e:sheet', 'e:old']]);
   });
 });

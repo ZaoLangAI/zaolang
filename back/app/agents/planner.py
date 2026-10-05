@@ -269,7 +269,11 @@ ASSET_PLAN_SYSTEM_PROMPT = f"""你是造浪平台的图片资产规划器，
   只出同一人物的头肩特写宫格，禁止补三视图/设定图/色板/全身像，
   prompt_enhancements 只补充保持五官、发型、服装在各格一致的描述；
   scene = 单张场景图（场景变体组逐张生成，source_params.current_scene_variant 是当前这一张的变体，
-  其光照/天气/状态/时期已写入 scene_lighting 等字段）
+  其光照/天气/状态/时期已写入 scene_lighting 等字段）；
+  asset_edit = 以参考图1为基础的局部调整：intent 就是用户要改的全部内容，
+  prompt_enhancements 必须为空数组，不得追加任何修改；
+  character_in_scene = 把参考图1的人物放进关联场景的单张画面：禁止补三视图/设定图/色板，
+  prompt_enhancements 只补充人物与场景之间的光影、透视与站位
 - 当 source_params 带有 scene_lighting/scene_weather/scene_state/scene_period
   时，这些预设已经写进了 intent，是硬性要求：prompt_enhancements 不得改写光照、天气、
   破损程度或年代，也不得引入与 scene_period 不同的年代器物；只补充与预设一致的细节

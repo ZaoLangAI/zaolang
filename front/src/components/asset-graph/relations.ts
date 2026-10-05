@@ -2,10 +2,12 @@ import type { AssetRelation } from '@/lib/api/types';
 
 import type { CardKind } from '@/components/library/entry-actions';
 
-/** Mirrors `CHARACTER_RELATIONS` / `SCENE_RELATIONS` (`back/app/models/enums.py`). */
+/** The relations an author can pick — `CHARACTER_RELATIONS` /
+ * `SCENE_RELATIONS` (`back/app/models/enums.py`) minus `edit`, which only
+ * links versions of one image (`versions.ts`) and is never drawn. */
 export const RELATIONS_BY_KIND: Record<CardKind, AssetRelation[]> = {
-  character: ['age', 'outfit', 'emotion', 'scene', 'period', 'edit', 'custom'],
-  scene: ['lighting', 'weather', 'state', 'period', 'edit', 'custom'],
+  character: ['age', 'outfit', 'emotion', 'scene', 'period', 'custom'],
+  scene: ['lighting', 'weather', 'state', 'period', 'custom'],
 };
 
 /** Stroke colour per relation — the `--relation-*` tokens (`globals.css`).
