@@ -4,8 +4,10 @@ import Foundation
 /// back to. Both endpoints return a plain array (no pagination) — creators
 /// keep dozens of these at most, not hundreds.
 public extension APIClient {
-    func listCharacters() async throws -> [CharacterResponse] {
-        try await send(.get("/v1/characters"))
+    /// `summary: true` (`?view=summary`) leaves out `looks` — for lists that
+    /// only show `heroURL` and text. Pickers that choose a look keep the default.
+    func listCharacters(summary: Bool = false) async throws -> [CharacterResponse] {
+        try await send(.get("/v1/characters", query: summary ? [URLQueryItem(name: "view", value: "summary")] : []))
     }
 
     func createCharacter(_ payload: CharacterCreateRequest) async throws -> CharacterResponse {
