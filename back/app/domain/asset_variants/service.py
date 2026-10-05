@@ -50,9 +50,9 @@ DEFAULT_SCENE_VARIANT_NAME = "主场景"
 # Character looks only. Scene cards are uncapped (P2-5, decided 2026-10-02):
 # a lighting × weather × state × period matrix runs past any fixed number;
 # a scene variant still holds at most `MAX_ENTRIES_PER_VARIANT` approved.
-MAX_VARIANTS_PER_SKILL = 12
+MAX_VARIANTS_PER_SKILL = 48
 MAX_ENTRIES_PER_VARIANT = 24
-MAX_ENTRIES_PER_SKILL = 120
+MAX_ENTRIES_PER_SKILL = 480
 MAX_VARIANT_NAME_LEN = 40
 
 
