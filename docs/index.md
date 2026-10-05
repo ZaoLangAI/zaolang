@@ -27,7 +27,7 @@
 诚实地说清楚哪些是真的、哪些是骨架，比宣称「已完成」更有用：
 
 - **智能体推理是真的。** 经 OpenAI 兼容网关（AIHubMix）接入真实模型，只有「调用真实网关」这一种行为——模型未绑定或网关调用失败一律立即报错，绝不会静默换成假数据；测试环境的确定性由内置假网关 fixture 提供，不影响生产代码路径。
-- **图片与视频生成不是真的。** 生成供应商仍是 `fake open` 与 `fake paid` 两条确定性路线；LLM 网关只服务智能体推理。
+- **图片、视频与配音生成是真的。** 经 AiHubMix、DMXAPI、fal、MiniMax v2 四个 HTTP 适配器接入真实供应商（`back/app/providers/media_endpoints.py`）；确定性的 `fake open` / `fake paid` 路线只留在测试里（`back/tests/fake_providers.py`）。
 - **支付不是真的。** Mock 支付页配真实 HMAC 签名的 webhook，验签、时间窗、防重放、幂等都按生产标准实现，但没有接入 Stripe 生产环境。
 - **语义检索用本地确定性向量。** 网关不提供 embedding 模型，`EmbeddingProvider` 保持可插拔，检索质量不代表真实向量模型水平。
 - **C2PA 签名是接口预留位。** 生成输出会携带 AI 溯源清单，但没有做密码学签名。

@@ -1,7 +1,8 @@
 """Generation provider interface.
 
-Both shipped providers are fakes. The interface is what real providers will
-implement, so swapping one in requires no change to the worker or the router.
+Every real adapter (AiHubMix, DMXAPI, fal, MiniMax v2) implements this
+interface, so adding a vendor requires no change to the worker or the router.
+The deterministic fakes live in `tests/fake_providers.py`.
 """
 
 from __future__ import annotations
