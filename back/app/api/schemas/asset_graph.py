@@ -57,6 +57,8 @@ class AssetGraphResponse(ApiModel):
     card_kind: Literal["character", "scene"]
     name: str
     description: str | None = None
+    # Characters: the card's 音色描述 (what 「AI 按描述匹配」 reads).
+    voice_description: str | None = None
     anchor_entry_id: str | None = None
     variants: list[AssetVariantView] = Field(default_factory=list)
     edges: list[AssetEdgeView] = Field(default_factory=list)

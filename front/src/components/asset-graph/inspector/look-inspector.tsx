@@ -9,7 +9,7 @@ import { ScenePresetFields } from '@/components/library/scene-preset-fields';
 import { VariantAttributesForm } from '@/components/library/variant-attributes-form';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { TextArea, TextInput } from '@/components/ui/field';
+import { Select, TextArea, TextInput } from '@/components/ui/field';
 import { IconSparkle } from '@/components/ui/icons';
 import { Badge } from '@/components/ui/primitives';
 import type { ScenePresets } from '@/features/image-assets/vocabulary';
@@ -103,6 +103,25 @@ export function LookInspector({
           onSave={(body) => void actions.updateVariant(variant.id, body)}
         />
       </InspectorSection>
+
+      {character ? (
+        <InspectorSection title={t('sectionLookVoice')}>
+          <Select
+            label={t('lookVoice')}
+            value={variant.voice_id ?? ''}
+            onChange={(event) =>
+              void actions.updateVariant(
+                variant.id,
+                event.target.value ? { voice_id: event.target.value } : { clear_voice: true },
+              )
+            }
+            options={[
+              { value: '', label: t('lookVoiceDefault') },
+              ...(graph.voices ?? []).map((voice) => ({ value: voice.id, label: voice.name })),
+            ]}
+          />
+        </InspectorSection>
+      ) : null}
 
       <InspectorSection title={t('sectionImages')}>
         <div className="flex flex-wrap gap-2">

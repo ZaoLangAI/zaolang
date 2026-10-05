@@ -16,6 +16,11 @@ export function useNodeNames(graph: AssetGraph) {
       entryName.set(entry.id, `${variant.name} · ${t(`type.${entry.entry_type}`)} ${index + 1}`);
     });
   }
-  return (level: 'variant' | 'entry', id: string): string =>
-    (level === 'variant' ? lookName.get(id) : entryName.get(id)) ?? id;
+  const voiceName = new Map((graph.voices ?? []).map((v) => [v.id, v.name]));
+  return (level: 'variant' | 'entry' | 'voice', id: string): string =>
+    (level === 'variant'
+      ? lookName.get(id)
+      : level === 'voice'
+        ? voiceName.get(id)
+        : entryName.get(id)) ?? id;
 }

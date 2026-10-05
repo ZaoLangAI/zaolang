@@ -24,6 +24,7 @@ import { useReducedMotion } from '@/lib/motion';
 
 import {
   buildGraph,
+  buildVoiceGraph,
   parseNodeId,
   type GraphNode,
   type GraphSelection,
@@ -33,6 +34,7 @@ import { layoutGraph } from './layout';
 import { EntryNodeCard } from './nodes/entry-node';
 import { LookNodeCard } from './nodes/look-node';
 import { PendingNodeCard } from './nodes/pending-node';
+import { VoiceNodeCard } from './nodes/voice-node';
 import { RelationEdgeLine } from './relation-edge';
 import { RELATION_COLOR } from './relations';
 
@@ -49,18 +51,21 @@ const nodeTypes: NodeTypes = {
   look: LookNodeCard,
   entry: EntryNodeCard,
   pending: PendingNodeCard,
+  voice: VoiceNodeCard,
 };
 const edgeTypes: EdgeTypes = { relation: RelationEdgeLine };
 
 export interface AssetGraphCanvasProps {
   graph: AssetGraph;
+  /** `looks`: looks and their images; `voices`: the character's voices. */
+  mode: 'looks' | 'voices';
   expanded: ReadonlySet<string>;
   selection: GraphSelection;
   onSelect: (selection: GraphSelection) => void;
   onToggle: (variantId: string) => void;
   onToggleAll: (expand: boolean) => void;
   /** A drag between two handles of the same level. */
-  onConnect: (level: 'variant' | 'entry', sourceId: string, targetId: string) => void;
+  onConnect: (level: 'variant' | 'entry' | 'voice', sourceId: string, targetId: string) => void;
   /** A drag between a look and an image (levels never mix). */
   onInvalidConnect: () => void;
 }
@@ -82,6 +87,7 @@ export function AssetGraphCanvas(props: AssetGraphCanvasProps) {
 
 function CanvasInner({
   graph,
+  mode,
   expanded,
   selection,
   onSelect,
@@ -95,8 +101,11 @@ function CanvasInner({
   const [manual, setManual] = useState<Record<string, { x: number; y: number }>>({});
 
   const built = useMemo(
-    () => buildGraph(graph, { expanded, selection, onToggle }),
-    [graph, expanded, selection, onToggle],
+    () =>
+      mode === 'voices'
+        ? buildVoiceGraph(graph, selection)
+        : buildGraph(graph, { expanded, selection, onToggle }),
+    [graph, mode, expanded, selection, onToggle],
   );
   const nodes = useMemo(() => layoutGraph(built, manual), [built, manual]);
   const edges = useMemo<RelationEdge[]>(
@@ -123,6 +132,7 @@ function CanvasInner({
         const parsed = parseNodeId(change.id);
         if (parsed?.kind === 'variant') onSelect({ type: 'variant', id: parsed.id });
         if (parsed?.kind === 'entry') onSelect({ type: 'entry', id: parsed.id });
+        if (parsed?.kind === 'voice') onSelect({ type: 'voice', id: parsed.id });
       }
     }
     if (Object.keys(moved).length) setManual((current) => ({ ...current, ...moved }));
@@ -144,6 +154,8 @@ function CanvasInner({
       onConnect('variant', source.id, target.id);
     } else if (source.kind === 'entry' && target.kind === 'entry') {
       onConnect('entry', source.id, target.id);
+    } else if (source.kind === 'voice' && target.kind === 'voice') {
+      onConnect('voice', source.id, target.id);
     } else {
       onInvalidConnect();
     }
@@ -181,18 +193,24 @@ function CanvasInner({
         pannable
         zoomable
         className="!bg-surface"
-        nodeColor={(node) => (node.type === 'look' ? 'var(--border-strong)' : 'var(--border)')}
+        nodeColor={(node) =>
+          node.type === 'look' || node.type === 'voice' ? 'var(--border-strong)' : 'var(--border)'
+        }
       />
       <Panel position="top-right" className="flex flex-wrap gap-1.5">
         <Button size="sm" variant="secondary" onClick={() => setManual({})}>
           {t('relayout')}
         </Button>
-        <Button size="sm" variant="secondary" onClick={() => onToggleAll(true)}>
-          {t('expandAll')}
-        </Button>
-        <Button size="sm" variant="secondary" onClick={() => onToggleAll(false)}>
-          {t('collapseAll')}
-        </Button>
+        {mode === 'looks' ? (
+          <>
+            <Button size="sm" variant="secondary" onClick={() => onToggleAll(true)}>
+              {t('expandAll')}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => onToggleAll(false)}>
+              {t('collapseAll')}
+            </Button>
+          </>
+        ) : null}
       </Panel>
     </ReactFlow>
   );

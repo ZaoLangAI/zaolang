@@ -14,6 +14,7 @@ import {
   RELATION_COLOR,
   RELATIONS_BY_KIND,
   relationLabelKey,
+  VOICE_RELATIONS,
 } from './relations';
 
 export interface RelationDraft {
@@ -34,10 +35,13 @@ export function RelationFields({
   kind,
   value,
   onChange,
+  voices = false,
 }: {
   kind: CardKind;
   value: RelationDraft;
   onChange: (next: RelationDraft) => void;
+  /** Voice-level relations (`VOICE_RELATIONS`). */
+  voices?: boolean;
 }) {
   const t = useTranslations('assetGraph');
   const toggle = (relation: AssetRelation) => {
@@ -55,7 +59,7 @@ export function RelationFields({
       <fieldset>
         <legend className="mb-1.5 text-xs font-medium text-muted">{t('relationTypes')}</legend>
         <div className="flex flex-wrap gap-1.5">
-          {RELATIONS_BY_KIND[kind].map((relation) => {
+          {(voices ? VOICE_RELATIONS : RELATIONS_BY_KIND[kind]).map((relation) => {
             const on = value.relations.includes(relation);
             return (
               <button

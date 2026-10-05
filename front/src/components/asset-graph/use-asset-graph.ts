@@ -6,7 +6,13 @@ import { useCallback, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
-import type { AssetEdge, AssetEntryType, AssetGraph, AssetVariant } from '@/lib/api/types';
+import type {
+  AssetEdge,
+  AssetEntryType,
+  AssetGraph,
+  AssetVariant,
+  CharacterVoice,
+} from '@/lib/api/types';
 import { uploadFile } from '@/lib/upload';
 
 import type { CardKind } from '@/components/library/entry-actions';
@@ -26,6 +32,9 @@ export interface AssetGraphActions {
   createEdge: (body: Record<string, unknown>) => Promise<AssetEdge | undefined>;
   updateEdge: (id: string, body: Record<string, unknown>) => Promise<unknown>;
   deleteEdge: (id: string) => Promise<true | undefined>;
+  createVoice: (body: Record<string, unknown>) => Promise<CharacterVoice | undefined>;
+  updateVoice: (id: string, body: Record<string, unknown>) => Promise<CharacterVoice | undefined>;
+  deleteVoice: (id: string) => Promise<true | undefined>;
   refresh: () => Promise<void>;
 }
 
@@ -98,6 +107,13 @@ export function useAssetGraph(kind: CardKind, initial: AssetGraph) {
     anchorEntry: (id) => run(() => api.post(`${base}/entries/${id}:anchor`)),
     createEdge: (body) => run(() => api.post<AssetEdge>(`${base}/edges`, body)),
     updateEdge: (id, body) => run(() => api.patch(`${base}/edges/${id}`, body)),
+    createVoice: (body) => run(() => api.post<CharacterVoice>(`${base}/voices`, body)),
+    updateVoice: (id, body) => run(() => api.patch<CharacterVoice>(`${base}/voices/${id}`, body)),
+    deleteVoice: (id) =>
+      run(async () => {
+        await api.delete(`${base}/voices/${id}`);
+        return true as const;
+      }),
     deleteEdge: (id) =>
       run(async () => {
         await api.delete(`${base}/edges/${id}`);

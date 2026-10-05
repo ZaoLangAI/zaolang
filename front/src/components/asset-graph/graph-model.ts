@@ -2,6 +2,7 @@ import type { Edge, Node } from '@xyflow/react';
 
 import type {
   AssetEdge,
+  CharacterVoice,
   AssetEntry,
   AssetGraph,
   AssetGraphPendingJob,
@@ -31,21 +32,24 @@ export type GraphSelection =
   | { type: 'card' }
   | { type: 'variant'; id: string }
   | { type: 'entry'; id: string }
-  | { type: 'edge'; id: string };
+  | { type: 'edge'; id: string }
+  | { type: 'voice'; id: string };
 
 export const variantNodeId = (id: string) => `v:${id}`;
 export const entryNodeId = (id: string) => `e:${id}`;
 export const pendingNodeId = (id: string) => `p:${id}`;
+export const voiceNodeId = (id: string) => `c:${id}`;
 
 export function parseNodeId(
   nodeId: string,
-): { kind: 'variant' | 'entry' | 'pending'; id: string } | null {
+): { kind: 'variant' | 'entry' | 'pending' | 'voice'; id: string } | null {
   const [prefix, ...rest] = nodeId.split(':');
   const id = rest.join(':');
   if (!id) return null;
   if (prefix === 'v') return { kind: 'variant', id };
   if (prefix === 'e') return { kind: 'entry', id };
   if (prefix === 'p') return { kind: 'pending', id };
+  if (prefix === 'c') return { kind: 'voice', id };
   return null;
 }
 
@@ -67,6 +71,8 @@ export const GROUP_PAD = 12;
 export const EMPTY_GROUP_HEIGHT = 48;
 
 export type AttributeRowKey =
+  | 'voice_use'
+  | 'voice_emotion'
   | 'age_stage'
   | 'period'
   | 'outfit'
@@ -170,6 +176,8 @@ export interface LookNodeData extends Record<string, unknown> {
   pendingCount: number;
   width: number;
   height: number;
+  /** The bound voice's name (P8). */
+  voiceName: string | null;
   onToggle: (variantId: string) => void;
 }
 
@@ -196,16 +204,27 @@ export interface RelationEdgeData extends Record<string, unknown> {
   count?: number;
 }
 
+export interface VoiceNodeData extends Record<string, unknown> {
+  voice: CharacterVoice;
+  rows: AttributeRow[];
+  /** Names of the looks speaking with this voice. */
+  lookNames: string[];
+  previewPending: boolean;
+  width: number;
+  height: number;
+}
+
 export type LookNode = Node<LookNodeData, 'look'>;
+export type VoiceNode = Node<VoiceNodeData, 'voice'>;
 export type EntryNode = Node<EntryNodeData, 'entry'>;
 export type PendingNode = Node<PendingNodeData, 'pending'>;
-export type GraphNode = LookNode | EntryNode | PendingNode;
+export type GraphNode = LookNode | EntryNode | PendingNode | VoiceNode;
 export type RelationEdge = Edge<RelationEdgeData, 'relation'>;
 
 export interface BuiltGraph {
   nodes: GraphNode[];
   edges: RelationEdge[];
-  /** Look-to-look pairs the layout ranks by (relation + folded hints). */
+  /** Top-level node-id pairs the layout ranks by (relations + folded hints). */
   rankPairs: Array<[string, string]>;
 }
 
@@ -225,6 +244,7 @@ export function buildGraph(
     for (const entry of variant.entries ?? []) lookOfEntry.set(entry.id, variant.id);
   }
   const { headOf, versions } = versionIndex(graph);
+  const voiceNames = new Map((graph.voices ?? []).map((voice) => [voice.id, voice.name]));
   const head = (entryId: string) => headOf.get(entryId) ?? entryId;
   // An adjust's job is a new version of its source, not a node of its own.
   const pendingVersions = new Map<string, number>();
@@ -265,6 +285,7 @@ export function buildGraph(
         pendingCount: pending.length,
         width: size.width,
         height: size.height,
+        voiceName: variant.voice_id ? (voiceNames.get(variant.voice_id) ?? null) : null,
         onToggle: options.onToggle,
       },
     });
@@ -329,7 +350,7 @@ export function buildGraph(
           selected,
         ),
       );
-      rankPairs.push([edge.source_id, edge.target_id]);
+      rankPairs.push([variantNodeId(edge.source_id), variantNodeId(edge.target_id)]);
       continue;
     }
     if (edge.level !== 'entry') continue;
@@ -349,7 +370,7 @@ export function buildGraph(
       continue;
     }
     if (sourceLook === targetLook) continue;
-    rankPairs.push([sourceLook, targetLook]);
+    rankPairs.push([variantNodeId(sourceLook), variantNodeId(targetLook)]);
     const key = `${sourceLook}>${targetLook}`;
     const existing = hints.get(key);
     if (existing?.data) {
@@ -428,4 +449,76 @@ export function outlineOrder(
       depth: depth.get(id) ?? 0,
       parents: parents.get(id) ?? [],
     }));
+}
+
+// ---- voices (P7/P8) ----------------------------------------------------------------
+
+export const VOICE_WIDTH = 264;
+export const VOICE_HEADER = 56;
+export const VOICE_FOOTER = 44;
+
+/** A voice's "class rows": age, emotion, use, then custom key-values. */
+export function voiceRows(voice: CharacterVoice): AttributeRow[] {
+  const attributes = voice.attributes ?? { custom: [] };
+  const rows: AttributeRow[] = [];
+  if (attributes.age_stage) rows.push({ key: 'age_stage', value: attributes.age_stage });
+  if (attributes.emotion) rows.push({ key: 'voice_emotion', value: attributes.emotion });
+  if (attributes.use) rows.push({ key: 'voice_use', value: attributes.use });
+  for (const item of attributes.custom ?? []) {
+    rows.push({ key: 'custom', name: item.key, value: item.value });
+  }
+  return rows;
+}
+
+export function voiceSize(voice: CharacterVoice): { width: number; height: number } {
+  const rows = shownRowCount(voiceRows(voice));
+  return {
+    width: VOICE_WIDTH,
+    height: VOICE_HEADER + (rows ? rows * LOOK_ROW + LOOK_ROWS_PAD : 0) + VOICE_FOOTER,
+  };
+}
+
+/** The 音色 tab: one node per voice, `voice`-level relation edges. */
+export function buildVoiceGraph(graph: AssetGraph, selection: GraphSelection): BuiltGraph {
+  const lookNames = new Map((graph.variants ?? []).map((v) => [v.id, v.name]));
+  const previewing = new Set(
+    (graph.pending ?? []).map((job) => job.target_voice_id).filter(Boolean) as string[],
+  );
+  const nodes: GraphNode[] = (graph.voices ?? []).map((voice) => {
+    const size = voiceSize(voice);
+    return {
+      id: voiceNodeId(voice.id),
+      type: 'voice',
+      position: { x: 0, y: 0 },
+      width: size.width,
+      height: size.height,
+      selected: selection.type === 'voice' && selection.id === voice.id,
+      data: {
+        voice,
+        rows: voiceRows(voice),
+        lookNames: (voice.look_ids ?? []).map((id) => lookNames.get(id) ?? id),
+        previewPending: previewing.has(voice.id),
+        width: size.width,
+        height: size.height,
+      },
+    } satisfies VoiceNode;
+  });
+  const edges: RelationEdge[] = [];
+  const rankPairs: Array<[string, string]> = [];
+  for (const edge of graph.edges ?? []) {
+    if (edge.level !== 'voice') continue;
+    const source = voiceNodeId(edge.source_id);
+    const target = voiceNodeId(edge.target_id);
+    edges.push(
+      relationEdge(
+        edge,
+        source,
+        target,
+        { relations: edge.relations, label: edge.label, origin: edge.origin },
+        selection.type === 'edge' && selection.id === edge.id,
+      ),
+    );
+    rankPairs.push([source, target]);
+  }
+  return { nodes, edges, rankPairs };
 }

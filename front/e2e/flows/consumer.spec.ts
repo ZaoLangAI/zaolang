@@ -179,6 +179,8 @@ test.describe('creation', () => {
     // The management page is a relation graph: add a look from the
     // overview panel, then link it to the default look without dragging.
     const lookName = `${name}老年`;
+    // The canvas only mounts after hydration; typing earlier is lost.
+    await expect(page.locator('.react-flow__node-look')).toHaveCount(1);
     await page.getByPlaceholder('如：婚礼、战甲、少年时期').fill(lookName);
     await page.getByRole('button', { name: '创建' }).click();
     await expect(page.locator('.react-flow__node-look')).toHaveCount(2);

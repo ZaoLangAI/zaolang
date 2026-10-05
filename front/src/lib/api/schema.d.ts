@@ -6969,6 +6969,8 @@ export interface components {
             name: string;
             /** Description */
             description?: string | null;
+            /** Voice Description */
+            voice_description?: string | null;
             /** Anchor Entry Id */
             anchor_entry_id?: string | null;
             /** Variants */

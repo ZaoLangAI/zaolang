@@ -23,11 +23,6 @@ export const MAX_CUSTOM_ATTRIBUTES = 8;
 export const MAX_CUSTOM_KEY_LENGTH = 12;
 export const MAX_CUSTOM_VALUE_LENGTH = 40;
 
-interface CustomRow {
-  key: string;
-  value: string;
-}
-
 /**
  * A look's attributes — the "class rows" of its graph node: age stage and
  * period (enumerated presets), outfit / state / scene note and custom
@@ -63,7 +58,7 @@ export function VariantAttributesForm({
   const scenes = useResource<Scene[]>(character ? '/v1/scenes' : null);
   const pickedScene = (scenes.data ?? []).find((scene) => scene.id === sceneId);
 
-  const incomplete = custom.some((row) => !row.key.trim() !== !row.value.trim());
+  const incomplete = customIncomplete(custom);
   const save = () => {
     const rows = custom
       .map((row) => ({ key: row.key.trim(), value: row.value.trim() }))
@@ -177,65 +172,92 @@ export function VariantAttributesForm({
         </>
       ) : null}
 
-      <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 text-xs font-medium text-muted">{t('customLabel')}</legend>
-        {custom.map((row, index) => (
-          <div key={index} className="flex items-end gap-2">
-            <div className="w-28 shrink-0">
-              <TextInput
-                label={t('customKey')}
-                value={row.key}
-                maxLength={MAX_CUSTOM_KEY_LENGTH}
-                onChange={(event) =>
-                  setCustom((rows) =>
-                    rows.map((item, i) =>
-                      i === index ? { ...item, key: event.target.value } : item,
-                    ),
-                  )
-                }
-              />
-            </div>
-            <div className="min-w-0 flex-1">
-              <TextInput
-                label={t('customValue')}
-                value={row.value}
-                maxLength={MAX_CUSTOM_VALUE_LENGTH}
-                onChange={(event) =>
-                  setCustom((rows) =>
-                    rows.map((item, i) =>
-                      i === index ? { ...item, value: event.target.value } : item,
-                    ),
-                  )
-                }
-              />
-            </div>
-            <IconButton
-              size="sm"
-              variant="danger"
-              label={t('customRemove')}
-              onClick={() => setCustom((rows) => rows.filter((_, i) => i !== index))}
-            >
-              <IconTrash className="size-4" />
-            </IconButton>
-          </div>
-        ))}
-        {custom.length < MAX_CUSTOM_ATTRIBUTES ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="self-start"
-            icon={<IconPlus className="size-3.5" />}
-            onClick={() => setCustom((rows) => [...rows, { key: '', value: '' }])}
-          >
-            {t('customAdd')}
-          </Button>
-        ) : null}
-        {incomplete ? <p className="text-xs text-danger">{t('customIncomplete')}</p> : null}
-      </fieldset>
+      <CustomAttributesEditor rows={custom} onChange={setCustom} />
 
       <Button size="sm" className="self-start" loading={busy} disabled={incomplete} onClick={save}>
         {t('saveAttributes')}
       </Button>
     </div>
+  );
+}
+
+export interface CustomRow {
+  key: string;
+  value: string;
+}
+
+/** A row with only one of its two halves filled. */
+export function customIncomplete(rows: CustomRow[]): boolean {
+  return rows.some((row) => !row.key.trim() !== !row.value.trim());
+}
+
+/** Custom key-value attributes (≤ `MAX_CUSTOM_ATTRIBUTES`) — shared by
+ * looks / variants and voices. */
+export function CustomAttributesEditor({
+  rows,
+  onChange,
+}: {
+  rows: CustomRow[];
+  onChange: (rows: CustomRow[]) => void;
+}) {
+  const t = useTranslations('assetVariants');
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="mb-1 text-xs font-medium text-muted">{t('customLabel')}</legend>
+      {rows.map((row, index) => (
+        <div key={index} className="flex items-end gap-2">
+          <div className="w-28 shrink-0">
+            <TextInput
+              label={t('customKey')}
+              value={row.key}
+              maxLength={MAX_CUSTOM_KEY_LENGTH}
+              onChange={(event) =>
+                onChange(
+                  rows.map((item, i) =>
+                    i === index ? { ...item, key: event.target.value } : item,
+                  ),
+                )
+              }
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <TextInput
+              label={t('customValue')}
+              value={row.value}
+              maxLength={MAX_CUSTOM_VALUE_LENGTH}
+              onChange={(event) =>
+                onChange(
+                  rows.map((item, i) =>
+                    i === index ? { ...item, value: event.target.value } : item,
+                  ),
+                )
+              }
+            />
+          </div>
+          <IconButton
+            size="sm"
+            variant="danger"
+            label={t('customRemove')}
+            onClick={() => onChange(rows.filter((_, i) => i !== index))}
+          >
+            <IconTrash className="size-4" />
+          </IconButton>
+        </div>
+      ))}
+      {rows.length < MAX_CUSTOM_ATTRIBUTES ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="self-start"
+          icon={<IconPlus className="size-3.5" />}
+          onClick={() => onChange([...rows, { key: '', value: '' }])}
+        >
+          {t('customAdd')}
+        </Button>
+      ) : null}
+      {customIncomplete(rows) ? (
+        <p className="text-xs text-danger">{t('customIncomplete')}</p>
+      ) : null}
+    </fieldset>
   );
 }

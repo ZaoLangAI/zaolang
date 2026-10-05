@@ -159,7 +159,15 @@ export function LookNodeCard({ data, selected }: NodeProps<LookNode>) {
         style={{ height: LOOK_FOOTER }}
         className="flex items-center justify-between border-t border-border px-3 text-[11px] text-muted"
       >
-        <span>{expanded ? t('expandedHint') : t('collapsedHint')}</span>
+        <span className="truncate">{expanded ? t('expandedHint') : t('collapsedHint')}</span>
+        {data.voiceName ? (
+          <span
+            className="ml-2 shrink-0 truncate rounded-full border border-border px-1.5 text-text"
+            title={data.voiceName}
+          >
+            ♪ {data.voiceName}
+          </span>
+        ) : null}
       </div>
       <Handle
         type="source"

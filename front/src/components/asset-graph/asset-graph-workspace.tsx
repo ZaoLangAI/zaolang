@@ -10,6 +10,8 @@ import { ErrorNotice, Skeleton } from '@/components/ui/primitives';
 import { Sheet } from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/toast';
 import type { AssetGraph, AssetVariant } from '@/lib/api/types';
+import { cn } from '@/lib/cn';
+import { useGenerationModels } from '@/lib/use-generation-models';
 import { useMinWidth } from '@/lib/use-media-query';
 
 import { AssetGraphOutline } from './asset-graph-outline';
@@ -19,6 +21,8 @@ import { EdgeInspector } from './inspector/edge-inspector';
 import { EntryInspector } from './inspector/entry-inspector';
 import { LookInspector } from './inspector/look-inspector';
 import { useNodeNames } from './inspector/node-names';
+import { VoiceInspector } from './inspector/voice-inspector';
+import { VoicesPanel } from './inspector/voices-panel';
 import { RelationPickerDialog } from './relation-picker';
 import { useAssetGraph } from './use-asset-graph';
 
@@ -48,7 +52,7 @@ function initialExpanded(graph: AssetGraph, lookId?: string | null): Set<string>
 }
 
 interface ConnectDraft {
-  level: 'variant' | 'entry';
+  level: 'variant' | 'entry' | 'voice';
   sourceId: string;
   targetId: string;
 }
@@ -86,6 +90,12 @@ export function AssetGraphWorkspace({
   );
   const [connect, setConnect] = useState<ConnectDraft | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Characters have a 音色 tab (P8): its own graph and inspector.
+  const [tab, setTab] = useState<'looks' | 'voices'>('looks');
+  const audioModels = useGenerationModels(
+    kind === 'character' ? 'audio_generation' : 'text_to_image',
+  );
+  const voiceModels = kind === 'character' ? audioModels : [];
 
   const toggle = useCallback((variantId: string) => {
     setExpanded((current) => {
@@ -114,8 +124,19 @@ export function AssetGraphWorkspace({
     setSelection(next);
     if (!wide) setSheetOpen(next.type !== 'card' || sheetOpen);
   };
-  const selectNode = (level: 'variant' | 'entry', id: string) =>
-    select(level === 'variant' ? { type: 'variant', id } : { type: 'entry', id });
+  const selectNode = (level: 'variant' | 'entry' | 'voice', id: string) =>
+    select(
+      level === 'variant'
+        ? { type: 'variant', id }
+        : level === 'voice'
+          ? { type: 'voice', id }
+          : { type: 'entry', id },
+    );
+  const switchTab = (next: 'looks' | 'voices') => {
+    setTab(next);
+    setSelection({ type: 'card' });
+    setSheetOpen(false);
+  };
 
   // The selection can outlive its node (deleted here or in another tab).
   const variants = graph.variants ?? [];
@@ -130,10 +151,25 @@ export function AssetGraphWorkspace({
   );
   const selectedEdge =
     selection.type === 'edge' ? graph.edges?.find((e) => e.id === selection.id) : undefined;
+  const selectedVoice =
+    selection.type === 'voice' ? graph.voices?.find((v) => v.id === selection.id) : undefined;
 
   const toCard = () => select({ type: 'card' });
 
-  const inspector = selectedVariant ? (
+  const inspector = selectedVoice ? (
+    <VoiceInspector
+      key={selectedVoice.id}
+      graph={graph}
+      kind={kind}
+      voice={selectedVoice}
+      models={voiceModels}
+      busy={busy}
+      actions={actions}
+      onSelectEdge={(id) => select({ type: 'edge', id })}
+      onDeleted={toCard}
+      onCreated={(id) => select({ type: 'voice', id })}
+    />
+  ) : selectedVariant ? (
     <LookInspector
       key={selectedVariant.id}
       graph={graph}
@@ -178,6 +214,15 @@ export function AssetGraphWorkspace({
       onSelectNode={selectNode}
       onDeleted={toCard}
     />
+  ) : tab === 'voices' ? (
+    <VoicesPanel
+      graph={graph}
+      voiceDescription={graph.voice_description ?? null}
+      models={voiceModels}
+      busy={busy}
+      actions={actions}
+      onCreated={(id) => select({ type: 'voice', id })}
+    />
   ) : (
     <CardInspector
       graph={graph}
@@ -205,6 +250,32 @@ export function AssetGraphWorkspace({
         />
       ) : null}
 
+      {kind === 'character' ? (
+        <div
+          role="tablist"
+          aria-label={t('tabsLabel')}
+          className="flex gap-1 self-start rounded-[var(--radius-sm)] bg-surface-soft p-1"
+        >
+          {(['looks', 'voices'] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={tab === value}
+              onClick={() => switchTab(value)}
+              className={cn(
+                'rounded-[var(--radius-sm)] px-3 py-1.5 text-sm transition-colors focus-visible:outline-2',
+                tab === value ? 'bg-surface text-text shadow-sm' : 'text-muted hover:text-text',
+              )}
+            >
+              {value === 'looks'
+                ? t('tabLooks', { count: (graph.variants ?? []).length })
+                : t('tabVoices', { count: (graph.voices ?? []).length })}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {/* Narrow screens: outline + inspector sheet. */}
       <div className="flex flex-col gap-3 md:hidden">
         <Button
@@ -218,7 +289,11 @@ export function AssetGraphWorkspace({
         >
           {t('cardPanel')}
         </Button>
-        <AssetGraphOutline graph={graph} kind={kind} selection={selection} onSelect={select} />
+        {tab === 'voices' ? (
+          <VoiceOutline graph={graph} selection={selection} onSelect={select} />
+        ) : (
+          <AssetGraphOutline graph={graph} kind={kind} selection={selection} onSelect={select} />
+        )}
         {!wide ? (
           <Sheet
             open={sheetOpen}
@@ -236,6 +311,8 @@ export function AssetGraphWorkspace({
         <div className="relative min-w-0 flex-1">
           {wide ? (
             <AssetGraphCanvas
+              key={tab}
+              mode={tab}
               graph={graph}
               expanded={expanded}
               selection={selection}
@@ -266,6 +343,7 @@ export function AssetGraphWorkspace({
       {connect ? (
         <RelationPickerDialog
           kind={kind}
+          voices={connect.level === 'voice'}
           busy={busy}
           sourceName={names(connect.level, connect.sourceId)}
           targetName={names(connect.level, connect.targetId)}
@@ -287,5 +365,48 @@ export function AssetGraphWorkspace({
         />
       ) : null}
     </div>
+  );
+}
+
+/** The 音色 tab below `md`: voices as a plain list (the canvas is wide-only). */
+function VoiceOutline({
+  graph,
+  selection,
+  onSelect,
+}: {
+  graph: AssetGraph;
+  selection: GraphSelection;
+  onSelect: (selection: GraphSelection) => void;
+}) {
+  const t = useTranslations('assetGraph');
+  const voices = graph.voices ?? [];
+  if (!voices.length) return <p className="text-sm text-muted">{t('noVoices')}</p>;
+  return (
+    <ul className="flex flex-col gap-2">
+      {voices.map((voice) => (
+        <li key={voice.id}>
+          <button
+            type="button"
+            onClick={() => onSelect({ type: 'voice', id: voice.id })}
+            className={cn(
+              'flex w-full flex-col items-start gap-0.5 rounded-[var(--radius-md)] border bg-surface p-3 text-left focus-visible:outline-2',
+              selection.type === 'voice' && selection.id === voice.id
+                ? 'border-primary ring-2 ring-primary/30'
+                : 'border-border',
+            )}
+          >
+            <span className="text-sm font-semibold">
+              {voice.name}
+              {voice.is_default ? ` · ${t('defaultBadge')}` : ''}
+            </span>
+            <span className="text-[11px] text-muted">
+              {voice.source === 'clone'
+                ? t('voiceCloneSummary')
+                : [voice.model, voice.voice].filter(Boolean).join(' · ')}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
