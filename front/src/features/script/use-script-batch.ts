@@ -35,9 +35,13 @@ export interface BatchParams {
   durationSeconds: number;
   aspectRatio: string;
   resolution: '480p' | '720p' | '1080p' | '2K';
-  /** Only meaningful for `kind: 'audio'` — the voice every dubbed line in
-   * this batch is submitted with (see `PendingAudio`/`runAudio`). */
+  /** Only meaningful for `kind: 'audio'` — the voice a dubbed line is
+   * submitted with when its speaker has no character voice (see
+   * `PendingAudio`/`runAudio`). */
   voice?: string;
+  /** `kind: 'audio'`: speaker → character voice id (`voice-plan.ts`); a
+   * line whose speaker is listed is dubbed with that voice instead. */
+  voiceBySpeaker?: Record<string, string>;
 }
 
 export const DEFAULT_CHARACTER_PARAMS: BatchParams = {
@@ -226,6 +230,9 @@ export async function submitJob(input: {
   linkEpisodeId?: string;
   linkBreakpointKey?: string;
   extra?: Record<string, unknown>;
+  /** `audio_generation`: a character voice (`voice_profile_id`) — the
+   * server fills in its model, voice and settings. */
+  voiceProfileId?: string;
   /** Preset fields spread into `params` (scene lighting/weather, reference
    * picks) — see `features/image-assets/vocabulary.ts`. */
   assetPresets?: AssetPresetParams;
@@ -275,6 +282,7 @@ export async function submitJob(input: {
         auto_attach_asset: true,
         forced_model: null,
         ...input.assetPresets,
+        ...(input.voiceProfileId ? { voice_profile_id: input.voiceProfileId } : undefined),
         extra: input.extra ?? {},
       },
       max_credits: input.maxCredits,
@@ -619,6 +627,7 @@ export function useScriptBatch({
       if (signal.aborted) return 'aborted' as const;
       try {
         const existing = itemsRef.current.find((row) => row.kind === 'audio' && row.id === item.id);
+        const voiceProfileId = params.voiceBySpeaker?.[(audio.character ?? '').trim()];
         const job = await submitJob({
           operation: 'audio_generation',
           qualityTier: params.qualityTier,
@@ -629,7 +638,8 @@ export function useScriptBatch({
           draftId: existing?.draftId,
           linkEpisodeId: episodeId,
           linkBreakpointKey: audio.key,
-          extra: { voice: params.voice || FALLBACK_VOICES[0] },
+          extra: voiceProfileId ? {} : { voice: params.voice || FALLBACK_VOICES[0] },
+          voiceProfileId,
           maxCredits: unitCredits,
         });
         patchItem('audio', item.id, {

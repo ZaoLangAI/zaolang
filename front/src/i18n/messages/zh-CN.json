@@ -3426,7 +3426,22 @@
     "blockingStale": "白膜需要按新文案重建",
     "linkLook": "使用造型",
     "linkSceneVariant": "使用变体",
-    "syncToLibrary": "同步到角色库"
+    "syncToLibrary": "同步到角色库",
+    "dubSpeakers": "角色音色",
+    "dubNarration": "（未标注说话人）",
+    "dubLines": "{count} 句",
+    "dubVoice": "音色",
+    "dubDefaultVoice": "默认",
+    "dubGlobalVoice": "使用通用音色",
+    "dubSourceLook": "造型绑定的音色",
+    "dubSourceDefault": "角色默认音色",
+    "dubSourcePicked": "手动指定",
+    "dubSourceGlobal": "通用音色",
+    "dubSourceNoVoices": "角色还没有音色，用通用音色",
+    "dubSourceUnlinked": "未关联角色库，用通用音色",
+    "dubCloneNote": "克隆音色每句台词都会单独克隆一次，耗时更长。",
+    "dubGlobalVoiceLabel": "通用音色",
+    "dubGlobalVoiceHint": "未配置角色音色的台词使用这个音色。"
   },
   "search": {
     "recentSearches": "最近搜索",

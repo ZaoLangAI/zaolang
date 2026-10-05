@@ -34,6 +34,7 @@ import {
 } from './batch-plan';
 import { clearCreateStream, startRetry, useCreateStream } from './create-stream-store';
 import { ScriptBatchDialog } from './script-batch-dialog';
+import { dialogueSpeakers } from './voice-plan';
 import { ScriptBatchToolbar } from './script-batch-toolbar';
 import { ScriptChatPanel } from './script-chat-panel';
 import { dubbedDialogueKeys, indexBreakpointVideos } from './script-breakpoint';
@@ -651,6 +652,7 @@ export function ScriptEditor({
         skipLinked={dialogSkipLinked}
         skipUnreferenced={dialogSkipUnreferenced}
         existingRefByLabel={batchKind === 'characters' ? existingRefByLabel : undefined}
+        speakers={batchKind === 'audio' ? dialogueSpeakers(currentScript, audioQueue) : undefined}
         onClose={() => setBatchKind(null)}
         onConfirm={confirmBatch}
       />

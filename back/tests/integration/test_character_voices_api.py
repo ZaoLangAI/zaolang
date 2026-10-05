@@ -213,3 +213,38 @@ def test_voices_are_owner_only(
         headers={**theirs, "Idempotency-Key": "steal-1"},
     )
     assert response.status_code == 404
+
+
+def test_a_dubbing_job_can_name_only_the_character_voice(
+    client: TestClient, db: Session, author: User, dispatched: list[str]
+) -> None:
+    """What the script batch dub sends per line: `voice_profile_id`, no
+    `extra.voice` — the server fills in model, voice and knobs."""
+    credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
+    card = _card(client, author)
+    voice = _voice(client, author, card["id"], params={"emotion": "angry"})
+    response = client.post(
+        "/v1/generation-jobs",
+        json={
+            "operation": "audio_generation",
+            "quality_tier": "standard",
+            "params": {"prompt": "目标确认。", "voice_profile_id": voice["id"], "extra": {}},
+        },
+        headers={**auth_header(author), "Idempotency-Key": "dub-1"},
+    )
+    assert response.status_code == 202, response.text
+    job = db.get(GenerationJob, response.json()["id"])
+    assert job is not None
+    assert job.request_json["forced_model"] == "tts-pro"
+    assert job.request_json["extra"] == {"voice": "柔美女友", "emotion": "angry"}
+    # A plain audio job still needs a voice or a sample.
+    bare = client.post(
+        "/v1/generation-jobs",
+        json={
+            "operation": "audio_generation",
+            "quality_tier": "standard",
+            "params": {"prompt": "目标确认。", "extra": {}},
+        },
+        headers={**auth_header(author), "Idempotency-Key": "dub-2"},
+    )
+    assert bare.status_code == 422
