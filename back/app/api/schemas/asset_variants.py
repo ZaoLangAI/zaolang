@@ -17,6 +17,7 @@ from app.domain.asset_variants.service import (
     MAX_CUSTOM_VALUE_LEN,
     MAX_VARIANT_NAME_LEN,
 )
+from app.domain.image_assets.camera import CameraDistance
 from app.domain.image_assets.vocabulary import (
     MAX_CHARACTER_EXPRESSIONS,
     AgeStage,
@@ -71,12 +72,25 @@ class SceneLinkView(ApiModel):
     thumb_url: str | None = None
 
 
+class CameraPose(ApiModel):
+    """Where the camera sits around the subject (多机位, AC-2) — the grid in
+    `app.domain.image_assets.camera`: azimuth 0 = front, 90 = the subject's
+    right side, 180 = its back (a scene's reverse shot), 270 = its left;
+    elevation -30 (low) … 60 (high), 90 bird's-eye."""
+
+    azimuth: int = Field(ge=0, le=359)
+    elevation: int = Field(default=0, ge=-30, le=90)
+    distance: CameraDistance = "medium"
+
+
 class AssetEntryView(ApiModel):
     id: str
     asset_id: str
     url: str | None = None
     entry_type: AssetEntryType
     view: str | None = None
+    # The camera pose this image shows, when known (AC-2).
+    camera: CameraPose | None = None
     expressions: list[str] = Field(default_factory=list)
     label: str | None = None
     status: AssetEntryStatus
@@ -131,6 +145,7 @@ class AssetEntryCreateRequest(ApiModel):
     asset_id: str = Field(max_length=40)
     entry_type: AssetEntryType
     view: str | None = Field(default=None, max_length=16)
+    camera: CameraPose | None = None
     expressions: list[CharacterExpression] | None = Field(
         default=None, max_length=MAX_CHARACTER_EXPRESSIONS
     )
@@ -138,12 +153,15 @@ class AssetEntryCreateRequest(ApiModel):
 
 
 class AssetEntryUpdateRequest(ApiModel):
-    """`view: null` is "leave as is"; send `clear_view` to unset it."""
+    """`view: null` is "leave as is"; send `clear_view` to unset it (same
+    for `camera` / `clear_camera`)."""
 
     variant_id: str | None = Field(default=None, max_length=40)
     entry_type: AssetEntryType | None = None
     view: str | None = Field(default=None, max_length=16)
     clear_view: bool = False
+    camera: CameraPose | None = None
+    clear_camera: bool = False
     expressions: list[CharacterExpression] | None = Field(
         default=None, max_length=MAX_CHARACTER_EXPRESSIONS
     )
@@ -201,12 +219,12 @@ class SceneMatrixResponse(ApiModel):
 
 # ---- 补齐缺失 (P2-4) -----------------------------------------------------------
 
-FillSlot = Literal["portrait", "front", "side", "back", "expressions"]
+FillSlot = Literal["portrait", "front", "side", "back", "left", "three_quarter", "expressions"]
 
 
 class LookFillRequest(ApiModel):
     # Restrict to these slots; default every missing one.
-    slots: list[FillSlot] | None = Field(default=None, max_length=5)
+    slots: list[FillSlot] | None = Field(default=None, max_length=7)
     # The expression image's faces (default: six everyday expressions).
     expressions: list[CharacterExpression] | None = Field(
         default=None, min_length=1, max_length=MAX_CHARACTER_EXPRESSIONS

@@ -195,6 +195,7 @@ def _register(
             view=av.check_view(skill, payload.view),
             label=payload.label,
             expressions=[str(e) for e in payload.expressions] if payload.expressions else None,
+            camera=payload.camera.model_dump() if payload.camera else None,
         )
         # An upload is approved at once, so it can be the card's first anchor
         # — without one a scene's matrix cells have no master to keep.
@@ -225,6 +226,8 @@ def _register(
             entry_type=payload.entry_type.value if payload.entry_type else None,
             view=payload.view,
             clear_view=payload.clear_view,
+            camera=payload.camera.model_dump() if payload.camera else None,
+            clear_camera=payload.clear_camera,
             label=payload.label,
             expressions=[str(e) for e in payload.expressions]
             if payload.expressions is not None

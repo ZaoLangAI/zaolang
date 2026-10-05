@@ -653,6 +653,10 @@ def image_generation_time_limits(job: GenerationJob) -> dict[str, int]:
     raw_variants = params.get("scene_variants")
     if raw_kind == "scene" and isinstance(raw_variants, list):
         extra = max(len(raw_variants) - 1, 0)
+    # So does a multi-angle job, one pass per camera pose (AC-2).
+    raw_poses = params.get("camera_poses")
+    if isinstance(raw_poses, list) and raw_poses:
+        extra = max(len(raw_poses) - 1, 0)
     return {
         name: min(
             _IMAGE_GENERATION[name] + _IMAGE_EXTRA_VIEW[name] * extra,

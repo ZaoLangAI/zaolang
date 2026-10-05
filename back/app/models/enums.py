@@ -884,6 +884,8 @@ class AssetRelation(StrEnum):
     # A voice derived with other TTS parameters (speed, emotion, model).
     PARAMS = "params"
     CUSTOM = "custom"
+    # The same subject re-drawn from another camera pose (多机位, AC-2).
+    CAMERA = "camera"
 
 
 CHARACTER_RELATIONS: frozenset[str] = frozenset(
@@ -894,6 +896,7 @@ CHARACTER_RELATIONS: frozenset[str] = frozenset(
         AssetRelation.SCENE,
         AssetRelation.PERIOD,
         AssetRelation.EDIT,
+        AssetRelation.CAMERA,
         AssetRelation.CUSTOM,
     }
 )
@@ -904,6 +907,7 @@ SCENE_RELATIONS: frozenset[str] = frozenset(
         AssetRelation.STATE,
         AssetRelation.PERIOD,
         AssetRelation.EDIT,
+        AssetRelation.CAMERA,
         AssetRelation.CUSTOM,
     }
 )

@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.asset_variants import service as av
 from app.domain.errors import NotFound, ValidationFailed
+from app.domain.image_assets import camera as camera_vocab
 from app.models import (
     Asset,
     CharacterVoice,
@@ -322,6 +323,11 @@ def link_job_output(
     if params.get("asset_edit"):
         relations: list[str] = [AssetRelation.EDIT]
         label = str(params.get("prompt") or "").strip()[:MAX_EDGE_LABEL_LEN] or None
+    elif params.get("camera_poses"):
+        # 多机位 (AC-2): the same subject from another camera pose.
+        relations = [AssetRelation.CAMERA]
+        pose = camera_vocab.parse(target.camera_json)
+        label = camera_vocab.label_zh(pose)[:MAX_EDGE_LABEL_LEN] if pose is not None else None
     else:
         relations = relations_between(source.variant, target.variant)
         if params.get("asset_output_mode") == "in_scene" and AssetRelation.SCENE not in relations:
@@ -376,6 +382,8 @@ def pending_jobs(session: Session, skill: CreationSkill) -> list[dict[str, Any]]
             if job.request_json.get("target_voice_id")
             else "edit"
             if job.request_json.get("asset_edit")
+            else "orbit"
+            if job.request_json.get("camera_poses")
             else job.request_json.get("asset_output_mode")
             or ("derive" if job.request_json.get("source_entry_id") else None),
             "target_variant_id": job.request_json.get("target_variant_id"),

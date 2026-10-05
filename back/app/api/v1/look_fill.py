@@ -36,7 +36,6 @@ from app.domain.errors import InsufficientCredits, NotFound, SpendLimitExceeded
 from app.domain.jobs import dispatch as job_dispatch
 from app.domain.jobs import service as jobs_service
 from app.models.base import new_id
-from app.models.enums import Operation
 
 router = APIRouter(tags=["asset-variants"])
 
@@ -73,7 +72,7 @@ def fill_character_look(
             line,
             jobs_service.quote_for(
                 session,
-                operation=Operation.TEXT_TO_IMAGE,
+                operation=line.operation,
                 quality_tier=payload.quality_tier,
                 output_count=line.output_count,
             ).credits,
@@ -106,7 +105,7 @@ def fill_character_look(
         result = jobs_service.submit(
             session,
             user_id=user.id,
-            operation=Operation.TEXT_TO_IMAGE,
+            operation=line.operation,
             quality_tier=payload.quality_tier,
             params=params,
             idempotency_key=f"{(idempotency_key or new_id('idk'))[:100]}:{token}",

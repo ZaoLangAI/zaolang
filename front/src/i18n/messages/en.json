@@ -3857,12 +3857,14 @@
     "uploadOutfitHint": "Used for the clothes only — never for the face.",
     "fillOpen": "Fill missing",
     "fillTitle": "Complete “{name}”",
-    "fillHint": "A complete look has an identity portrait, a front sheet, side and back views, and one grid of everyday expressions. What is missing is generated in steps; each step starts on its own when the previous one finishes.",
+    "fillHint": "A complete look has an identity portrait, a front sheet, four turnaround angles (right, back, left, front-right) and one grid of everyday expressions. What is missing is generated in steps; each step starts on its own when the previous one finishes.",
     "fillSlot": {
       "portrait": "Identity portrait",
       "front": "Front sheet",
-      "side": "Side view",
-      "back": "Back view",
+      "side": "Right side 90°",
+      "back": "Back 180°",
+      "left": "Left side 270°",
+      "three_quarter": "Front-right 45°",
       "expressions": "Expressions (one grid)"
     },
     "fillStatus": {
@@ -3927,7 +3929,8 @@
       "state": "Set state",
       "edit": "Edit",
       "custom": "Custom",
-      "params": "Parameters"
+      "params": "Parameters",
+      "camera": "Camera angle"
     },
     "row": {
       "age_stage": "Age",

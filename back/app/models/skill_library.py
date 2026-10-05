@@ -208,6 +208,10 @@ class SkillAssetEntry(Base):
     entry_type: Mapped[str] = mapped_column(String(24), nullable=False)
     view: Mapped[str | None] = mapped_column(String(16), nullable=True)
     expressions_json: Mapped[list[Any] | None] = mapped_column(nullable=True)
+    # The camera pose a multi-angle image was drawn from (AC-2):
+    # `{azimuth, elevation, distance}` on `image_assets.camera`'s grid. `None`
+    # for most entries — readers fall back to `view` (`camera.from_view`).
+    camera_json: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
     label: Mapped[str | None] = mapped_column(String(60), nullable=True)
     status: Mapped[str] = mapped_column(
         String(12),

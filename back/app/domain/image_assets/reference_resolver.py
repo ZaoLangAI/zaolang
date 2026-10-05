@@ -136,6 +136,13 @@ def _source_entry_reference(
     ]
     roles = {entry.asset_id: SOURCE_ROLE}
     foreign: dict[str, str] = {}
+    if character and params.get("camera_poses"):
+        # 多机位 (AC-2): a camera route reads reference 1 only; a
+        # prompt-only fallback also gets the card's face to hold on to.
+        portrait = asset_variants_service.identity_portrait(skill)
+        if portrait is not None and portrait.asset_id != entry.asset_id:
+            refs = [refs[0], portrait.asset_id] + [r for r in refs[1:] if r != portrait.asset_id]
+            roles[portrait.asset_id] = FACE_ONLY_ROLE
     if params.get("asset_output_mode") == "in_scene":
         look_id = params.get("target_variant_id")
         look = asset_variants_service.find_variant(skill, str(look_id)) if look_id else None

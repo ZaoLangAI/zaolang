@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.domain.asset_variants import service as asset_variants_service
 from app.domain.errors import NotFound, ValidationFailed
+from app.domain.image_assets import camera as camera_vocab
 from app.domain.skill_library import service as skill_library_service
 from app.models import Asset, CreationSkill, SkillAssetVariant
 from app.models.enums import (
@@ -318,6 +319,7 @@ def append_reference_asset(
     generated: bool = False,
     entry_type: str | None = None,
     copy_from_entry_id: str | None = None,
+    camera: dict[str, Any] | None = None,
 ) -> SceneView:
     """Files one image under a variant — the P0 `(view, label)` shape,
     translated: `variant_id` (a variant of this card) wins, else `presets` (or
@@ -334,6 +336,9 @@ def append_reference_asset(
 
     P6 write-back overrides, as for characters: `copy_from_entry_id` files it
     like that entry (same variant and type), `entry_type` sets the type.
+
+    `camera` (多机位, AC-2) files a shot drawn from that pose — one slot per
+    pose; 180° is the reverse shot (反打), a close distance a detail.
 
     Called by the scene library UI and by
     `app.workflows.nodes.execute_asset_output_link`.
@@ -358,13 +363,23 @@ def append_reference_asset(
     else:
         entry_type = AssetEntryType.SHOT.value
         entry_view = view if positional else None
+    pose = camera_vocab.parse(camera)
+    if pose is not None:
+        entry_type = AssetEntryType.SHOT.value
+        entry_view = (
+            "reverse"
+            if camera_vocab.snap(pose).azimuth == 180
+            else "detail"
+            if pose.distance == "close"
+            else None
+        )
     source = (
         asset_variants_service.find_entry(skill, copy_from_entry_id) if copy_from_entry_id else None
     )
     if source is not None:
         variant = source.variant
         entry_type, entry_view = source.entry_type, source.view
-    elif output_type:
+    elif output_type and pose is None:
         entry_type, entry_view = output_type, None
     if generated and source is not None:
         # An adjust is a new version of `source`: always a candidate.
@@ -378,6 +393,7 @@ def append_reference_asset(
             expressions=list(source.expressions_json or []) or None,
             source_job_id=source_job_id,
             candidate=True,
+            camera=source.camera_json,
         )
         asset_variants_service.claim_anchor(session, skill, entry)
         return SceneView(skill)
@@ -390,6 +406,7 @@ def append_reference_asset(
         entry_type=entry_type,
         view=entry_view,
         source_job_id=source_job_id,
+        camera=pose.as_dict() if pose is not None and source is None else None,
     )
     asset_variants_service.claim_anchor(session, skill, entry)
     _promote_master(session, skill)
