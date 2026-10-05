@@ -1758,7 +1758,22 @@
     "startLooks": "衣装づくりを始める",
     "saveAndManage": "保存して衣装を管理",
     "manageEyebrow": "キャラクター管理",
-    "backToLibrary": "キャラクター一覧へ戻る"
+    "backToLibrary": "キャラクター一覧へ戻る",
+    "describeOpen": "台本から AI 生成",
+    "describeLinked": "{count} 件の台本がこのキャラクターを使っています。説明と声の特徴を生成できます。",
+    "describeTitle": "台本からキャラクター説明を生成",
+    "describeHint": "関連台本の設定と台詞を読み取ります。生成後に編集でき、適用するまで保存されません。",
+    "describeSource": "参照する台本",
+    "describeAllScripts": "関連するすべての台本（{count} 件・最新優先）",
+    "describeFields": "生成する項目",
+    "describeGenerate": "生成",
+    "describeRegenerate": "再生成",
+    "describeApply": "生成結果を使う",
+    "describeCurrent": "現在の{field}",
+    "describeDraft": "生成された{field}",
+    "describeEmpty": "（なし）",
+    "describeNoLinks": "このキャラクターを使う台本はまだありません。台本スタジオでキャラクターを関連付けてください。",
+    "describeFailed": "生成に失敗しました。後でもう一度お試しください。"
   },
   "collectionPage": {
     "eyebrow": "MY LIBRARY",
@@ -3410,7 +3425,8 @@
     "openBlockingHint": "3D でカメラと立ち位置をプリビズし、参照動画として生成に使います。",
     "blockingStale": "ブロックアウトの再構築が必要です",
     "linkLook": "衣装",
-    "linkSceneVariant": "バリエーション"
+    "linkSceneVariant": "バリエーション",
+    "syncToLibrary": "キャラクターに同期"
   },
   "search": {
     "recentSearches": "最近の検索",

@@ -18,6 +18,7 @@ Not here → `zaolang-admin-ops` (review, takedown), `zaolang-credits-billing` (
 | `back/app/domain/skill_library/folding.py` | `TEMPLATE_FOLD_KEYS`, `RESERVED_TEMPLATE_KEYS`, `fold_params_prompt` |
 | `back/app/domain/characters/service.py` | `CharacterView`, reference assets, `action_clips`, `publish_character`, `apply_character_refs` |
 | `back/app/domain/asset_variants/service.py` | looks/variants + entries (`SkillAssetVariant`/`SkillAssetEntry` in `back/app/models/skill_library.py`): `project`, `add_entry`, `file_generated`, `approve_entry`, `set_anchor`, `set_members`, `moderation_texts`; design `docs/asset-variants-p1.md`, `docs/asset-variants-p2.md` |
+| `back/app/domain/characters/script_context.py` | `linked_scripts` (JSONB `@>` on `script_json.characters[].character_ref_id`, owner/collaborator, studio flag), `draft_profile` → `app/agents/character_profile.py` (`copy` slot `character_describe`); routes `GET /v1/characters/{id}/script-links`, `POST /v1/characters/{id}/describe` (draft only, never saves) |
 | `back/app/domain/scenes/service.py` | `SceneView`, `apply_scene_refs` |
 | `back/app/api/v1/skills.py` | `/v1/skills*`: `/public`, CRUD, `/pricing`, `/publish`, `/withdraw`, `/unlock`, `/apply` |
 | `back/app/api/v1/characters.py` | `/v1/characters*` + `reference-assets/{asset_id}`; `scenes.py` mirrors it. Responses carry `looks`/`variants` + `anchor_entry_id` (`back/app/presenters/asset_variants.py`) |

@@ -2,8 +2,9 @@
 
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
+import { CharacterDescribeDialog } from '@/components/characters/character-describe-dialog';
 import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { VideoFirstFrame } from '@/components/media/video-first-frame';
 import { Button, IconButton } from '@/components/ui/button';
@@ -26,7 +27,7 @@ import { useToast } from '@/components/ui/toast';
 import { useRouter } from '@/i18n/navigation';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
-import type { Character } from '@/lib/api/types';
+import type { Character, CharacterScriptLink } from '@/lib/api/types';
 import { characterHeroUrl, characterManageHref } from '@/lib/characters';
 import {
   CREATION_SKILL_STATUS_LABEL_KEY,
@@ -73,6 +74,10 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
+  // Scripts linking the card being edited — 「AI 生成」 shows only when one does.
+  const [scriptLinks, setScriptLinks] = useState<CharacterScriptLink[]>([]);
+  const [describeOpen, setDescribeOpen] = useState(false);
+  const linksFor = useRef<string | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Character | null>(null);
@@ -107,7 +112,17 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
     });
     setFormError(null);
     setNameError(null);
+    setScriptLinks([]);
     setSheetOpen(true);
+    // Only the card still being edited may set the links (a fast reopen
+    // on another card must not show the first card's scripts).
+    linksFor.current = character.id;
+    api
+      .get<CharacterScriptLink[]>(`/v1/characters/${character.id}/script-links`)
+      .then((rows) => {
+        if (linksFor.current === character.id) setScriptLinks(rows);
+      })
+      .catch(() => undefined);
   };
 
   const closeSheet = () => {
@@ -253,6 +268,19 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
           setForm((current) => ({ ...current, name: event.target.value }));
         }}
       />
+      {editing && scriptLinks.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-dashed border-border p-3">
+          <p className="text-xs text-muted">{t('describeLinked', { count: scriptLinks.length })}</p>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<IconSparkle className="size-3.5" />}
+            onClick={() => setDescribeOpen(true)}
+          >
+            {t('describeOpen')}
+          </Button>
+        </div>
+      ) : null}
       <TextArea
         label={t('descriptionLabel')}
         value={form.description}
@@ -453,6 +481,16 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
           {characterForm}
         </Sheet>
       )}
+
+      {editing && describeOpen ? (
+        <CharacterDescribeDialog
+          open
+          onClose={() => setDescribeOpen(false)}
+          characterId={editing.id}
+          current={{ description: form.description, voiceDescription: form.voiceDescription }}
+          onApply={(next) => setForm((current) => ({ ...current, ...next }))}
+        />
+      ) : null}
 
       <MediaLightbox
         open={lightboxUrl !== null}

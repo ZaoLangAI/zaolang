@@ -1758,7 +1758,22 @@
     "startLooks": "Start building looks",
     "saveAndManage": "Save and manage looks",
     "manageEyebrow": "Character",
-    "backToLibrary": "Back to characters"
+    "backToLibrary": "Back to characters",
+    "describeOpen": "Draft from scripts",
+    "describeLinked": "{count} script(s) use this character — draft its description and voice from them.",
+    "describeTitle": "Draft from scripts",
+    "describeHint": "Reads the linked scripts' character notes and dialogue. Edit the draft; nothing is saved until you apply it.",
+    "describeSource": "Source script",
+    "describeAllScripts": "All linked scripts ({count}, newest wins)",
+    "describeFields": "Fields to draft",
+    "describeGenerate": "Generate",
+    "describeRegenerate": "Regenerate",
+    "describeApply": "Use draft",
+    "describeCurrent": "Current {field}",
+    "describeDraft": "Drafted {field}",
+    "describeEmpty": "(empty)",
+    "describeNoLinks": "No script uses this character yet. Link a script character to it in the script studio first.",
+    "describeFailed": "Couldn't draft it. Try again later."
   },
   "collectionPage": {
     "eyebrow": "MY LIBRARY",
@@ -3410,7 +3425,8 @@
     "openBlockingHint": "Previsualise framing and blocking in 3D, then use it as a reference video.",
     "blockingStale": "The blockout needs rebuilding",
     "linkLook": "Look",
-    "linkSceneVariant": "Variant"
+    "linkSceneVariant": "Variant",
+    "syncToLibrary": "Sync to character"
   },
   "search": {
     "recentSearches": "Recent searches",
