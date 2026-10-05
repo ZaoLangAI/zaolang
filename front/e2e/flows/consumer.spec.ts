@@ -158,6 +158,29 @@ test.describe('creation', () => {
     await expect(page.getByRole('button', { name: 'AI 润色' })).toBeEnabled();
   });
 
+  test('a new character lands on its own management page and back', async ({ page }) => {
+    const name = `E2E角色${Date.now().toString(36)}`;
+    await page.goto('/zh-CN/create/characters', { waitUntil: 'load' });
+    await page.getByRole('button', { name: '新建角色' }).first().click();
+    await page.getByLabel('角色名称').fill(name);
+    // The edit dialog is text-only now: no 角色设定图 slot to fill.
+    await expect(page.getByText('角色设定图')).toHaveCount(0);
+    await page.getByRole('button', { name: '保存并管理造型' }).click();
+
+    await expect(page).toHaveURL(/\/create\/characters\/sk_[^/?]+$/);
+    await expect(page.getByRole('heading', { name })).toBeVisible();
+    const cardUrl = page.url();
+    const cardId = cardUrl.split('/').pop() ?? '';
+
+    // A pre-page 去定稿 link (`?manage=`) still lands on the card.
+    await page.goto(`/zh-CN/create/characters?manage=${cardId}`, { waitUntil: 'load' });
+    await expect(page).toHaveURL(cardUrl);
+
+    await page.getByRole('link', { name: '返回角色库' }).click();
+    await expect(page).toHaveURL(/\/create\/characters$/);
+    await expect(page.getByRole('heading', { name, level: 3 })).toBeVisible();
+  });
+
   test('the library shows the fixture draft awaiting publication', async ({ page }) => {
     fixtures();
     await page.goto('/zh-CN/collection', { waitUntil: 'load' });

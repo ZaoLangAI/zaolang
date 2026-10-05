@@ -1719,7 +1719,7 @@
   "characters": {
     "eyebrow": "角色库",
     "title": "角色与音色",
-    "subtitle": "保存角色设定图和音色描述，短剧多集之间保持一致。",
+    "subtitle": "保存角色形象、造型与音色，短剧多集之间保持一致。",
     "newCharacter": "新建角色",
     "editCharacter": "编辑角色",
     "nameLabel": "角色名称",
@@ -1729,19 +1729,9 @@
     "voiceHint": "用文字描述音色特征，例如「低沉沙哑的中年男声」，暂不支持上传音频样本。",
     "referenceLabel": "参考图",
     "referenceHint": "固定正面、侧面、背面三个角度，将用于后续生成时保持人物样貌一致。",
-    "sheetLabel": "角色设定图",
-    "sheetHint": "一张多分区设定图：左侧全身三视图，右侧面部特写、服饰细节与色板。也可上传或选择已有图片。",
-    "generateSheet": "生成角色设定图",
-    "generateAgain": "再生成设定图",
-    "saveAndGenerate": "保存并生成",
-    "referenceUpload": "上传",
-    "referenceChooseExisting": "选择已有",
-    "referencePickerTitle": "选择已生成的图片",
-    "referencePickerEmpty": "暂无可选择的图片",
-    "referencePickerError": "加载失败，请重试",
     "noReference": "暂无参考图",
     "emptyTitle": "还没有角色",
-    "emptyHint": "新建一个角色，再生成一张设定图，方便多集短剧复用。",
+    "emptyHint": "新建一个角色，再到它的管理页创建造型，方便多集短剧复用。",
     "publishCharacter": "分享角色",
     "publishCharacterHint": "分享后该角色会提交审核，通过后其他创作者可以在技能广场看到并使用（如设置了积分价格，还可以购买解锁）。",
     "portraitConsentLabel": "我确认拥有公开分享这个角色形象的权利，并了解他人可能会套用它进行创作。",
@@ -1764,7 +1754,11 @@
     "actionClipsLabel": "关联视频",
     "deleteConfirmTitle": "删除这个角色？",
     "deleteConfirmBody": "删除「{name}」后无法恢复，设定图和音色描述都会一并移除。",
-    "manageLooks": "管理造型"
+    "manageLooks": "管理造型",
+    "startLooks": "开始创建造型",
+    "saveAndManage": "保存并管理造型",
+    "manageEyebrow": "角色管理",
+    "backToLibrary": "返回角色库"
   },
   "collectionPage": {
     "eyebrow": "MY LIBRARY",
@@ -3271,7 +3265,9 @@
     "generateSceneVideo": "生成场景视频 →",
     "deleteConfirmTitle": "删除这个场景？",
     "deleteConfirmBody": "删除「{name}」后无法恢复，参考素材都会一并移除。",
-    "manageVariants": "管理变体"
+    "manageVariants": "管理变体",
+    "manageEyebrow": "场景管理",
+    "backToLibrary": "返回场景库"
   },
   "scriptStudio": {
     "title": "文案创作",

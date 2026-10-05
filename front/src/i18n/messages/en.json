@@ -1719,7 +1719,7 @@
   "characters": {
     "eyebrow": "Character library",
     "title": "Characters and voices",
-    "subtitle": "Save a character sheet and a voice hint so a multi-episode short stays consistent.",
+    "subtitle": "Keep each character's look, outfits and voice consistent across every episode.",
     "newCharacter": "New character",
     "editCharacter": "Edit character",
     "nameLabel": "Name",
@@ -1729,19 +1729,9 @@
     "voiceHint": "Describe the voice in words, e.g. \"low, gravelly middle-aged male voice\" — audio samples are not supported yet.",
     "referenceLabel": "Reference images",
     "referenceHint": "Front, side, and back views, used to keep this character's look consistent in future generations.",
-    "sheetLabel": "Character sheet",
-    "sheetHint": "One multi-panel sheet: full-body front/side/back on the left, face close-ups, fabric details and a color palette on the right. You can also upload or pick an existing image.",
-    "generateSheet": "Generate character sheet",
-    "generateAgain": "Generate sheet again",
-    "saveAndGenerate": "Save and generate",
-    "referenceUpload": "Upload",
-    "referenceChooseExisting": "Choose existing",
-    "referencePickerTitle": "Choose a generated image",
-    "referencePickerEmpty": "No eligible images yet",
-    "referencePickerError": "Failed to load — please retry",
     "noReference": "No reference yet",
     "emptyTitle": "No characters yet",
-    "emptyHint": "Create a character, then generate a sheet you can reuse across episodes.",
+    "emptyHint": "Create a character, then build its looks on its own page to reuse them across episodes.",
     "publishCharacter": "Share character",
     "publishCharacterHint": "Sharing submits this character for review. Once approved, other creators can find and use it in the skill plaza (and unlock it with credits, if priced).",
     "portraitConsentLabel": "I confirm I have the right to publicly share this character's likeness, and understand others may use it in their own creations.",
@@ -1764,7 +1754,11 @@
     "actionClipsLabel": "Linked videos",
     "deleteConfirmTitle": "Delete this character?",
     "deleteConfirmBody": "Deleting \"{name}\" cannot be undone — its character sheet and voice description will be removed too.",
-    "manageLooks": "Manage looks"
+    "manageLooks": "Manage looks",
+    "startLooks": "Start building looks",
+    "saveAndManage": "Save and manage looks",
+    "manageEyebrow": "Character",
+    "backToLibrary": "Back to characters"
   },
   "collectionPage": {
     "eyebrow": "MY LIBRARY",
@@ -3271,7 +3265,9 @@
     "generateSceneVideo": "Generate scene video →",
     "deleteConfirmTitle": "Delete this scene?",
     "deleteConfirmBody": "Deleting \"{name}\" cannot be undone — its reference assets will be removed too.",
-    "manageVariants": "Manage variants"
+    "manageVariants": "Manage variants",
+    "manageEyebrow": "Scene",
+    "backToLibrary": "Back to scenes"
   },
   "scriptStudio": {
     "title": "Script writing",

@@ -64,12 +64,12 @@ describe('partialDelivery', () => {
 });
 
 describe('reviewCandidatesHref', () => {
-  it('opens the filed card’s sheet in its library', () => {
+  it('opens the filed card’s management page', () => {
     expect(reviewCandidatesHref({ asset_kind: 'character', linked_character_id: 'sk_1' })).toBe(
-      '/create/characters?manage=sk_1',
+      '/create/characters/sk_1',
     );
     expect(reviewCandidatesHref({ asset_kind: 'scene', linked_scene_id: 'sk_2' })).toBe(
-      '/create/scenes?manage=sk_2',
+      '/create/scenes/sk_2',
     );
   });
 

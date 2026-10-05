@@ -70,6 +70,26 @@ export function characterImageStudioHref(input: {
   return `/create/new?${params.toString()}`;
 }
 
+/** The card's own management page (looks, voices, graph). */
+export function characterManageHref(characterId: string, lookId?: string | null): string {
+  const base = `/create/characters/${encodeURIComponent(characterId)}`;
+  return lookId ? `${base}?look=${encodeURIComponent(lookId)}` : base;
+}
+
+/**
+ * The image a library card leads with: the card's approved anchor, else its
+ * approved identity portrait (定妆照), else the legacy sheet pick. Only a
+ * signed URL is returned — never cached (`zaolang-frontend-ui`).
+ */
+export function characterHeroUrl(character: Character): string | null {
+  const approvedEntries = (character.looks ?? [])
+    .flatMap((look) => look.entries ?? [])
+    .filter((entry) => entry.status !== 'candidate' && entry.url);
+  const anchor = approvedEntries.find((entry) => entry.id === character.anchor_entry_id);
+  const portrait = approvedEntries.find((entry) => entry.entry_type === 'identity_portrait');
+  return anchor?.url ?? portrait?.url ?? characterSheetAsset(character)?.url ?? null;
+}
+
 /** The one image a character card shows now that the sheet replaced the
  * three-view grid — prefer an explicit front tag, else the first asset. */
 export function characterSheetAsset(character: Character): CharacterReferenceAsset | undefined {
