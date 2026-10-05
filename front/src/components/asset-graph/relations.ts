@@ -23,6 +23,8 @@ export const RELATION_COLOR: Record<AssetRelation, string> = {
   weather: 'var(--relation-scene)',
   state: 'var(--relation-emotion)',
   edit: 'var(--relation-edit)',
+  // A voice derived with other TTS parameters (P7).
+  params: 'var(--relation-period)',
   custom: 'var(--relation-custom)',
 };
 

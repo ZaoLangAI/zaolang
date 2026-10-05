@@ -49,6 +49,7 @@ from app.providers.base import (
     ProviderReference,
     probe_audio_duration_ms,
 )
+from app.providers.model_catalog import VOICE_SPEED_RANGE
 from app.storage import s3
 
 logger = logging.getLogger(__name__)
@@ -1038,6 +1039,9 @@ class DmxApiMediaProvider(GenerationProvider):
             emotion = request.extra.get("emotion")
             if emotion:
                 body["emotion"] = emotion
+        speed = _tts_speed(self._model, request.extra.get("speed"))
+        if speed is not None:
+            body["speed"] = speed
         with self._client() as client:
             response = client.post(
                 media_request_path(self._creds.base_url, "/v1/audio/speech"), json=body
@@ -1211,3 +1215,16 @@ class DmxApiMediaProvider(GenerationProvider):
     @staticmethod
     def _elapsed_ms(started: float) -> int:
         return int((time.perf_counter() - started) * 1000)
+
+
+def _tts_speed(model: str, raw: Any) -> float | None:
+    """`extra.speed` for the models whose `/v1/audio/speech` takes it
+    (`tts-1` / `tts-1-hd`), clamped to OpenAI's range; `None` otherwise."""
+    if model not in (AUDIO_MODEL_TTS_1, AUDIO_MODEL_TTS_1_HD) or raw is None:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    low, high = VOICE_SPEED_RANGE
+    return min(max(value, low), high)

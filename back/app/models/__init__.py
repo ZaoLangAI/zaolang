@@ -84,6 +84,7 @@ from app.models.platform import (
 )
 from app.models.search import EMBEDDING_DIM, WorkEmbedding
 from app.models.skill_library import (
+    CharacterVoice,
     CreationSkill,
     SkillAssetEdge,
     SkillAssetEntry,
@@ -129,6 +130,7 @@ __all__ = [
     "CanvasEdge",
     "CanvasNode",
     "CanvasProject",
+    "CharacterVoice",
     "Collection",
     "CollectionItem",
     "ContentFingerprint",

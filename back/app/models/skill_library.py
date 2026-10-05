@@ -149,6 +149,11 @@ class SkillAssetVariant(Base, TimestampMixin):
     scene_variant_id: Mapped[str | None] = mapped_column(
         ForeignKey("skill_asset_variants.id", ondelete="SET NULL"), nullable=True
     )
+    # The voice this look speaks with (P7) — one of the same card's
+    # `character_voices` (checked by the domain).
+    voice_id: Mapped[str | None] = mapped_column(
+        ForeignKey("character_voices.id", ondelete="SET NULL"), nullable=True
+    )
     is_default: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"), nullable=False
     )
@@ -171,6 +176,7 @@ class SkillAssetVariant(Base, TimestampMixin):
             "kind = 'look' OR (scene_skill_id IS NULL AND scene_variant_id IS NULL)",
             name="scene_link_look_only",
         ),
+        CheckConstraint("kind = 'look' OR voice_id IS NULL", name="voice_look_only"),
         UniqueConstraint("skill_id", "name", name="uq_skill_asset_variants_skill_id_name"),
         # Target of `skill_asset_entries`' composite FK: an entry's variant
         # must belong to the same skill the entry says it does.
@@ -251,10 +257,16 @@ class SkillAssetEntry(Base):
 _EDGE_LEVEL_SHAPE = (
     "(level = 'variant' AND source_variant_id IS NOT NULL AND target_variant_id IS NOT NULL"
     " AND source_entry_id IS NULL AND target_entry_id IS NULL"
+    " AND source_voice_id IS NULL AND target_voice_id IS NULL"
     " AND source_variant_id <> target_variant_id)"
     " OR (level = 'entry' AND source_entry_id IS NOT NULL AND target_entry_id IS NOT NULL"
     " AND source_variant_id IS NULL AND target_variant_id IS NULL"
+    " AND source_voice_id IS NULL AND target_voice_id IS NULL"
     " AND source_entry_id <> target_entry_id)"
+    " OR (level = 'voice' AND source_voice_id IS NOT NULL AND target_voice_id IS NOT NULL"
+    " AND source_variant_id IS NULL AND target_variant_id IS NULL"
+    " AND source_entry_id IS NULL AND target_entry_id IS NULL"
+    " AND source_voice_id <> target_voice_id)"
 )
 
 
@@ -276,6 +288,8 @@ class SkillAssetEdge(Base, TimestampMixin):
     target_variant_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     source_entry_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     target_entry_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_voice_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    target_voice_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # `AssetRelation` values, at least one.
     relations_json: Mapped[list[Any]] = mapped_column(
         default=list, server_default=text("'[]'::jsonb"), nullable=False
@@ -286,7 +300,7 @@ class SkillAssetEdge(Base, TimestampMixin):
     source_job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     __table_args__ = (
-        CheckConstraint("level IN ('variant', 'entry')", name="level_valid"),
+        CheckConstraint("level IN ('variant', 'entry', 'voice')", name="level_valid"),
         CheckConstraint("origin IN ('auto', 'manual')", name="origin_valid"),
         CheckConstraint(_EDGE_LEVEL_SHAPE, name="level_shape"),
         ForeignKeyConstraint(
@@ -313,6 +327,18 @@ class SkillAssetEdge(Base, TimestampMixin):
             ondelete="CASCADE",
             name="fk_skill_asset_edges_target_entry",
         ),
+        ForeignKeyConstraint(
+            ["source_voice_id", "skill_id"],
+            ["character_voices.id", "character_voices.skill_id"],
+            ondelete="CASCADE",
+            name="fk_skill_asset_edges_source_voice",
+        ),
+        ForeignKeyConstraint(
+            ["target_voice_id", "skill_id"],
+            ["character_voices.id", "character_voices.skill_id"],
+            ondelete="CASCADE",
+            name="fk_skill_asset_edges_target_voice",
+        ),
         Index("ix_skill_asset_edges_skill_level", "skill_id", "level"),
         Index(
             "uq_skill_asset_edges_variant_pair",
@@ -322,10 +348,78 @@ class SkillAssetEdge(Base, TimestampMixin):
             postgresql_where=text("level = 'variant'"),
         ),
         Index(
+            "uq_skill_asset_edges_voice_pair",
+            "source_voice_id",
+            "target_voice_id",
+            unique=True,
+            postgresql_where=text("level = 'voice'"),
+        ),
+        Index(
             "uq_skill_asset_edges_entry_pair",
             "source_entry_id",
             "target_entry_id",
             unique=True,
             postgresql_where=text("level = 'entry'"),
+        ),
+    )
+
+
+class CharacterVoice(Base, TimestampMixin):
+    """One voice of a character card (P7): a TTS model's preset voice with
+    its parameters, or a cloned sample. Owner-only like the graph — never
+    part of a published card. One default per card; looks bind to a voice
+    (`SkillAssetVariant.voice_id`). `characters.voices` owns the rules."""
+
+    __tablename__ = "character_voices"
+
+    id: Mapped[str] = id_column("chv")
+    skill_id: Mapped[str] = mapped_column(
+        ForeignKey("creation_skills.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(40), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(8), nullable=False)
+    # The TTS model a preset voice belongs to (`forced_model` at submit);
+    # optional for a clone (routing picks a clone-capable model).
+    model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    voice: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # `{speed?, emotion?}` — only what the model takes
+    # (`model_catalog.voice_capabilities`).
+    params_json: Mapped[dict[str, Any]] = mapped_column(
+        default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
+    # `{age_stage?, emotion?, use?, custom: [{key, value}]}`.
+    attributes_json: Mapped[dict[str, Any]] = mapped_column(
+        default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
+    sample_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
+    )
+    preview_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
+    )
+    preview_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Trace only (DM invariant 12).
+    preview_job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    is_default: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("source IN ('preset', 'clone')", name="source_valid"),
+        CheckConstraint(
+            "source <> 'preset' OR (model IS NOT NULL AND voice IS NOT NULL)",
+            name="preset_has_voice",
+        ),
+        UniqueConstraint("skill_id", "name", name="uq_character_voices_skill_id_name"),
+        # Target of `skill_asset_edges`' voice-pair composite FKs.
+        UniqueConstraint("id", "skill_id", name="uq_character_voices_id_skill_id"),
+        Index("ix_character_voices_skill_id", "skill_id"),
+        Index(
+            "uq_character_voices_default",
+            "skill_id",
+            unique=True,
+            postgresql_where=text("is_default"),
         ),
     )

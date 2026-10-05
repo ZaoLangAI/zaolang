@@ -248,6 +248,8 @@ def list_generation_models(
             resolutions=_merged_studio_resolutions(capabilities, video=is_video),
             default_resolution=_merged_default_resolution(capabilities, video=is_video),
             voices=_voices(model),
+            voice_params=list(model_catalog.voice_capabilities(model)[0]) if is_audio else [],
+            voice_emotions=list(model_catalog.voice_capabilities(model)[1]) if is_audio else [],
             max_outputs_per_call=max(c.max_outputs_per_call for c in capabilities),
         )
         for model, capabilities in grouped.items()

@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.system_log import service as system_log
 from app.models import GenerationJob
-from app.models.enums import SystemLogLevel, SystemLogSource
+from app.models.enums import JobStatus, SystemLogLevel, SystemLogSource
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,7 @@ def on_job_terminal(session: Session, job: GenerationJob) -> None:
     jobs, which nothing outside the pipeline is waiting on.
     """
     _land_on_canvas(session, job)
+    _land_voice_preview(session, job)
 
 
 def _land_on_canvas(session: Session, job: GenerationJob) -> None:
@@ -62,3 +63,25 @@ def _land_on_canvas(session: Session, job: GenerationJob) -> None:
                 )
         except Exception:  # pragma: no cover - logging must not raise either
             logger.exception("could not record the canvas landing failure")
+
+
+def _land_voice_preview(session: Session, job: GenerationJob) -> None:
+    """A succeeded `target_voice_id` job (P7) becomes that voice's preview
+    audio — if the voice still exists and still belongs to the job's owner.
+    Isolated like the canvas landing: never fails a settled job."""
+    voice_id = (job.request_json or {}).get("target_voice_id")
+    if not voice_id or job.status != JobStatus.SUCCEEDED or not job.output_asset_id:
+        return
+    from app.models import CharacterVoice, CreationSkill
+
+    try:
+        with session.begin_nested():
+            voice = session.get(CharacterVoice, str(voice_id))
+            skill = session.get(CreationSkill, voice.skill_id) if voice is not None else None
+            if voice is None or skill is None or skill.owner_user_id != job.user_id:
+                return
+            voice.preview_asset_id = job.output_asset_id
+            voice.preview_job_id = job.id
+            session.flush()
+    except Exception:
+        logger.exception("could not land job %s as a voice preview", job.id)

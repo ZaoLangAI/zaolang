@@ -22,6 +22,7 @@ from app.domain.errors import ProviderTemporaryFailure
 from app.models.enums import AgentName
 
 CHARACTER_DESCRIBE_SLOT = "character_describe"
+VOICE_MATCH_SLOT = "voice_match"
 
 # `CharacterCreateRequest` limits: the draft must save as-is.
 MAX_DESCRIPTION_LEN = 2000
@@ -136,4 +137,97 @@ def describe(
     return CharacterProfileDraft(
         description=drafted["description"] if "description" in wanted else None,
         voice_description=(drafted["voice_description"] if "voice_description" in wanted else None),
+    )
+
+
+# ---- voice match (P7) -------------------------------------------------------------
+
+VOICE_MATCH_MAX_TOKENS = 400
+VOICE_MATCH_TEMPERATURE = 0.2
+
+VOICE_MATCH_SYSTEM_PROMPT = f"""你是造浪平台的配音选角。你会收到一个角色的名称、音色描述，\
+以及一份编号的可用预设音色清单（每条是「模型 / 音色名」，部分模型还支持语速 speed 或情绪 emotion）。
+
+从清单里挑出最贴合音色描述的一条，只回它的编号：
+- 先看性别和年龄感，再看音色质地与语气
+- 只有该条目标明支持时才给 speed（0.25–4.0，1 为正常）或 emotion（只能取条目列出的值），否则省略
+- reason 用一句话说明为什么选它（30 字以内）
+
+{JSON_INSTRUCTION}
+格式：{{"pick": 编号, "speed": 数字或省略, "emotion": 字符串或省略, "reason": "..."}}"""
+
+
+@dataclass(frozen=True, slots=True)
+class VoiceOption:
+    model: str
+    voice: str
+    params: tuple[str, ...] = ()
+    emotions: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class VoiceMatch:
+    option: VoiceOption
+    speed: float | None
+    emotion: str | None
+    reason: str
+
+
+def match_voice(
+    session: Session,
+    *,
+    name: str,
+    voice_description: str,
+    options: list[VoiceOption],
+    user_id: str | None = None,
+) -> VoiceMatch:
+    """The preset voice in `options` that best fits `voice_description`.
+    Falls back to the first option (with no knobs) when the model's pick
+    is unusable — the caller only ever gets a voice that exists."""
+    if not options:
+        raise ProviderTemporaryFailure("当前没有可用的预设音色模型。")
+    listing = "\n".join(
+        f"{index}. {option.model} / {option.voice}"
+        + ("（支持 speed）" if "speed" in option.params else "")
+        + (f"（支持 emotion：{'、'.join(option.emotions)}）" if option.emotions else "")
+        for index, option in enumerate(options, start=1)
+    )
+    outcome = run_agent(
+        session,
+        agent_name=AgentName.COPY,
+        system_prompt=VOICE_MATCH_SYSTEM_PROMPT,
+        user_prompt=json.dumps(
+            {
+                "voice_match": True,
+                "name": name,
+                "voice_description": voice_description,
+                "options": listing,
+            },
+            ensure_ascii=False,
+        ),
+        fallback={"pick": 1, "reason": ""},
+        user_id=user_id,
+        agent_id=agent_skills_service.resolve_copy_agent_id(session),
+        slot=VOICE_MATCH_SLOT,
+        max_tokens=VOICE_MATCH_MAX_TOKENS,
+        temperature=VOICE_MATCH_TEMPERATURE,
+    )
+    pick = outcome.data.get("pick")
+    index = pick if isinstance(pick, int) and not isinstance(pick, bool) else 1
+    if not 1 <= index <= len(options):
+        index = 1
+    option = options[index - 1]
+    speed: float | None = None
+    raw_speed = outcome.data.get("speed")
+    if "speed" in option.params and isinstance(raw_speed, int | float):
+        speed = min(max(float(raw_speed), 0.25), 4.0)
+    raw_emotion = outcome.data.get("emotion")
+    emotion = (
+        raw_emotion if isinstance(raw_emotion, str) and raw_emotion in option.emotions else None
+    )
+    return VoiceMatch(
+        option=option,
+        speed=speed,
+        emotion=emotion,
+        reason=_clean(outcome.data.get("reason"), 60),
     )

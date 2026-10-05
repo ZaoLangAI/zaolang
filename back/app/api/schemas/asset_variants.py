@@ -88,6 +88,8 @@ class AssetVariantView(ApiModel):
     attributes: VariantAttributes = Field(default_factory=VariantAttributes)
     # Owner-only: an unlocked marketplace card never shows it.
     scene_link: SceneLinkView | None = None
+    # The character voice this look speaks with (owner-only, P7).
+    voice_id: str | None = None
     is_default: bool
     sort_order: int
     entries: list[AssetEntryView] = Field(default_factory=list)
@@ -113,6 +115,9 @@ class AssetVariantUpdateRequest(ApiModel):
     scene_id: str | None = Field(default=None, max_length=40)
     scene_variant_id: str | None = Field(default=None, max_length=40)
     clear_scene: bool = False
+    # A look's voice (P7); `clear_voice` unbinds it.
+    voice_id: str | None = Field(default=None, max_length=40)
+    clear_voice: bool = False
     sort_order: int | None = Field(default=None, ge=0, le=1000)
     make_default: bool = False
 

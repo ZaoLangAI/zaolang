@@ -24,16 +24,24 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.domain.asset_variants import service as av
 from app.domain.errors import NotFound, ValidationFailed
-from app.models import Asset, CreationSkill, GenerationJob, SkillAssetEdge, SkillAssetVariant
+from app.models import (
+    Asset,
+    CharacterVoice,
+    CreationSkill,
+    GenerationJob,
+    SkillAssetEdge,
+    SkillAssetVariant,
+)
 from app.models.base import utcnow
 from app.models.enums import (
     CHARACTER_RELATIONS,
     SCENE_RELATIONS,
+    VOICE_RELATIONS,
     AssetEdgeOrigin,
     AssetGraphLevel,
     AssetRelation,
@@ -63,6 +71,8 @@ def edges(session: Session, skill: CreationSkill, level: str | None = None) -> l
 def endpoints(edge: SkillAssetEdge) -> tuple[str, str]:
     if edge.level == AssetGraphLevel.VARIANT:
         return str(edge.source_variant_id), str(edge.target_variant_id)
+    if edge.level == AssetGraphLevel.VOICE:
+        return str(edge.source_voice_id), str(edge.target_voice_id)
     return str(edge.source_entry_id), str(edge.target_entry_id)
 
 
@@ -73,19 +83,21 @@ def find_edge(session: Session, skill: CreationSkill, edge_id: str) -> SkillAsse
     return edge
 
 
-def _allowed_relations(skill: CreationSkill) -> frozenset[str]:
+def _allowed_relations(skill: CreationSkill, level: str | None = None) -> frozenset[str]:
+    if level == AssetGraphLevel.VOICE:
+        return VOICE_RELATIONS
     return CHARACTER_RELATIONS if av.is_character(skill) else SCENE_RELATIONS
 
 
 def _check_relations(
-    skill: CreationSkill, relations: list[str], label: str | None
+    skill: CreationSkill, relations: list[str], label: str | None, level: str | None = None
 ) -> tuple[list[str], str | None]:
     clean = list(dict.fromkeys(str(r) for r in relations))
     if not clean:
         raise ValidationFailed("至少选择一种关系。", fields={"relations": "不能为空"})
     if len(clean) > MAX_RELATIONS_PER_EDGE:
         raise ValidationFailed("关系类型过多。", fields={"relations": "过多"})
-    allowed = _allowed_relations(skill)
+    allowed = _allowed_relations(skill, level)
     foreign = [r for r in clean if r not in allowed]
     if foreign:
         raise ValidationFailed(
@@ -97,11 +109,16 @@ def _check_relations(
     return clean, text
 
 
-def _check_node(skill: CreationSkill, level: str, node_id: str, field: str) -> None:
+def _check_node(
+    session: Session, skill: CreationSkill, level: str, node_id: str, field: str
+) -> None:
     if level == AssetGraphLevel.VARIANT:
         found = av.find_variant(skill, node_id) is not None
     elif level == AssetGraphLevel.ENTRY:
         found = av.find_entry(skill, node_id) is not None
+    elif level == AssetGraphLevel.VOICE:
+        voice = session.get(CharacterVoice, node_id)
+        found = voice is not None and voice.skill_id == skill.id
     else:
         raise ValidationFailed("关系层级无效。", fields={"level": "无效"})
     if not found:
@@ -139,11 +156,11 @@ def add_edge(
     origin: str = AssetEdgeOrigin.MANUAL,
     source_job_id: str | None = None,
 ) -> SkillAssetEdge:
-    _check_node(skill, level, source_id, "source_id")
-    _check_node(skill, level, target_id, "target_id")
+    _check_node(session, skill, level, source_id, "source_id")
+    _check_node(session, skill, level, target_id, "target_id")
     if source_id == target_id:
         raise ValidationFailed("不能连到自己。", fields={"target_id": "与起点相同"})
-    clean, text = _check_relations(skill, relations, label)
+    clean, text = _check_relations(skill, relations, label, level)
     lock_card(session, skill)
     count = session.scalar(
         select(func.count()).select_from(SkillAssetEdge).where(SkillAssetEdge.skill_id == skill.id)
@@ -169,6 +186,8 @@ def add_edge(
     )
     if level == AssetGraphLevel.VARIANT:
         edge.source_variant_id, edge.target_variant_id = source_id, target_id
+    elif level == AssetGraphLevel.VOICE:
+        edge.source_voice_id, edge.target_voice_id = source_id, target_id
     else:
         edge.source_entry_id, edge.target_entry_id = source_id, target_id
     session.add(edge)
@@ -189,7 +208,9 @@ def add_auto_edge(
 ) -> SkillAssetEdge | None:
     """`add_edge` for write-back and derive: skips (and logs) instead of
     raising, inside its own savepoint so a skip leaves the caller's work."""
-    clean = [r for r in relations if r in _allowed_relations(skill)] or [AssetRelation.CUSTOM]
+    clean = [r for r in relations if r in _allowed_relations(skill, level)] or [
+        AssetRelation.CUSTOM
+    ]
     if AssetRelation.CUSTOM in clean and not (label or "").strip():
         label = "派生"
     try:
@@ -224,7 +245,7 @@ def update_edge(
 ) -> SkillAssetEdge:
     next_relations = relations if relations is not None else list(edge.relations_json or [])
     next_label = None if clear_label else (label if label is not None else edge.label)
-    clean, text = _check_relations(skill, next_relations, next_label)
+    clean, text = _check_relations(skill, next_relations, next_label, edge.level)
     edge.relations_json = clean
     edge.label = text
     session.flush()
@@ -337,7 +358,12 @@ def pending_jobs(session: Session, skill: CreationSkill) -> list[dict[str, Any]]
             GenerationJob.user_id == skill.owner_user_id,
             GenerationJob.status.in_([status.value for status in ACTIVE_JOB_STATUSES]),
             GenerationJob.created_at >= utcnow() - PENDING_WINDOW,
-            GenerationJob.request_json[key].astext == skill.id,
+            # A voice preview names its card as `voice_card_id`
+            # (`voice_resolver`).
+            or_(
+                GenerationJob.request_json[key].astext == skill.id,
+                GenerationJob.request_json["voice_card_id"].astext == skill.id,
+            ),
         )
         .order_by(GenerationJob.created_at)
         .limit(50)
@@ -346,12 +372,15 @@ def pending_jobs(session: Session, skill: CreationSkill) -> list[dict[str, Any]]
         {
             "job_id": job.id,
             "status": job.status,
-            "mode": "edit"
+            "mode": "voice_preview"
+            if job.request_json.get("target_voice_id")
+            else "edit"
             if job.request_json.get("asset_edit")
             else job.request_json.get("asset_output_mode")
             or ("derive" if job.request_json.get("source_entry_id") else None),
             "target_variant_id": job.request_json.get("target_variant_id"),
             "source_entry_id": job.request_json.get("source_entry_id"),
+            "target_voice_id": job.request_json.get("target_voice_id"),
         }
         for job in rows
     ]
@@ -363,14 +392,24 @@ class CardGraph:
     variants: list[SkillAssetVariant]
     edges: list[SkillAssetEdge]
     pending: list[dict[str, Any]]
+    voices: list[CharacterVoice]
 
 
 def graph(session: Session, skill: CreationSkill) -> CardGraph:
     """Everything the management page draws, in one read. Warms the
     identity map with every entry's `Asset` first — signing a URL looks the
     asset up, and a 480-image card must not do that one query at a time."""
+    from app.domain.characters import voices as voices_service
+
     variants = av.variants(skill)
+    card_voices = voices_service.voices(session, skill) if av.is_character(skill) else []
     asset_ids = {entry.asset_id for variant in variants for entry in variant.entries}
+    asset_ids |= {
+        asset_id
+        for voice in card_voices
+        for asset_id in (voice.sample_asset_id, voice.preview_asset_id)
+        if asset_id
+    }
     if asset_ids:
         session.scalars(select(Asset).where(Asset.id.in_(asset_ids))).all()
     return CardGraph(
@@ -378,4 +417,5 @@ def graph(session: Session, skill: CreationSkill) -> CardGraph:
         variants=variants,
         edges=edges(session, skill),
         pending=pending_jobs(session, skill),
+        voices=card_voices,
     )

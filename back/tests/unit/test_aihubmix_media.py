@@ -1250,3 +1250,19 @@ def test_seedance_25_cancel_is_unsupported(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(httpx.Client, "post", fail_post)
     provider = _provider(Operation.TEXT_TO_VIDEO.value, model="doubao-seedance-2-5-260628")
     assert provider.cancel("task-1") is False
+
+
+@pytest.mark.parametrize(("model", "expected"), [("tts-1-hd", 0.25), ("gpt-4o-mini-tts", None)])
+def test_audio_speed_is_forwarded_only_for_tts_1(
+    monkeypatch: pytest.MonkeyPatch, model: str, expected: float | None
+) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        assert kwargs["json"].get("speed") == expected
+        return _FakeResponse(content=b"bytes")
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.AUDIO_GENERATION.value, model)
+    result = provider.submit(
+        _request(Operation.AUDIO_GENERATION.value, extra={"voice": "nova", "speed": 0.1})
+    )
+    assert result.succeeded is True

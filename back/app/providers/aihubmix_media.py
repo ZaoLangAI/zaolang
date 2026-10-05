@@ -34,6 +34,7 @@ from app.providers.base import (
     ProviderReference,
     probe_audio_duration_ms,
 )
+from app.providers.model_catalog import VOICE_SPEED_RANGE
 from app.storage import s3
 
 logger = logging.getLogger(__name__)
@@ -507,15 +508,23 @@ class AiHubMixMediaProvider(GenerationProvider):
 
     def _submit_audio(self, request: GenerationRequest, started: float) -> GenerationResult:
         voice = request.extra.get("voice", "alloy")
+        body: dict[str, Any] = {
+            "model": self._model,
+            "input": request.prompt,
+            "voice": voice,
+            "response_format": "mp3",
+        }
+        # `speed` only where `/v1/audio/speech` takes it (tts-1 / tts-1-hd).
+        raw_speed = request.extra.get("speed")
+        if raw_speed is not None and self._model in ("tts-1", "tts-1-hd"):
+            try:
+                low, high = VOICE_SPEED_RANGE
+                body["speed"] = min(max(float(raw_speed), low), high)
+            except (TypeError, ValueError):
+                pass
         with self._client() as client:
             response = client.post(
-                media_request_path(self._creds.base_url, "/v1/audio/speech"),
-                json={
-                    "model": self._model,
-                    "input": request.prompt,
-                    "voice": voice,
-                    "response_format": "mp3",
-                },
+                media_request_path(self._creds.base_url, "/v1/audio/speech"), json=body
             )
             response.raise_for_status()
             audio_bytes = response.content

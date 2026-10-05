@@ -1226,6 +1226,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/characters/{card_id}/voices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Voices */
+        get: operations["list_voices_v1_characters__card_id__voices_get"];
+        put?: never;
+        /** Create Voice */
+        post: operations["create_voice_v1_characters__card_id__voices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/characters/{card_id}/voices/{voice_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Voice */
+        delete: operations["delete_voice_v1_characters__card_id__voices__voice_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Voice */
+        patch: operations["update_voice_v1_characters__card_id__voices__voice_id__patch"];
+        trace?: never;
+    };
+    "/v1/characters/{card_id}/voices/{voice_id}:preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Voice */
+        post: operations["preview_voice_v1_characters__card_id__voices__voice_id__preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/characters/{card_id}/voices:match": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Match Voice */
+        post: operations["match_voice_v1_characters__card_id__voices_match_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/scenes": {
         parameters: {
             query?: never;
@@ -6696,7 +6766,7 @@ export interface components {
              * Level
              * @enum {string}
              */
-            level: "variant" | "entry";
+            level: "variant" | "entry" | "voice";
             /** Source Id */
             source_id: string;
             /** Target Id */
@@ -6859,13 +6929,15 @@ export interface components {
             max_entries?: number | null;
             /** Max Edges */
             max_edges: number;
+            /** Max Voices */
+            max_voices?: number | null;
         };
         /**
          * AssetGraphLevel
          * @description Which nodes a `SkillAssetEdge` joins: looks / variants, or images.
          * @enum {string}
          */
-        AssetGraphLevel: "variant" | "entry";
+        AssetGraphLevel: "variant" | "entry" | "voice";
         /**
          * AssetGraphPendingJob
          * @description A generation job still filling this card (P6 fills it in).
@@ -6881,6 +6953,8 @@ export interface components {
             target_variant_id?: string | null;
             /** Source Entry Id */
             source_entry_id?: string | null;
+            /** Target Voice Id */
+            target_voice_id?: string | null;
         };
         /** AssetGraphResponse */
         AssetGraphResponse: {
@@ -6903,6 +6977,8 @@ export interface components {
             edges?: components["schemas"]["AssetEdgeView"][];
             /** Pending */
             pending?: components["schemas"]["AssetGraphPendingJob"][];
+            /** Voices */
+            voices?: components["schemas"]["CharacterVoiceView"][];
             caps: components["schemas"]["AssetGraphCaps"];
         };
         /**
@@ -6910,7 +6986,7 @@ export interface components {
          * @description What a graph edge says changed from source to target (P4).
          * @enum {string}
          */
-        AssetRelation: "age" | "outfit" | "emotion" | "scene" | "period" | "lighting" | "weather" | "state" | "edit" | "custom";
+        AssetRelation: "age" | "outfit" | "emotion" | "scene" | "period" | "lighting" | "weather" | "state" | "edit" | "params" | "custom";
         /** AssetResponse */
         AssetResponse: {
             /** Id */
@@ -6980,6 +7056,13 @@ export interface components {
              * @default false
              */
             clear_scene: boolean;
+            /** Voice Id */
+            voice_id?: string | null;
+            /**
+             * Clear Voice
+             * @default false
+             */
+            clear_voice: boolean;
             /** Sort Order */
             sort_order?: number | null;
             /**
@@ -7002,6 +7085,8 @@ export interface components {
             };
             attributes?: components["schemas"]["VariantAttributes"];
             scene_link?: components["schemas"]["SceneLinkView"] | null;
+            /** Voice Id */
+            voice_id?: string | null;
             /** Is Default */
             is_default: boolean;
             /** Sort Order */
@@ -8157,6 +8242,91 @@ export interface components {
          * @enum {string}
          */
         CharacterViewAngle: "general" | "front" | "side" | "back";
+        /**
+         * CharacterVoiceCreateRequest
+         * @description A new voice; with `derived_from`, unspecified fields come from that
+         *     voice and an auto edge records what changed.
+         */
+        CharacterVoiceCreateRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            source?: components["schemas"]["VoiceSource"] | null;
+            /** Model */
+            model?: string | null;
+            /** Voice */
+            voice?: string | null;
+            params?: components["schemas"]["VoiceParams"] | null;
+            attributes?: components["schemas"]["VoiceAttributes"] | null;
+            /** Sample Asset Id */
+            sample_asset_id?: string | null;
+            /** Preview Text */
+            preview_text?: string | null;
+            /** Look Ids */
+            look_ids?: string[] | null;
+            /** Derived From */
+            derived_from?: string | null;
+        };
+        /** CharacterVoiceUpdateRequest */
+        CharacterVoiceUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            source?: components["schemas"]["VoiceSource"] | null;
+            /** Model */
+            model?: string | null;
+            /** Voice */
+            voice?: string | null;
+            params?: components["schemas"]["VoiceParams"] | null;
+            attributes?: components["schemas"]["VoiceAttributes"] | null;
+            /** Sample Asset Id */
+            sample_asset_id?: string | null;
+            /** Preview Text */
+            preview_text?: string | null;
+            /** Look Ids */
+            look_ids?: string[] | null;
+            /**
+             * Make Default
+             * @default false
+             */
+            make_default: boolean;
+        };
+        /** CharacterVoiceView */
+        CharacterVoiceView: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            source: components["schemas"]["VoiceSource"];
+            /** Model */
+            model?: string | null;
+            /** Voice */
+            voice?: string | null;
+            params?: components["schemas"]["VoiceParams"];
+            attributes?: components["schemas"]["VoiceAttributes"];
+            sample?: components["schemas"]["VoiceAudioView"] | null;
+            preview?: components["schemas"]["VoiceAudioView"] | null;
+            /** Preview Text */
+            preview_text?: string | null;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+            /** Look Ids */
+            look_ids?: string[];
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+            /** Created At */
+            created_at?: string | null;
+        };
         /** CheckoutConfirmRequest */
         CheckoutConfirmRequest: {
             /** External Reference */
@@ -9828,6 +9998,10 @@ export interface components {
             default_resolution?: ("480p" | "720p" | "1080p" | "2K") | null;
             /** Voices */
             voices?: string[] | null;
+            /** Voice Params */
+            voice_params?: ("speed" | "emotion")[];
+            /** Voice Emotions */
+            voice_emotions?: string[];
             /**
              * Max Outputs Per Call
              * @default 1
@@ -9931,6 +10105,12 @@ export interface components {
             asset_output_entry_type?: components["schemas"]["AssetEntryType"] | null;
             /** Asset Output Mode */
             asset_output_mode?: "in_scene" | null;
+            /** Voice Profile Id */
+            voice_profile_id?: string | null;
+            /** Target Voice Id */
+            target_voice_id?: string | null;
+            /** Voice Card Id */
+            voice_card_id?: string | null;
             /** Extra */
             extra?: {
                 [key: string]: unknown;
@@ -14153,6 +14333,95 @@ export interface components {
             /** Access Credits */
             access_credits?: number | null;
         };
+        /** VoiceAttributes */
+        VoiceAttributes: {
+            /** Age Stage */
+            age_stage?: ("child" | "teen" | "youth" | "adult" | "middle_aged" | "elderly") | null;
+            /** Emotion */
+            emotion?: string | null;
+            /** Use */
+            use?: ("dialogue" | "inner_monologue" | "narration") | null;
+            /** Custom */
+            custom?: components["schemas"]["CustomAttribute"][];
+        };
+        /** VoiceAudioView */
+        VoiceAudioView: {
+            /** Asset Id */
+            asset_id: string;
+            /** Url */
+            url?: string | null;
+        };
+        /** VoiceMatchRequest */
+        VoiceMatchRequest: {
+            /** Voice Description */
+            voice_description?: string | null;
+        };
+        /**
+         * VoiceMatchResponse
+         * @description A proposal only — nothing is saved.
+         */
+        VoiceMatchResponse: {
+            /** Model */
+            model: string;
+            /** Model Label */
+            model_label: string;
+            /** Voice */
+            voice: string;
+            params?: components["schemas"]["VoiceParams"];
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
+        /**
+         * VoiceParams
+         * @description Only the knobs the voice's model takes (`voice_capabilities`).
+         */
+        VoiceParams: {
+            /** Speed */
+            speed?: number | null;
+            /** Emotion */
+            emotion?: string | null;
+        };
+        /** VoicePreviewRequest */
+        VoicePreviewRequest: {
+            /** Text */
+            text?: string | null;
+            /** @default standard */
+            quality_tier: components["schemas"]["QualityTier"];
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+        };
+        /** VoicePreviewResponse */
+        VoicePreviewResponse: {
+            /** Credits */
+            credits: number;
+            /** Available Credits */
+            available_credits: number;
+            /** Period Remaining */
+            period_remaining?: number | null;
+            /** Within Spend Limit */
+            within_spend_limit: boolean;
+            /** Sufficient */
+            sufficient: boolean;
+            /** Job Id */
+            job_id?: string | null;
+            /**
+             * Replayed
+             * @default false
+             */
+            replayed: boolean;
+        };
+        /**
+         * VoiceSource
+         * @description A character voice is a model's preset voice, or a cloned sample.
+         * @enum {string}
+         */
+        VoiceSource: "preset" | "clone";
         /** WorkAppealRequest */
         WorkAppealRequest: {
             /** Reason */
@@ -17060,6 +17329,222 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CharacterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_voices_v1_characters__card_id__voices_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterVoiceView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_voice_v1_characters__card_id__voices_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CharacterVoiceCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterVoiceView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_voice_v1_characters__card_id__voices__voice_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                voice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_voice_v1_characters__card_id__voices__voice_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                voice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CharacterVoiceUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterVoiceView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_voice_v1_characters__card_id__voices__voice_id__preview_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                card_id: string;
+                voice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoicePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoicePreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    match_voice_v1_characters__card_id__voices_match_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoiceMatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceMatchResponse"];
                 };
             };
             /** @description Validation Error */
