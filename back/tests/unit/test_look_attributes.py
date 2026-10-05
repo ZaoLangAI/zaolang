@@ -52,7 +52,10 @@ def test_attributes_are_trimmed_and_blanks_dropped(db: Session, author: User) ->
         },
     )
     assert look.presets_json == {"age_stage": "youth", "period": "republic"}
-    assert look.attributes_json == {"outfit": "破旧长衫", "custom": [{"key": "身份", "value": "卧底"}]}
+    assert look.attributes_json == {
+        "outfit": "破旧长衫",
+        "custom": [{"key": "身份", "value": "卧底"}],
+    }
 
 
 @pytest.mark.parametrize(
@@ -81,9 +84,7 @@ def test_a_scene_variant_takes_only_custom_attributes(db: Session, author: User)
     assert variant.attributes_json["custom"] == [{"key": "氛围", "value": "压抑"}]
 
 
-def test_a_scene_link_must_be_the_owners_scene(
-    db: Session, author: User, remixer: User
-) -> None:
+def test_a_scene_link_must_be_the_owners_scene(db: Session, author: User, remixer: User) -> None:
     skill = _character(db, author)
     look = av.find_default(skill)
     assert look is not None
@@ -95,9 +96,7 @@ def test_a_scene_link_must_be_the_owners_scene(
     foreign_variant = av.find_default(other)
     assert foreign_variant is not None
     with pytest.raises(ValidationFailed):
-        av.set_scene_link(
-            db, skill, look, scene_id=mine.id, scene_variant_id=foreign_variant.id
-        )
+        av.set_scene_link(db, skill, look, scene_id=mine.id, scene_variant_id=foreign_variant.id)
     with pytest.raises(ValidationFailed):
         # A character card is not a scene.
         av.set_scene_link(db, skill, look, scene_id=_character(db, author, "周岩").id)

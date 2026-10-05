@@ -83,7 +83,12 @@ from app.models.platform import (
     WorkAppeal,
 )
 from app.models.search import EMBEDDING_DIM, WorkEmbedding
-from app.models.skill_library import CreationSkill, SkillAssetEntry, SkillAssetVariant
+from app.models.skill_library import (
+    CreationSkill,
+    SkillAssetEdge,
+    SkillAssetEntry,
+    SkillAssetVariant,
+)
 from app.models.style_gallery import StyleGalleryEntry
 from app.models.system_log import SystemLog
 from app.models.workflow_input import WorkflowInputRequest
@@ -177,6 +182,7 @@ __all__ = [
     "ReportCase",
     "Series",
     "SeriesCollaborator",
+    "SkillAssetEdge",
     "SkillAssetEntry",
     "SkillAssetVariant",
     "StyleGalleryEntry",

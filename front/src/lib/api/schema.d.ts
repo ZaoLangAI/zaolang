@@ -1531,6 +1531,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/characters/{card_id}/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Graph */
+        get: operations["get_character_graph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/characters/{card_id}/edges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Edge */
+        post: operations["create_character_edge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/characters/{card_id}/edges/{edge_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Edge */
+        delete: operations["delete_character_edge"];
+        options?: never;
+        head?: never;
+        /** Update Edge */
+        patch: operations["update_character_edge"];
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Graph */
+        get: operations["get_scene_graph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/edges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Edge */
+        post: operations["create_scene_edge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes/{card_id}/edges/{edge_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Edge */
+        delete: operations["delete_scene_edge"];
+        options?: never;
+        head?: never;
+        /** Update Edge */
+        patch: operations["update_scene_edge"];
+        trace?: never;
+    };
     "/v1/characters/{card_id}/looks/{look_id}:fill": {
         parameters: {
             query?: never;
@@ -6477,6 +6581,62 @@ export interface components {
             /** Lease Token */
             lease_token: string;
         };
+        /** AssetEdgeCreateRequest */
+        AssetEdgeCreateRequest: {
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "variant" | "entry";
+            /** Source Id */
+            source_id: string;
+            /** Target Id */
+            target_id: string;
+            /** Relations */
+            relations: components["schemas"]["AssetRelation"][];
+            /** Label */
+            label?: string | null;
+        };
+        /**
+         * AssetEdgeOrigin
+         * @description `auto`: written by a derive / adjust job; `manual`: drawn by the owner.
+         * @enum {string}
+         */
+        AssetEdgeOrigin: "auto" | "manual";
+        /**
+         * AssetEdgeUpdateRequest
+         * @description `label: null` leaves it; send `clear_label` to unset it.
+         */
+        AssetEdgeUpdateRequest: {
+            /** Relations */
+            relations?: components["schemas"]["AssetRelation"][] | null;
+            /** Label */
+            label?: string | null;
+            /**
+             * Clear Label
+             * @default false
+             */
+            clear_label: boolean;
+        };
+        /** AssetEdgeView */
+        AssetEdgeView: {
+            /** Id */
+            id: string;
+            level: components["schemas"]["AssetGraphLevel"];
+            /** Source Id */
+            source_id: string;
+            /** Target Id */
+            target_id: string;
+            /** Relations */
+            relations: components["schemas"]["AssetRelation"][];
+            /** Label */
+            label?: string | null;
+            origin: components["schemas"]["AssetEdgeOrigin"];
+            /** Source Job Id */
+            source_job_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+        };
         /** AssetEntryCreateRequest */
         AssetEntryCreateRequest: {
             /** Asset Id */
@@ -6548,6 +6708,71 @@ export interface components {
             /** Created At */
             created_at?: string | null;
         };
+        /**
+         * AssetGraphCaps
+         * @description `None` = uncapped (a scene card's variants and total images).
+         */
+        AssetGraphCaps: {
+            /** Max Variants */
+            max_variants?: number | null;
+            /** Max Entries Per Variant */
+            max_entries_per_variant: number;
+            /** Max Entries */
+            max_entries?: number | null;
+            /** Max Edges */
+            max_edges: number;
+        };
+        /**
+         * AssetGraphLevel
+         * @description Which nodes a `SkillAssetEdge` joins: looks / variants, or images.
+         * @enum {string}
+         */
+        AssetGraphLevel: "variant" | "entry";
+        /**
+         * AssetGraphPendingJob
+         * @description A generation job still filling this card (P6 fills it in).
+         */
+        AssetGraphPendingJob: {
+            /** Job Id */
+            job_id: string;
+            /** Status */
+            status: string;
+            /** Mode */
+            mode?: string | null;
+            /** Target Variant Id */
+            target_variant_id?: string | null;
+            /** Source Entry Id */
+            source_entry_id?: string | null;
+        };
+        /** AssetGraphResponse */
+        AssetGraphResponse: {
+            /** Card Id */
+            card_id: string;
+            /**
+             * Card Kind
+             * @enum {string}
+             */
+            card_kind: "character" | "scene";
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Anchor Entry Id */
+            anchor_entry_id?: string | null;
+            /** Variants */
+            variants?: components["schemas"]["AssetVariantView"][];
+            /** Edges */
+            edges?: components["schemas"]["AssetEdgeView"][];
+            /** Pending */
+            pending?: components["schemas"]["AssetGraphPendingJob"][];
+            caps: components["schemas"]["AssetGraphCaps"];
+        };
+        /**
+         * AssetRelation
+         * @description What a graph edge says changed from source to target (P4).
+         * @enum {string}
+         */
+        AssetRelation: "age" | "outfit" | "emotion" | "scene" | "period" | "lighting" | "weather" | "state" | "edit" | "custom";
         /** AssetResponse */
         AssetResponse: {
             /** Id */
@@ -17545,6 +17770,286 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetEntryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_character_graph: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetGraphResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_character_edge: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetEdgeCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEdgeView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_character_edge: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                edge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_character_edge: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                edge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetEdgeUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEdgeView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scene_graph: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetGraphResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_scene_edge: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetEdgeCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEdgeView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_scene_edge: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                edge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_scene_edge: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                card_id: string;
+                edge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetEdgeUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetEdgeView"];
                 };
             };
             /** @description Validation Error */

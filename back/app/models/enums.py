@@ -859,6 +859,59 @@ SCENE_ENTRY_TYPES: frozenset[str] = frozenset(
 )
 
 
+class AssetGraphLevel(StrEnum):
+    """Which nodes a `SkillAssetEdge` joins: looks / variants, or images."""
+
+    VARIANT = "variant"
+    ENTRY = "entry"
+
+
+class AssetRelation(StrEnum):
+    """What a graph edge says changed from source to target (P4)."""
+
+    AGE = "age"
+    OUTFIT = "outfit"
+    EMOTION = "emotion"
+    SCENE = "scene"
+    PERIOD = "period"
+    LIGHTING = "lighting"
+    WEATHER = "weather"
+    STATE = "state"
+    # An image adjusted from another (调整修改, P6).
+    EDIT = "edit"
+    CUSTOM = "custom"
+
+
+CHARACTER_RELATIONS: frozenset[str] = frozenset(
+    {
+        AssetRelation.AGE,
+        AssetRelation.OUTFIT,
+        AssetRelation.EMOTION,
+        AssetRelation.SCENE,
+        AssetRelation.PERIOD,
+        AssetRelation.EDIT,
+        AssetRelation.CUSTOM,
+    }
+)
+SCENE_RELATIONS: frozenset[str] = frozenset(
+    {
+        AssetRelation.LIGHTING,
+        AssetRelation.WEATHER,
+        AssetRelation.STATE,
+        AssetRelation.PERIOD,
+        AssetRelation.EDIT,
+        AssetRelation.CUSTOM,
+    }
+)
+
+
+class AssetEdgeOrigin(StrEnum):
+    """`auto`: written by a derive / adjust job; `manual`: drawn by the owner."""
+
+    AUTO = "auto"
+    MANUAL = "manual"
+
+
 class AssetEntryStatus(StrEnum):
     """Candidate vs. approved (定稿). P1 writes everything as `approved`."""
 

@@ -235,6 +235,8 @@ class SkillAssetEntry(Base):
         UniqueConstraint(
             "variant_id", "asset_id", name="uq_skill_asset_entries_variant_id_asset_id"
         ),
+        # Target of `skill_asset_edges`' composite FKs.
+        UniqueConstraint("id", "skill_id", name="uq_skill_asset_entries_id_skill_id"),
         Index("ix_skill_asset_entries_skill", "skill_id", "variant_id", "sort_order"),
         Index("ix_skill_asset_entries_asset_id", "asset_id"),
         Index(
@@ -242,5 +244,88 @@ class SkillAssetEntry(Base):
             "skill_id",
             unique=True,
             postgresql_where=text("is_anchor"),
+        ),
+    )
+
+
+_EDGE_LEVEL_SHAPE = (
+    "(level = 'variant' AND source_variant_id IS NOT NULL AND target_variant_id IS NOT NULL"
+    " AND source_entry_id IS NULL AND target_entry_id IS NULL"
+    " AND source_variant_id <> target_variant_id)"
+    " OR (level = 'entry' AND source_entry_id IS NOT NULL AND target_entry_id IS NOT NULL"
+    " AND source_variant_id IS NULL AND target_variant_id IS NULL"
+    " AND source_entry_id <> target_entry_id)"
+)
+
+
+class SkillAssetEdge(Base, TimestampMixin):
+    """A typed, directed relation between two looks / variants or two images
+    of one card (P4): "老年 ← 青年 by age", "this sheet was adjusted from that
+    one". Owner-only graph metadata — never published, never moderated
+    content. Both ends CASCADE; acyclicity is the domain's job
+    (`asset_graph.service.add_edge`)."""
+
+    __tablename__ = "skill_asset_edges"
+
+    id: Mapped[str] = id_column("sae")
+    skill_id: Mapped[str] = mapped_column(
+        ForeignKey("creation_skills.id", ondelete="CASCADE"), nullable=False
+    )
+    level: Mapped[str] = mapped_column(String(8), nullable=False)
+    source_variant_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    target_variant_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_entry_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    target_entry_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # `AssetRelation` values, at least one.
+    relations_json: Mapped[list[Any]] = mapped_column(
+        default=list, server_default=text("'[]'::jsonb"), nullable=False
+    )
+    label: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    origin: Mapped[str] = mapped_column(String(8), nullable=False)
+    # Trace only (DM invariant 12).
+    source_job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("level IN ('variant', 'entry')", name="level_valid"),
+        CheckConstraint("origin IN ('auto', 'manual')", name="origin_valid"),
+        CheckConstraint(_EDGE_LEVEL_SHAPE, name="level_shape"),
+        ForeignKeyConstraint(
+            ["source_variant_id", "skill_id"],
+            ["skill_asset_variants.id", "skill_asset_variants.skill_id"],
+            ondelete="CASCADE",
+            name="fk_skill_asset_edges_source_variant",
+        ),
+        ForeignKeyConstraint(
+            ["target_variant_id", "skill_id"],
+            ["skill_asset_variants.id", "skill_asset_variants.skill_id"],
+            ondelete="CASCADE",
+            name="fk_skill_asset_edges_target_variant",
+        ),
+        ForeignKeyConstraint(
+            ["source_entry_id", "skill_id"],
+            ["skill_asset_entries.id", "skill_asset_entries.skill_id"],
+            ondelete="CASCADE",
+            name="fk_skill_asset_edges_source_entry",
+        ),
+        ForeignKeyConstraint(
+            ["target_entry_id", "skill_id"],
+            ["skill_asset_entries.id", "skill_asset_entries.skill_id"],
+            ondelete="CASCADE",
+            name="fk_skill_asset_edges_target_entry",
+        ),
+        Index("ix_skill_asset_edges_skill_level", "skill_id", "level"),
+        Index(
+            "uq_skill_asset_edges_variant_pair",
+            "source_variant_id",
+            "target_variant_id",
+            unique=True,
+            postgresql_where=text("level = 'variant'"),
+        ),
+        Index(
+            "uq_skill_asset_edges_entry_pair",
+            "source_entry_id",
+            "target_entry_id",
+            unique=True,
+            postgresql_where=text("level = 'entry'"),
         ),
     )

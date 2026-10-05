@@ -969,23 +969,12 @@ def update_entry(
             raise ValidationFailed("目标造型/变体里已有这张图。", fields={"variant_id": "重复"})
         if is_approved(entry):
             _check_approved_room(skill, variant, "variant_id")
+        # Re-parent the same row (no flush between remove and append, so
+        # delete-orphan never fires): the id — and the graph edges keyed on
+        # it (`skill_asset_edges`) — survive the move.
+        entry.sort_order = max((e.sort_order for e in variant.entries), default=-1) + 1
         entry.variant.entries.remove(entry)
-        session.flush()
-        moved = SkillAssetEntry(
-            skill_id=skill.id,
-            asset_id=entry.asset_id,
-            entry_type=entry.entry_type,
-            view=entry.view,
-            label=entry.label,
-            expressions_json=entry.expressions_json,
-            status=entry.status,
-            is_anchor=entry.is_anchor,
-            source_job_id=entry.source_job_id,
-            created_at=entry.created_at,
-            sort_order=max((e.sort_order for e in variant.entries), default=-1) + 1,
-        )
-        variant.entries.append(moved)
-        entry = moved
+        variant.entries.append(entry)
     session.flush()
     if status == AssetEntryStatus.APPROVED and not is_approved(entry):
         return approve_entry(session, skill, entry)
