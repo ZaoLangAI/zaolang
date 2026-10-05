@@ -28,13 +28,13 @@ export function EdgeInspector({
   edge: AssetEdge;
   busy: boolean;
   actions: AssetGraphActions;
-  onSelectNode: (level: 'variant' | 'entry', id: string) => void;
+  onSelectNode: (level: 'variant' | 'entry' | 'voice', id: string) => void;
   onDeleted: () => void;
 }) {
   const t = useTranslations('assetGraph');
   const tActions = useTranslations('actions');
   const name = useNodeNames(graph);
-  const level = edge.level === 'entry' ? 'entry' : 'variant';
+  const level = edge.level;
   const [draft, setDraft] = useState<RelationDraft>({
     relations: edge.relations,
     label: edge.label ?? '',
@@ -63,7 +63,12 @@ export function EdgeInspector({
         {end(edge.target_id)}
       </div>
       <InspectorSection title={t('sectionRelationType')}>
-        <RelationFields kind={kind} value={draft} onChange={setDraft} />
+        <RelationFields
+          kind={kind}
+          value={draft}
+          onChange={setDraft}
+          voices={edge.level === 'voice'}
+        />
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"

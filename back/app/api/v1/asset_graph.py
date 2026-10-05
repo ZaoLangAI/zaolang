@@ -32,18 +32,22 @@ router = APIRouter(tags=["asset-graph"])
 Write = Annotated[None, Depends(rate_limited("authenticated_write"))]
 Read = Annotated[None, Depends(rate_limited("public_read"))]
 
-# Loads an owned card: `(skill, full description)`.
-Loader = Callable[[Session, str, str], tuple[CreationSkill, str | None]]
+# Loads an owned card: `(skill, full description, voice description)`.
+Loader = Callable[[Session, str, str], tuple[CreationSkill, str | None, str | None]]
 
 
-def _character(session: Session, user_id: str, card_id: str) -> tuple[CreationSkill, str | None]:
+def _character(
+    session: Session, user_id: str, card_id: str
+) -> tuple[CreationSkill, str | None, str | None]:
     view = characters_service.get_character(session, user_id=user_id, character_id=card_id)
-    return view.skill, view.description
+    return view.skill, view.description, view.voice_description
 
 
-def _scene(session: Session, user_id: str, card_id: str) -> tuple[CreationSkill, str | None]:
+def _scene(
+    session: Session, user_id: str, card_id: str
+) -> tuple[CreationSkill, str | None, str | None]:
     view = scenes_service.get_scene(session, user_id=user_id, scene_id=card_id)
-    return view.skill, view.description
+    return view.skill, view.description, None
 
 
 def _register(prefix: str, load: Loader) -> None:
@@ -57,9 +61,12 @@ def _register(prefix: str, load: Loader) -> None:
     def get_graph(
         card_id: str, user: CurrentUser, session: DbSession, _: Read
     ) -> AssetGraphResponse:
-        skill, description = load(session, user.id, card_id)
+        skill, description, voice_description = load(session, user.id, card_id)
         return presenter.graph_response(
-            session, graph_service.graph(session, skill), description=description
+            session,
+            graph_service.graph(session, skill),
+            description=description,
+            voice_description=voice_description,
         )
 
     @router.post(
@@ -75,7 +82,7 @@ def _register(prefix: str, load: Loader) -> None:
         session: DbSession,
         _: Write,
     ) -> AssetEdgeView:
-        skill, _description = load(session, user.id, card_id)
+        skill, _description, _voice = load(session, user.id, card_id)
         edge = graph_service.add_edge(
             session,
             skill,
@@ -101,7 +108,7 @@ def _register(prefix: str, load: Loader) -> None:
         session: DbSession,
         _: Write,
     ) -> AssetEdgeView:
-        skill, _description = load(session, user.id, card_id)
+        skill, _description, _voice = load(session, user.id, card_id)
         edge = graph_service.update_edge(
             session,
             skill,
@@ -121,7 +128,7 @@ def _register(prefix: str, load: Loader) -> None:
     def delete_edge(
         card_id: str, edge_id: str, user: CurrentUser, session: DbSession, _: Write
     ) -> Response:
-        skill, _description = load(session, user.id, card_id)
+        skill, _description, _voice = load(session, user.id, card_id)
         graph_service.delete_edge(session, skill, graph_service.find_edge(session, skill, edge_id))
         session.commit()
         return Response(status_code=204)

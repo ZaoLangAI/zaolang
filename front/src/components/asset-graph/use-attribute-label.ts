@@ -27,6 +27,9 @@ export function useAttributeLabel(): (row: AttributeRow) => { label: string; val
   const tPresets = useTranslations('remixPage');
   return (row) => {
     if (row.key === 'custom') return { label: row.name ?? '', value: row.value };
+    if (row.key === 'voice_use') {
+      return { label: t('row.voice_use'), value: t(`voiceUse.${row.value}`) };
+    }
     const label = t(`row.${row.key}`);
     if (row.key === 'age_stage') {
       const entry = AGE_STAGES[row.value as keyof typeof AGE_STAGES];

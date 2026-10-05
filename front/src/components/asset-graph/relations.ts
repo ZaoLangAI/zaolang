@@ -10,6 +10,9 @@ export const RELATIONS_BY_KIND: Record<CardKind, AssetRelation[]> = {
   scene: ['lighting', 'weather', 'state', 'period', 'custom'],
 };
 
+/** Mirrors `VOICE_RELATIONS` (`back/app/models/enums.py`). */
+export const VOICE_RELATIONS: AssetRelation[] = ['age', 'emotion', 'scene', 'params', 'custom'];
+
 /** Stroke colour per relation — the `--relation-*` tokens (`globals.css`).
  * Scene axes reuse the nearest character hue so a legend never needs more
  * than seven colours. */

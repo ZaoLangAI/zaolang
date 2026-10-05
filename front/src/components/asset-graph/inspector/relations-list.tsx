@@ -23,7 +23,7 @@ export function RelationsList({
   onSelectEdge,
 }: {
   graph: AssetGraph;
-  level: 'variant' | 'entry';
+  level: 'variant' | 'entry' | 'voice';
   nodeId: string;
   onSelectEdge: (edgeId: string) => void;
 }) {
@@ -90,7 +90,7 @@ export function AddRelationForm({
 }: {
   graph: AssetGraph;
   kind: CardKind;
-  level: 'variant' | 'entry';
+  level: 'variant' | 'entry' | 'voice';
   nodeId: string;
   busy?: boolean;
   onCreate: (body: Record<string, unknown>) => Promise<unknown>;
@@ -106,9 +106,11 @@ export function AddRelationForm({
   const candidates =
     level === 'variant'
       ? (graph.variants ?? []).map((v) => v.id)
-      : (graph.variants ?? []).flatMap((v) =>
-          (v.entries ?? []).map((e) => e.id).filter((id) => headOf.get(id) === id),
-        );
+      : level === 'voice'
+        ? (graph.voices ?? []).map((v) => v.id)
+        : (graph.variants ?? []).flatMap((v) =>
+            (v.entries ?? []).map((e) => e.id).filter((id) => headOf.get(id) === id),
+          );
   const options = candidates.filter((id) => id !== self);
   if (!options.length) return null;
 
@@ -148,7 +150,7 @@ export function AddRelationForm({
           ]}
         />
       </div>
-      <RelationFields kind={kind} value={draft} onChange={setDraft} />
+      <RelationFields kind={kind} value={draft} onChange={setDraft} voices={level === 'voice'} />
       <Button
         size="sm"
         className="self-start"

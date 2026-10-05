@@ -1,7 +1,13 @@
 import dagre from '@dagrejs/dagre';
 
-import type { BuiltGraph, GraphNode } from './graph-model';
-import { variantNodeId } from './graph-model';
+import type { GraphNode } from './graph-model';
+
+/** What `layoutGraph` needs: nodes (children keep their place) and the
+ * top-level node-id pairs to rank by. */
+export interface LayoutInput {
+  nodes: GraphNode[];
+  rankPairs: Array<[string, string]>;
+}
 
 const RANK_SEP = 96;
 const NODE_SEP = 36;
@@ -17,7 +23,7 @@ const MARGIN = 24;
  * win over the computed ones until 整理布局 clears them.
  */
 export function layoutGraph(
-  built: BuiltGraph,
+  built: LayoutInput,
   manual: Readonly<Record<string, { x: number; y: number }>> = {},
 ): GraphNode[] {
   const graph = new dagre.graphlib.Graph();
@@ -33,9 +39,7 @@ export function layoutGraph(
   for (const node of tops) {
     graph.setNode(node.id, { width: node.width ?? 0, height: node.height ?? 0 });
   }
-  for (const [source, target] of built.rankPairs) {
-    const from = variantNodeId(source);
-    const to = variantNodeId(target);
+  for (const [from, to] of built.rankPairs) {
     if (from !== to && graph.hasNode(from) && graph.hasNode(to)) graph.setEdge(from, to);
   }
   dagre.layout(graph);

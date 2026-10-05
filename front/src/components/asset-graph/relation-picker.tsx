@@ -17,6 +17,7 @@ import { RelationFields, relationDraftValid, type RelationDraft } from './relati
  */
 export function RelationPickerDialog({
   kind,
+  voices = false,
   sourceName,
   targetName,
   busy,
@@ -24,6 +25,8 @@ export function RelationPickerDialog({
   onConfirm,
 }: {
   kind: CardKind;
+  /** A voice-to-voice connection (`VOICE_RELATIONS`). */
+  voices?: boolean;
   sourceName: string;
   targetName: string;
   busy?: boolean;
@@ -56,7 +59,7 @@ export function RelationPickerDialog({
         </>
       }
     >
-      <RelationFields kind={kind} value={draft} onChange={setDraft} />
+      <RelationFields kind={kind} value={draft} onChange={setDraft} voices={voices} />
     </Dialog>
   );
 }

@@ -36,7 +36,11 @@ def edge_view(edge: SkillAssetEdge) -> AssetEdgeView:
 
 
 def graph_response(
-    session: Session, graph: CardGraph, *, description: str | None
+    session: Session,
+    graph: CardGraph,
+    *,
+    description: str | None,
+    voice_description: str | None = None,
 ) -> AssetGraphResponse:
     """`description` is the card view's full text (`CreationSkill.description`
     is a 300-char preview)."""
@@ -47,6 +51,7 @@ def graph_response(
         card_kind="character" if character else "scene",
         name=skill.title,
         description=description,
+        voice_description=voice_description,
         anchor_entry_id=variant_presenter.anchor_entry_id(skill),
         variants=[variant_presenter.variant_view(session, v) for v in graph.variants],
         edges=[edge_view(edge) for edge in graph.edges],
