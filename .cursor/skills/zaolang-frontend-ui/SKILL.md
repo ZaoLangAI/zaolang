@@ -24,7 +24,7 @@ Not here → `zaolang-theming` (tokens, motion), `zaolang-i18n-region` (copy, lo
 | `front/src/components/notifications/` | single-stream notification center, bell, toast stack, `notification-format.ts` |
 | `front/src/components/command/` | Cmd+K `command-palette.tsx` (idle-loaded by `command-palette-host.tsx`) |
 | `front/src/components/create/` | `/create`: `create-mode-cards.tsx`, flag-aware `create-tool-cards.tsx`, recent drafts/series |
-| `front/src/components/asset-graph/` | card management graph (`/create/{characters,scenes}/[id]`): `asset-graph-workspace.tsx` (state, docked inspector, narrow-screen outline + Sheet) loads `asset-graph-canvas.tsx` (React Flow + dagre `layout.ts`) via `next/dynamic`; `graph-model.ts` is the pure payload → nodes/edges mapping; listed in `heavyDependencyBoundaries` |
+| `front/src/components/asset-graph/` | card management graph (`/create/{characters,scenes}/[id]`): `asset-graph-workspace.tsx` (state, docked inspector, narrow-screen outline + Sheet) loads `asset-graph-canvas.tsx` (React Flow + dagre `layout.ts`) via `next/dynamic`; `graph-model.ts` is the pure payload → nodes/edges mapping; listed in `heavyDependencyBoundaries`. Positions are never saved — a dragged node snaps back on reload; layout is recomputed each load |
 | `front/src/features/` | big surfaces: `script`, `editor`, `drama-dashboard` (editor-drama), `canvas`, `blocking`, `video-analysis` (generation-jobs) |
 | `front/src/lib/api/client.ts` | browser fetch: in-memory token, coalesced refresh, `Idempotency-Key`, `ApiError` |
 | `front/src/lib/api/server.ts` | RSC `serverFetch` via `API_INTERNAL_URL`; uncached unless `revalidate` is passed; `serverFetchOrNull` |
