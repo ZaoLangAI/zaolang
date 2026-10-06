@@ -27,7 +27,14 @@ from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.domain.moderation_policy import assert_allowed, text_values
 from app.domain.moderation_queue import service as moderation_queue
 from app.domain.skill_library import catalog as skill_catalog
-from app.models import Asset, CreationSkill, ModerationQueueItem, Profile, SkillAssetEntry
+from app.models import (
+    Asset,
+    CharacterVoice,
+    CreationSkill,
+    ModerationQueueItem,
+    Profile,
+    SkillAssetEntry,
+)
 from app.models.base import utcnow
 from app.models.enums import (
     IMAGE_ASSET_SKILL_CATEGORIES,
@@ -360,6 +367,19 @@ def viewer_has_access(session: Session, skill: CreationSkill, viewer_id: str | N
     return access_service.viewer_unlocked_skill(session, skill, viewer_id)
 
 
+def card_is_usable_by(session: Session, skill: CreationSkill, viewer_id: str | None) -> bool:
+    """A character/scene card's assets and voices are usable by `viewer_id`:
+    the owner always; anyone else only while it is published and public and
+    they can use it (free, or unlocked)."""
+    if viewer_id is not None and skill.owner_user_id == viewer_id:
+        return True
+    return (
+        skill.status == CreationSkillStatus.PUBLISHED
+        and skill.visibility == CreationSkillVisibility.PUBLIC
+        and viewer_has_access(session, skill, viewer_id)
+    )
+
+
 def asset_is_usable_skill_reference(
     session: Session, *, asset: Asset, viewer_id: str | None
 ) -> bool:
@@ -371,7 +391,10 @@ def asset_is_usable_skill_reference(
       into the viewer's own roster;
     - an approved image filed on one of a character/scene card's looks — the
       look/variant is what the buyer unlocked. The asset itself stays
-      private: only the provider ever receives a signed URL for it.
+      private: only the provider ever receives a signed URL for it;
+    - a character voice's clone sample — voices unlock with the card. The
+      sample is never handed to the buyer, only referenced by their job, and
+      its voice consent is the author's declaration on that asset.
     """
     if asset.media_type == MediaType.IMAGE and asset.visibility != Visibility.PRIVATE:
         skill = session.scalar(
@@ -383,6 +406,18 @@ def asset_is_usable_skill_reference(
         )
         if skill is not None and viewer_has_access(session, skill, viewer_id):
             return True
+    if asset.media_type == MediaType.AUDIO:
+        voiced = session.scalars(
+            select(CreationSkill)
+            .join(CharacterVoice, CharacterVoice.skill_id == CreationSkill.id)
+            .where(
+                CharacterVoice.sample_asset_id == asset.id,
+                CreationSkill.status == CreationSkillStatus.PUBLISHED,
+                CreationSkill.visibility == CreationSkillVisibility.PUBLIC,
+            )
+            .distinct()
+        )
+        return any(viewer_has_access(session, card, viewer_id) for card in voiced)
     if asset.media_type not in (MediaType.IMAGE, MediaType.VIDEO):
         return False
     cards = session.scalars(

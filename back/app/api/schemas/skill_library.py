@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import Field
 
 from app.api.schemas.asset_variants import AssetVariantView
+from app.api.schemas.character_voices import CharacterVoiceView
 from app.api.schemas.common import ApiModel
 from app.api.schemas.works import AuthorSummary
 from app.models.enums import (
@@ -58,6 +59,9 @@ class CreationSkillDetail(CreationSkillSummary):
     # images (the raw `reference_assets` id list is no longer in `params`).
     asset_variants: list[AssetVariantView] = Field(default_factory=list)
     anchor_asset_id: str | None = None
+    # A character card's voices, once unlocked (no clone sample; jobs name
+    # them by `voice_profile_id`).
+    voices: list[CharacterVoiceView] = Field(default_factory=list)
 
 
 class CreationSkillCreateRequest(ApiModel):

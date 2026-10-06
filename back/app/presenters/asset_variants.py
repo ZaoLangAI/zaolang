@@ -63,7 +63,7 @@ def variant_view(
     session: Session, variant: SkillAssetVariant, *, approved_only: bool = False
 ) -> AssetVariantView:
     """`approved_only` is the public (unlocked) view: no candidates, no
-    scene link."""
+    scene link. `voice_id` stays — voices unlock with the card."""
     shown = [
         entry
         for entry in variant.entries
@@ -76,7 +76,7 @@ def variant_view(
         presets=dict(variant.presets_json or {}),
         attributes=VariantAttributes.model_validate(variant.attributes_json or {}),
         scene_link=None if approved_only else scene_link_view(session, variant),
-        voice_id=None if approved_only else variant.voice_id,
+        voice_id=variant.voice_id,
         is_default=variant.is_default,
         sort_order=variant.sort_order,
         entries=[entry_view(session, entry) for entry in shown],

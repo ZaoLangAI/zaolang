@@ -32031,6 +32031,13 @@
               }
             ],
             "title": "Anchor Asset Id"
+          },
+          "voices": {
+            "items": {
+              "$ref": "#/components/schemas/CharacterVoiceView"
+            },
+            "type": "array",
+            "title": "Voices"
           }
         },
         "type": "object",

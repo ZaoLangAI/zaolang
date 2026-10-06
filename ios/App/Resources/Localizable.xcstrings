@@ -3566,6 +3566,29 @@
         }
       }
     },
+    "assetGraph.relation.camera": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Camera angle"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カメラアングル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "机位"
+          }
+        }
+      }
+    },
     "assetGraph.relation.custom": {
       "extractionState": "manual",
       "localizations": {
@@ -6194,19 +6217,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A complete look has an identity portrait, a front sheet, side and back views, and one grid of everyday expressions. What is missing is generated in steps; each step starts on its own when the previous one finishes."
+            "value": "A complete look has an identity portrait, a front sheet, four turnaround angles (right, back, left, front-right) and one grid of everyday expressions. What is missing is generated in steps; each step starts on its own when the previous one finishes."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "完全な衣装はメイク写真・正面の設定画・側面・背面・基本表情のグリッド 1 枚で構成されます。不足分を段階的に生成し、各段階が終わると次が自動で始まります。"
+            "value": "完全な衣装はメイク写真・正面の設定画・4 つの回転アングル（右・背面・左・右斜め前）・基本表情のグリッド 1 枚で構成されます。不足分を段階的に生成し、各段階が終わると次が自動で始まります。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "一套完整造型包括定妆照、正面设定图、侧面、背面和一张基础表情宫格。缺的部分会分几步依次生成，每步完成后自动开始下一步。"
+            "value": "一套完整造型包括定妆照、正面设定图、四个转面机位（右侧、背面、左侧、右前侧）和一张基础表情宫格。缺的部分会分几步依次生成，每步完成后自动开始下一步。"
           }
         }
       }
@@ -6378,19 +6401,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Back view"
+            "value": "Back 180°"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "背面"
+            "value": "背面 180°"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "背面"
+            "value": "背面 180°"
           }
         }
       }
@@ -6441,6 +6464,29 @@
         }
       }
     },
+    "assetVariants.fillSlot.left": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Left side 270°"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左側 270°"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左侧 270°"
+          }
+        }
+      }
+    },
     "assetVariants.fillSlot.portrait": {
       "extractionState": "manual",
       "localizations": {
@@ -6470,19 +6516,42 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Side view"
+            "value": "Right side 90°"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "側面"
+            "value": "右側 90°"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "侧面"
+            "value": "右侧 90°"
+          }
+        }
+      }
+    },
+    "assetVariants.fillSlot.three_quarter": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Front-right 45°"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右斜め前 45°"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右前侧 45°"
           }
         }
       }

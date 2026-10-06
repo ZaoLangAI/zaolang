@@ -20,6 +20,7 @@ from app.api.schemas.skill_library import (
 from app.api.schemas.works import AccessGrantView, AccessUnlockResponse, AuthorSummary
 from app.domain.access import service as access_service
 from app.domain.asset_variants import service as asset_variants_service
+from app.domain.characters import voices as voices_service
 from app.domain.errors import ValidationFailed
 from app.domain.skill_library import service as skill_library
 from app.domain.skill_library import variables as skill_variables
@@ -32,6 +33,7 @@ from app.models.enums import (
     Operation,
 )
 from app.presenters import asset_variants as asset_variant_presenter
+from app.presenters import character_voices as voice_presenter
 from app.presenters import media_urls
 
 router = APIRouter(tags=["skills"])
@@ -364,6 +366,12 @@ def _detail(session: DbSession, skill: CreationSkill, viewer_id: str | None) -> 
         if unlocked and is_card
         else [],
         anchor_asset_id=anchor.asset_id if anchor else None,
+        voices=[
+            voice_presenter.voice_view(session, skill, voice, public=True)
+            for voice in voices_service.voices(session, skill)
+        ]
+        if unlocked and skill.category == CreationSkillCategory.CHARACTER
+        else [],
     )
 
 

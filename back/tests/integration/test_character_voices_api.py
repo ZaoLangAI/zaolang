@@ -250,48 +250,136 @@ def test_a_dubbing_job_can_name_only_the_character_voice(
     assert bare.status_code == 422
 
 
-def test_unlocking_a_character_never_hands_over_its_voices(
-    client: TestClient, db: Session, author: User, remixer: User
-) -> None:
-    """A buyer gets the card's approved looks, never its voices: no voice ids
-    in the unlocked detail or apply payload, the voice routes stay 404 and a
-    job cannot name the voice."""
-    card = _card(client, author)
-    voice = _voice(client, author, card["id"], look_ids=[card["looks"][0]["id"]])
-    skill = db.get(CreationSkill, card["id"])
+def _clone_sample(db: Session, owner: User) -> str:
+    from app.domain.consent import service as consent_service
+    from app.models import Asset
+    from app.models.enums import MediaType
+
+    sample = Asset(
+        owner_user_id=owner.id,
+        object_key=f"test/{new_id('obj')}.mp3",
+        media_type=MediaType.AUDIO,
+        mime_type="audio/mpeg",
+        size_bytes=2048,
+        checksum_sha256="b" * 64,
+        role="voice_sample",
+    )
+    db.add(sample)
+    db.flush()
+    consent_service.declare(
+        db, user=owner, asset_id=sample.id, consent_type="voice", subject_reference="配音演员甲"
+    )
+    db.commit()
+    return sample.id
+
+
+def _sell(db: Session, card_id: str) -> CreationSkill:
+    skill = db.get(CreationSkill, card_id)
     assert skill is not None
     skill.status = CreationSkillStatus.PUBLISHED
     skill.visibility = CreationSkillVisibility.PUBLIC
     skill.access_credits = 8
     db.commit()
+    return skill
 
-    buyer = auth_header(remixer)
-    credits_service.grant(db, remixer.id, 5_000, idempotency_key=new_id("grant"))
-    db.commit()
-    unlocked = client.post(
-        f"/v1/skills/{card['id']}/unlock", headers={**buyer, "Idempotency-Key": new_id("idk")}
-    )
-    assert unlocked.status_code == 200, unlocked.text
 
-    detail = client.get(f"/v1/skills/{card['id']}", headers=buyer)
-    applied = client.post(f"/v1/skills/{card['id']}/apply", headers=buyer)
-    assert detail.status_code == 200 and applied.status_code == 200, applied.text
-    assert detail.json()["viewer_unlocked"] is True
-    (look,) = detail.json()["asset_variants"]  # the looks do come through
-    assert look["voice_id"] is None
-    for response in (detail, applied):
-        assert voice["id"] not in response.text
-        assert "柔美女友" not in response.text
-
-    assert client.get(f"/v1/characters/{card['id']}/voices", headers=buyer).status_code == 404
-    assert client.get(f"/v1/characters/{card['id']}/graph", headers=buyer).status_code == 404
-    job = client.post(
+def _dub(client: TestClient, headers: dict, voice_id: str, key: str):
+    return client.post(
         "/v1/generation-jobs",
         json={
             "operation": "audio_generation",
             "quality_tier": "standard",
-            "params": {"prompt": "你好", "voice_profile_id": voice["id"]},
+            "params": {"prompt": "你好", "voice_profile_id": voice_id, "extra": {}},
         },
-        headers={**buyer, "Idempotency-Key": "buyer-voice-1"},
+        headers={**headers, "Idempotency-Key": key},
     )
-    assert job.status_code == 404
+
+
+def test_unlocking_a_character_unlocks_its_voices(
+    client: TestClient, db: Session, author: User, remixer: User, dispatched: list[str]
+) -> None:
+    """A buyer gets the card's voices with its looks: listed on the unlocked
+    detail (no clone sample), usable by `voice_profile_id` — a clone's
+    sample included — but never manageable: the voice routes, the graph and
+    previews (which write onto the voice) stay the owner's."""
+    card = _card(client, author)
+    preset = _voice(
+        client, author, card["id"], look_ids=[card["looks"][0]["id"]], params={"emotion": "happy"}
+    )
+    sample_id = _clone_sample(db, author)
+    clone = _voice(
+        client,
+        author,
+        card["id"],
+        name="克隆",
+        source="clone",
+        model=None,
+        voice=None,
+        sample_asset_id=sample_id,
+    )
+    skill = _sell(db, card["id"])
+    buyer = auth_header(remixer)
+    credits_service.grant(db, remixer.id, 5_000, idempotency_key=new_id("grant"))
+    db.commit()
+
+    locked = client.get(f"/v1/skills/{card['id']}", headers=buyer).json()
+    assert locked["voices"] == [] and locked["asset_variants"] == []
+    assert _dub(client, buyer, preset["id"], "locked-1").status_code == 404
+
+    unlocked = client.post(
+        f"/v1/skills/{card['id']}/unlock", headers={**buyer, "Idempotency-Key": new_id("idk")}
+    )
+    assert unlocked.status_code == 200, unlocked.text
+    for response in (
+        client.get(f"/v1/skills/{card['id']}", headers=buyer),
+        client.post(f"/v1/skills/{card['id']}/apply", headers=buyer),
+    ):
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert [v["id"] for v in body["voices"]] == [preset["id"], clone["id"]]
+        assert body["voices"][0]["voice"] == "柔美女友"
+        assert all(v["sample"] is None for v in body["voices"])
+        assert body["asset_variants"][0]["voice_id"] == preset["id"]
+
+    dubbed = _dub(client, buyer, preset["id"], "dub-preset")
+    assert dubbed.status_code == 202, dubbed.text
+    job = db.get(GenerationJob, dubbed.json()["id"])
+    assert job is not None and job.user_id == remixer.id
+    assert job.request_json["forced_model"] == "tts-pro"
+    assert job.request_json["extra"] == {"voice": "柔美女友", "emotion": "happy"}
+
+    cloned = _dub(client, buyer, clone["id"], "dub-clone")
+    assert cloned.status_code == 202, cloned.text
+    clone_job = db.get(GenerationJob, cloned.json()["id"])
+    assert clone_job is not None
+    assert clone_job.request_json["reference_asset_ids"] == [sample_id]
+
+    # The buyer's jobs never show up as the owner's pending work.
+    graph = client.get(f"/v1/characters/{card['id']}/graph", headers=auth_header(author)).json()
+    assert graph["pending"] == []
+
+    # Management stays the owner's.
+    assert client.get(f"/v1/characters/{card['id']}/voices", headers=buyer).status_code == 404
+    assert client.get(f"/v1/characters/{card['id']}/graph", headers=buyer).status_code == 404
+    preview = client.post(
+        f"/v1/characters/{card['id']}/voices/{preset['id']}:preview",
+        json={"dry_run": False},
+        headers={**buyer, "Idempotency-Key": "steal-preview"},
+    )
+    assert preview.status_code == 404
+    targeted = client.post(
+        "/v1/generation-jobs",
+        json={
+            "operation": "audio_generation",
+            "quality_tier": "standard",
+            "params": {"prompt": "你好", "target_voice_id": preset["id"], "extra": {}},
+        },
+        headers={**buyer, "Idempotency-Key": "steal-target"},
+    )
+    assert targeted.status_code == 404
+
+    # Withdrawn from sale: the voices go with it.
+    skill.status = CreationSkillStatus.DRAFT
+    db.commit()
+    assert _dub(client, buyer, preset["id"], "withdrawn-1").status_code == 404
+    assert _dub(client, buyer, clone["id"], "withdrawn-2").status_code == 404
