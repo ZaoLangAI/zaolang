@@ -648,6 +648,8 @@ def _copy(prompt: str) -> dict[str, Any]:
             return _copy_character_describe(payload)
         if payload.get("voice_match"):
             return _copy_voice_match(payload)
+        if payload.get("asset_breakdown"):
+            return _copy_asset_breakdown(payload)
         if "blocking_route" in payload:
             return _copy_blocking_route(payload)
         if "max_length" in payload:
@@ -673,6 +675,57 @@ def _copy(prompt: str) -> dict[str, Any]:
 # A name containing this makes the fake describe return nothing usable, so
 # tests can drive `character_profile.describe`'s "no draft" path.
 CHARACTER_DESCRIBE_EMPTY_MARKER = "无从描述"
+
+
+# A script title containing this makes the fake breakdown return junk, so
+# tests can drive `asset_breakdown.sanitize`'s fill-from-the-script path.
+ASSET_BREAKDOWN_JUNK_MARKER = "无从拆解"
+# Objects the fake breakdown recognises in a scene's text, as props.
+FAKE_PROP_WORDS = ("玉佩", "钥匙", "信封", "匕首", "雨伞", "柜台")
+
+
+def _copy_asset_breakdown(payload: dict[str, Any]) -> dict[str, Any]:
+    """Mirrors `asset_breakdown.SYSTEM_PROMPT`'s shape: every listed
+    character (appearance = traits, 年轻 → youth), one place per
+    「第N场 · 地点 - 时间」 heading's middle part (夜 → night_interior), and
+    the `FAKE_PROP_WORDS` the scenes' text mentions."""
+    if ASSET_BREAKDOWN_JUNK_MARKER in str(payload.get("title") or ""):
+        return {"characters": "junk", "scenes": [{"name": "", "headings": "x"}], "props": [1]}
+    characters = [
+        {
+            "name": item.get("name"),
+            "appearance": item.get("traits") or f"真人写实影视短剧造型，{item.get('name')}",
+            "age_stage": "youth" if "年轻" in str(item.get("traits") or "") else "adult",
+        }
+        for item in payload.get("characters") or []
+    ]
+    places: dict[str, dict[str, Any]] = {}
+    props: dict[str, list[str]] = {}
+    for scene in payload.get("scenes") or []:
+        heading = str(scene.get("heading") or "")
+        place = heading.split("·")[-1].split("-")[0].strip() or heading
+        entry = places.setdefault(
+            place,
+            {
+                "name": place,
+                "headings": [],
+                "description": f"{place}的空间陈设（fake）",
+                "period": "contemporary",
+                "lighting": "night_interior" if "夜" in heading else "day",
+            },
+        )
+        entry["headings"].append(heading)
+        for word in FAKE_PROP_WORDS:
+            if word in str(scene.get("text") or ""):
+                props.setdefault(word, []).append(heading)
+    return {
+        "characters": characters,
+        "scenes": list(places.values()),
+        "props": [
+            {"name": name, "description": f"{name}（fake 外观）", "headings": headings}
+            for name, headings in props.items()
+        ],
+    }
 
 
 def _copy_voice_match(payload: dict[str, Any]) -> dict[str, Any]:

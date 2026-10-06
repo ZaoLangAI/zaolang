@@ -25,6 +25,7 @@ import { Badge, Card, EmptyState, ErrorNotice } from '@/components/ui/primitives
 import { Sheet } from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/toast';
 import { useRouter } from '@/i18n/navigation';
+import { ScriptImportButton } from '@/features/script/script-import-button';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { Character, CharacterScriptLink } from '@/lib/api/types';
@@ -358,7 +359,16 @@ export function CharacterLibrary({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
+        <ScriptImportButton
+          kind="character"
+          onApplied={() =>
+            void api
+              .get<Character[]>('/v1/characters')
+              .then(setCharacters)
+              .catch(() => undefined)
+          }
+        />
         <Button onClick={openCreate} icon={<IconPlus className="size-4" />}>
           {t('newCharacter')}
         </Button>

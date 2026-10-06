@@ -44,7 +44,10 @@ export function sceneImagePrompt(scene: ScriptScene): string {
   return envTexts.length ? `${scene.heading}，${envTexts.join('，')}` : scene.heading;
 }
 
-/** Linked character/scene ids a breakpoint segment can hand to video generation. */
+/** The video job's per-kind reference cap (`GenerationParams.prop_ids`). */
+const MAX_SEGMENT_PROPS = 4;
+
+/** Linked character/scene/prop ids a breakpoint segment can hand to video generation. */
 export function resolveBreakpointRefs(
   document: ScriptDocument,
   scene: ScriptScene,
@@ -55,12 +58,23 @@ export function resolveBreakpointRefs(
   /** Linked looks (`character_id → look id`) — only non-default ones. */
   characterLooks: Record<string, string>;
   sceneVariantId: string | null;
+  /** Linked props the segment's text names (`prop_ids`), script order, ≤4. */
+  propIds: string[];
 } {
+  const segment = breakpointSegmentBlocks(scene, breakpointBlockIndex);
   const names = new Set(
-    breakpointSegmentBlocks(scene, breakpointBlockIndex)
+    segment
       .filter((block) => block.type === 'dialogue' && block.character)
       .map((block) => block.character as string),
   );
+  const segmentText = segment.map((block) => block.text).join('\n');
+  const propIds = [
+    ...new Set(
+      (document.props ?? [])
+        .filter((prop) => prop.prop_ref_id && prop.name.trim() && segmentText.includes(prop.name))
+        .map((prop) => prop.prop_ref_id as string),
+    ),
+  ].slice(0, MAX_SEGMENT_PROPS);
   const linked = document.characters.filter(
     (character) => names.has(character.name) && character.character_ref_id,
   );
@@ -73,6 +87,7 @@ export function resolveBreakpointRefs(
     sceneId: scene.ref_id,
     characterLooks,
     sceneVariantId: scene.ref_id ? (scene.variant_id ?? null) : null,
+    propIds,
   };
 }
 

@@ -7,8 +7,8 @@ import json
 import pytest
 from sqlalchemy.orm import Session
 
-from app.agents import base as agent_base
 from app.agents import (
+    asset_breakdown,
     blocking_director,
     character_profile,
     copywriter,
@@ -19,6 +19,7 @@ from app.agents import (
     skill_matcher,
     tools,
 )
+from app.agents import base as agent_base
 from app.agents import slots as agent_slots
 from app.domain.agent_skills import service as agent_skills_service
 from app.domain.errors import ProviderTemporaryFailure, ValidationFailed
@@ -1116,6 +1117,7 @@ def test_every_prompt_slot_is_reachable_from_some_agent_call() -> None:
             skill_matcher.SKILL_MATCH_SLOT,
             character_profile.CHARACTER_DESCRIBE_SLOT,
             character_profile.VOICE_MATCH_SLOT,
+            asset_breakdown.ASSET_BREAKDOWN_SLOT,
             blocking_director.BLOCKING_ROUTE_SLOT,
             blocking_director.BLOCKING_DERIVE_SLOT,
         },

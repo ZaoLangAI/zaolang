@@ -17239,7 +17239,7 @@
           "scripts"
         ],
         "summary": "Update Script Links",
-        "description": "Links characters/scene headings to reusable `Character`/`Scene`\nassets. Unlike every other route in this file, this is a plain\nrequest/response — it is a structural edit, not a content revision, so\nit never touches the SSE turn machinery (see `update_links`'s docstring).",
+        "description": "Links characters/scene headings/props to reusable character/scene/\nprop cards. Unlike every other route in this file, this is a plain\nrequest/response — it is a structural edit, not a content revision, so\nit never touches the SSE turn machinery (see `update_links`'s docstring).",
         "operationId": "update_script_links_v1_scripts__episode_id__links_patch",
         "parameters": [
           {
@@ -17368,6 +17368,148 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/{episode_id}:breakdown": {
+      "post": {
+        "tags": [
+          "scripts"
+        ],
+        "summary": "Script Breakdown",
+        "operationId": "script_breakdown",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScriptBreakdownResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/{episode_id}:breakdown-apply": {
+      "post": {
+        "tags": [
+          "scripts"
+        ],
+        "summary": "Script Breakdown Apply",
+        "operationId": "script_breakdown_apply",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptBreakdownApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScriptBreakdownApplyResponse"
+                }
               }
             }
           },
@@ -45477,6 +45619,470 @@
         ],
         "title": "ScriptBlock"
       },
+      "ScriptBreakdownApplyItem": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "character",
+              "scene",
+              "prop"
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "link",
+              "skip"
+            ],
+            "title": "Action"
+          },
+          "card_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Card Id"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Description",
+            "default": ""
+          },
+          "headings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "title": "Headings"
+          },
+          "age_stage": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "child",
+                  "teen",
+                  "youth",
+                  "adult",
+                  "middle_aged",
+                  "elderly"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Stage"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ancient",
+                  "republic",
+                  "1980s",
+                  "1990s",
+                  "contemporary",
+                  "near_future"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "lighting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dawn",
+                  "day",
+                  "dusk",
+                  "night_interior",
+                  "night_exterior",
+                  "candle",
+                  "neon",
+                  "overcast"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lighting"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "action"
+        ],
+        "title": "ScriptBreakdownApplyItem"
+      },
+      "ScriptBreakdownApplyRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptBreakdownApplyItem"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Items"
+          },
+          "generate": {
+            "$ref": "#/components/schemas/ScriptBreakdownGenerate"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "ScriptBreakdownApplyRequest"
+      },
+      "ScriptBreakdownApplyResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptBreakdownApplyResult"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "script": {
+            "$ref": "#/components/schemas/ScriptDocument"
+          },
+          "total_credits": {
+            "type": "integer",
+            "title": "Total Credits"
+          },
+          "available_credits": {
+            "type": "integer",
+            "title": "Available Credits"
+          },
+          "period_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Remaining"
+          },
+          "within_spend_limit": {
+            "type": "boolean",
+            "title": "Within Spend Limit"
+          },
+          "sufficient": {
+            "type": "boolean",
+            "title": "Sufficient"
+          },
+          "submitted": {
+            "type": "integer",
+            "title": "Submitted",
+            "default": 0
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "script",
+          "total_credits",
+          "available_credits",
+          "within_spend_limit",
+          "sufficient",
+          "dry_run"
+        ],
+        "title": "ScriptBreakdownApplyResponse"
+      },
+      "ScriptBreakdownApplyResult": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "character",
+              "scene",
+              "prop"
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "link",
+              "skip"
+            ],
+            "title": "Action"
+          },
+          "card_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Card Id"
+          },
+          "created": {
+            "type": "boolean",
+            "title": "Created",
+            "default": false
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "credits": {
+            "type": "integer",
+            "title": "Credits",
+            "default": 0
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "action"
+        ],
+        "title": "ScriptBreakdownApplyResult"
+      },
+      "ScriptBreakdownGenerate": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": false
+          },
+          "quality_tier": {
+            "$ref": "#/components/schemas/QualityTier",
+            "default": "standard"
+          }
+        },
+        "type": "object",
+        "title": "ScriptBreakdownGenerate",
+        "description": "First images for the cards this apply creates: a character's identity\nportrait, a scene's master plate, a prop's hero plate."
+      },
+      "ScriptBreakdownItem": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "character",
+              "scene",
+              "prop"
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "headings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Headings"
+          },
+          "age_stage": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "child",
+                  "teen",
+                  "youth",
+                  "adult",
+                  "middle_aged",
+                  "elderly"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Stage"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ancient",
+                  "republic",
+                  "1980s",
+                  "1990s",
+                  "contemporary",
+                  "near_future"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "lighting": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dawn",
+                  "day",
+                  "dusk",
+                  "night_interior",
+                  "night_exterior",
+                  "candle",
+                  "neon",
+                  "overcast"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lighting"
+          },
+          "linked_card_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Card Id"
+          },
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptBreakdownMatch"
+            },
+            "type": "array",
+            "title": "Matches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "name"
+        ],
+        "title": "ScriptBreakdownItem",
+        "description": "One proposed card. `headings`: a scene's headings set at this place,\nor the headings a prop appears in; empty for a character. Presets are\nonly set for the kind they belong to (`age_stage` character, `period` /\n`lighting` scene)."
+      },
+      "ScriptBreakdownMatch": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ScriptBreakdownMatch",
+        "description": "One of the caller's own cards with the proposal's name."
+      },
+      "ScriptBreakdownResponse": {
+        "properties": {
+          "characters": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptBreakdownItem"
+            },
+            "type": "array",
+            "title": "Characters"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptBreakdownItem"
+            },
+            "type": "array",
+            "title": "Scenes"
+          },
+          "props": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptBreakdownItem"
+            },
+            "type": "array",
+            "title": "Props"
+          },
+          "degraded": {
+            "type": "boolean",
+            "title": "Degraded",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "characters",
+          "scenes",
+          "props"
+        ],
+        "title": "ScriptBreakdownResponse"
+      },
       "ScriptCharacter": {
         "properties": {
           "name": {
@@ -45717,6 +46323,13 @@
             },
             "type": "array",
             "title": "Scenes"
+          },
+          "props": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptProp"
+            },
+            "type": "array",
+            "title": "Props"
           }
         },
         "type": "object",
@@ -45767,11 +46380,75 @@
             "type": "array",
             "maxItems": 40,
             "title": "Scenes"
+          },
+          "props": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptPropLinkUpdate"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "title": "Props"
           }
         },
         "type": "object",
         "title": "ScriptLinksUpdateRequest",
         "description": "A structural edit, not a content revision — never goes through the\nLLM turn machinery (no `AgentRun`, no new `EpisodeScriptTurn`). Matched\nby `name`/`heading` against the episode's current `script_json` rather\nthan by index, since either list can be reordered by a revision turn\nthat runs concurrently with a link update landing."
+      },
+      "ScriptProp": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "prop_ref_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prop Ref Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ScriptProp",
+        "description": "A story object (信物、凶器…) the asset breakdown found in the script\n(`POST /v1/scripts/{id}:breakdown-apply`). The model never writes props\nitself; `copywriter._carry_over_links` keeps them across revision turns."
+      },
+      "ScriptPropLinkUpdate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "prop_ref_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prop Ref Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ScriptPropLinkUpdate"
       },
       "ScriptRetryRequest": {
         "properties": {

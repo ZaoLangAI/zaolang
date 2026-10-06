@@ -1527,6 +1527,8 @@ SCRIPT_BLOCK_TYPES = ("scene", "action", "camera", "dialogue", "breakpoint")
 MAX_SCENES = 40
 MAX_BLOCKS_PER_SCENE = 60
 MAX_CHARACTERS = 20
+# Script props (道具) come only from the asset breakdown, never the model.
+MAX_PROPS = 40
 MAX_TITLE_LEN = 60
 MAX_TRAITS_LEN = 300
 MAX_HEADING_LEN = 80
@@ -1673,12 +1675,46 @@ def _sanitize_script(raw: Any) -> dict[str, Any] | None:
 
     if not scenes:
         return None
-    return {"title": title, "logline": logline, "characters": characters, "scenes": scenes}
+    return {
+        "title": title,
+        "logline": logline,
+        "characters": characters,
+        "scenes": scenes,
+        "props": sanitize_props(raw.get("props")),
+    }
+
+
+def sanitize_props(raw: Any) -> list[dict[str, Any]]:
+    """Bounds `script_json.props` — one entry per name, ≤ `MAX_PROPS`. Like
+    the character/scene links, `prop_ref_id` is kept as the caller sent it;
+    only `update_links` and the breakdown apply ever set it."""
+    props: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    if not isinstance(raw, list):
+        return props
+    for item in raw:
+        if len(props) >= MAX_PROPS:
+            break
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()[:MAX_TITLE_LEN]
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        ref = item.get("prop_ref_id")
+        props.append(
+            {
+                "name": name,
+                "description": str(item.get("description") or "").strip()[:MAX_TRAITS_LEN],
+                "prop_ref_id": str(ref) if ref else None,
+            }
+        )
+    return props
 
 
 def _carry_over_links(previous: dict[str, Any], updated: dict[str, Any]) -> None:
-    """Re-attaches `character_ref_id`/`ref_id` links from the pre-turn script
-    onto the post-turn one, matched by name/heading.
+    """Re-attaches `character_ref_id`/`ref_id`/`prop_ref_id` links from the
+    pre-turn script onto the post-turn one, matched by name/heading.
 
     A revision turn always returns the *entire* document (`script_json` is
     always the latest turn's script — see the `zaolang-editor-drama` skill's
@@ -1713,6 +1749,21 @@ def _carry_over_links(previous: dict[str, Any], updated: dict[str, Any]) -> None
             if ref:
                 scene["ref_id"] = ref
                 scene["variant_id"] = variant
+
+    # The model is never asked for props: a revision that echoes none keeps
+    # the breakdown's list whole; one that echoes them gets their links back.
+    previous_props = [item for item in previous.get("props") or [] if isinstance(item, dict)]
+    if not updated.get("props"):
+        updated["props"] = sanitize_props(previous_props)
+        return
+    prop_refs = {
+        str(item.get("name")): item.get("prop_ref_id")
+        for item in previous_props
+        if item.get("prop_ref_id")
+    }
+    for item in updated["props"]:
+        if isinstance(item, dict) and not item.get("prop_ref_id"):
+            item["prop_ref_id"] = prop_refs.get(str(item.get("name")))
 
 
 def stream_draft_script(
@@ -1757,6 +1808,7 @@ def stream_draft_script(
                 "logline": idea.strip()[:MAX_TEXT_LEN],
                 "characters": [],
                 "scenes": [],
+                "props": [],
             }
             if not summary:
                 summary = "剧本生成失败，请换一种方式描述你的创意后重试。"

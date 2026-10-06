@@ -26,6 +26,7 @@ import {
 } from './script-breakpoint';
 import { ScriptLinkPicker } from './script-link-picker';
 import { resolveBreakpointRefs, sceneImagePrompt } from './script-prompts';
+import { ScriptPropsSection } from './script-props-section';
 import type { BatchItemKind, BatchItemState } from './use-script-batch';
 
 function sceneCloserChip({
@@ -112,7 +113,8 @@ export function ScriptDocumentView({
   onLink?: (
     update:
       | { kind: 'character'; name: string; refId: string | null; variantId?: string | null }
-      | { kind: 'scene'; heading: string; refId: string | null; variantId?: string | null },
+      | { kind: 'scene'; heading: string; refId: string | null; variantId?: string | null }
+      | { kind: 'prop'; name: string; refId: string | null },
   ) => void;
   onSaveContent?: (next: ScriptDocument) => void;
   /** Drafts already linked to this episode, keyed by `breakpointKey`. */
@@ -312,6 +314,8 @@ export function ScriptDocumentView({
           </div>
         </div>
       ) : null}
+
+      <ScriptPropsSection document={document} onLink={onLink} libraryRevision={libraryRevision} />
 
       <div className="flex flex-col gap-5">
         {document.scenes.map((scene, sceneIndex) => {

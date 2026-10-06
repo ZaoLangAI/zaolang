@@ -46,6 +46,7 @@ import type {
   GenerationJob,
   Page,
   PromptEnhanceScriptSegment,
+  Prop,
   QualityTier,
   Scene,
 } from '@/lib/api/types';
@@ -79,6 +80,7 @@ import {
   useReferencePicks,
 } from '@/components/studio/reference-image-picker';
 import { defaultCharacterReferenceIds } from '@/lib/characters';
+import { defaultPropReferenceIds, propHeroAsset } from '@/lib/props';
 import { defaultSceneReferenceIds } from '@/lib/scenes';
 
 type Operation = 'text_to_video' | 'image_to_video' | 'video_to_video';
@@ -150,6 +152,7 @@ export function ScriptClipStudio({
         sceneId: null as string | null,
         characterLooks: {} as Record<string, string>,
         sceneVariantId: null as string | null,
+        propIds: [] as string[],
       };
     }
     return resolveBreakpointRefs(document, located.scene, located.blockIndex);
@@ -188,6 +191,10 @@ export function ScriptClipStudio({
   const [selectedReferenceSceneIds, setSelectedReferenceSceneIds] = useState<string[]>(() =>
     seedRefs.sceneId ? [seedRefs.sceneId] : [],
   );
+  // Seeded from the linked props this segment's text names.
+  const [selectedReferencePropIds, setSelectedReferencePropIds] = useState<string[]>(
+    () => seedRefs.propIds,
+  );
   // Which of each picked character's/scene's images to send (e.g. only the
   // 婚礼 outfit) — unset means the backend's default subset.
   // Seeded from the script's linked looks / scene variant.
@@ -196,6 +203,7 @@ export function ScriptClipStudio({
       Object.entries(seedRefs.characterLooks).map(([id, variantId]) => [id, { variantId }]),
     ),
   );
+  const propRefPicks = useReferencePicks();
   const sceneRefPicks = useReferencePicks(
     seedRefs.sceneId && seedRefs.sceneVariantId
       ? { [seedRefs.sceneId]: { variantId: seedRefs.sceneVariantId } }
@@ -336,6 +344,14 @@ export function ScriptClipStudio({
           : current,
     );
   const selectReferenceScene = (id: string) => setSelectedReferenceSceneIds(id ? [id] : []);
+  const toggleReferenceProp = (id: string) =>
+    setSelectedReferencePropIds((current) =>
+      current.includes(id)
+        ? current.filter((existing) => existing !== id)
+        : current.length < MAX_REFERENCE_SELECTION
+          ? [...current, id]
+          : current,
+    );
 
   const applyParams = (params: Record<string, unknown>) => {
     const aspectRatio = params.aspect_ratio;
@@ -382,8 +398,10 @@ export function ScriptClipStudio({
   const scenesResource = useResource<Scene[]>(
     sessionStatus === 'authenticated' ? '/v1/scenes' : null,
   );
+  const propsResource = useResource<Prop[]>(sessionStatus === 'authenticated' ? '/v1/props' : null);
   const characters = charactersResource.data ?? [];
   const scenes = scenesResource.data ?? [];
+  const propCards = propsResource.data ?? [];
 
   const {
     node: styleAndSkillPicker,
@@ -473,6 +491,7 @@ export function ScriptClipStudio({
       styleGalleryId: appliedStyleGalleryId ?? undefined,
       characterIds: selectedReferenceCharacterIds,
       sceneIds: selectedReferenceSceneIds,
+      propIds: selectedReferencePropIds,
       assetPresets: {
         character_ref_selection: characterRefPicks
           .selectionFor(selectedReferenceCharacterIds)
@@ -480,6 +499,9 @@ export function ScriptClipStudio({
         scene_ref_selection: sceneRefPicks
           .selectionFor(selectedReferenceSceneIds)
           .map(({ ownerId, ...pick }) => ({ scene_id: ownerId, ...pick })),
+        prop_ref_selection: propRefPicks
+          .selectionFor(selectedReferencePropIds)
+          .map(({ ownerId, ...pick }) => ({ prop_id: ownerId, ...pick })),
       },
       maxCredits: quote?.credits,
       draftTitle: located.scene.heading || script.title || null,
@@ -594,7 +616,61 @@ export function ScriptClipStudio({
         <Link href="/create/scenes" className="text-[11px] text-muted hover:text-text">
           {t('manageScenesLink')}
         </Link>
-        {selectedReferenceCharacterIds.length >= MAX_REFERENCE_SELECTION ? (
+
+        <p className="mt-1 text-xs text-muted">{t('referencePropsLabel')}</p>
+        {propCards.length > 0 ? (
+          <ul className="flex flex-col gap-1.5">
+            {propCards.map((prop) => {
+              const checked = selectedReferencePropIds.includes(prop.id);
+              const disabled =
+                !checked && selectedReferencePropIds.length >= MAX_REFERENCE_SELECTION;
+              const thumbnailUrl = propHeroAsset(prop)?.url;
+              return (
+                <li key={prop.id}>
+                  <label
+                    className={cn(
+                      'flex items-center gap-2.5 text-sm',
+                      disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={disabled}
+                      onChange={() => toggleReferenceProp(prop.id)}
+                      className="size-4 shrink-0 accent-[var(--primary)]"
+                    />
+                    <span className="relative size-7 shrink-0 overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
+                      {thumbnailUrl ? (
+                        <Image
+                          src={thumbnailUrl}
+                          alt=""
+                          fill
+                          sizes="28px"
+                          className="object-cover"
+                        />
+                      ) : null}
+                    </span>
+                    {prop.name}
+                  </label>
+                  {checked ? (
+                    <ReferenceImagePicker
+                      label={t('referencePickLabel', { name: prop.name })}
+                      variants={prop.variants ?? []}
+                      defaultAssetIds={defaultPropReferenceIds(prop)}
+                      value={propRefPicks.picks[prop.id]}
+                      onChange={(pick) => propRefPicks.set(prop.id, pick)}
+                    />
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="text-xs text-muted">{t('referencePropsEmpty')}</p>
+        )}
+        {selectedReferenceCharacterIds.length >= MAX_REFERENCE_SELECTION ||
+        selectedReferencePropIds.length >= MAX_REFERENCE_SELECTION ? (
           <p className="text-[11px] text-muted">{t('referenceLimitReached')}</p>
         ) : null}
       </div>

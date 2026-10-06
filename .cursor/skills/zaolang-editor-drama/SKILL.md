@@ -22,6 +22,7 @@ Not here → `zaolang-canvas` (`/v1/drama-series/{id}/canvas`), `zaolang-blockin
 | `back/app/agents/editor_planner.py` | read-only AI edit planner, streamed via `stream_plan_timeline` |
 | `back/app/domain/script_writing/service.py` | 文案创作: `prepare_new_script`/`prepare_turn`, streamed draft/revise, `delete_script`, links |
 | `back/app/api/v1/scripts.py` | `/v1/scripts` — SSE model turns + JSON edits, `POST /scripts/extract` |
+| `back/app/api/v1/script_breakdown.py` | `POST /v1/scripts/{id}:breakdown` / `:breakdown-apply` — 剧本拆解建卡 (AC-9, domain `script_writing/breakdown.py`) |
 | `back/app/domain/shortform/service.py` | delivery profiles from config (`catalog`, `resolve_profile`, `assert_params_consistent`) + `PublicationIntent` writes |
 | `back/app/api/v1/shortform.py` | `GET /v1/shortform/profiles` (catalogue for the export panel) |
 | `back/app/api/v1/distribution.py` | platform OAuth links, `publications:fanout`, work/series metrics (logic in `back/app/domain/distribution/`) |
@@ -69,7 +70,7 @@ Not here → `zaolang-canvas` (`/v1/drama-series/{id}/canvas`), `zaolang-blockin
 ```bash
 cd back && conda run -n zaolang pytest tests/unit/test_editor_commands.py tests/integration/test_editor.py tests/integration/test_editor_mcp.py tests/integration/test_editor_plans_and_races.py tests/integration/test_editor_export_provenance.py
 cd back && conda run -n zaolang pytest tests/integration/test_series_episodes.py tests/integration/test_series_trash.py tests/unit/test_episode_preview.py tests/integration/test_drafts.py tests/integration/test_assets_mine.py
-cd back && conda run -n zaolang pytest tests/unit/test_script_writing_agent.py tests/unit/test_scripts_streaming.py tests/unit/test_script_source_extract.py tests/integration/test_scripts.py tests/unit/test_prompt_enhance.py tests/integration/test_prompts_api.py
+cd back && conda run -n zaolang pytest tests/unit/test_script_writing_agent.py tests/unit/test_scripts_streaming.py tests/unit/test_script_source_extract.py tests/integration/test_scripts.py tests/unit/test_asset_breakdown.py tests/integration/test_script_breakdown.py tests/unit/test_prompt_enhance.py tests/integration/test_prompts_api.py
 cd back && conda run -n zaolang pytest tests/unit/test_shortform_rules.py tests/integration/test_shortform.py tests/unit/test_distribution.py tests/integration/test_distribution.py
 cd front && npx vitest run src/features/editor src/features/script src/features/drama-dashboard
 make openapi-check && make messages

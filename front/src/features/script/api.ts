@@ -30,11 +30,23 @@ export interface ScriptCharacter {
   look_id?: string | null;
 }
 
+/** A story object the asset breakdown found (`…:breakdown-apply`); never
+ * written by a model turn. */
+export interface ScriptProp {
+  name: string;
+  description: string;
+  /** Links this prop to a reusable prop card — set only via
+   * `updateScriptLinks` or the breakdown apply. */
+  prop_ref_id: string | null;
+}
+
 export interface ScriptDocument {
   title: string;
   logline: string;
   characters: ScriptCharacter[];
   scenes: ScriptScene[];
+  /** Absent on documents saved before props existed. */
+  props?: ScriptProp[];
 }
 
 export interface ScriptTurnSummary {
@@ -122,7 +134,7 @@ export function getTurnSnapshot(episodeId: string, turnId: string) {
 }
 
 /**
- * Links a character/scene heading to a reusable `Character`/`Scene` asset.
+ * Links a character/scene heading/prop to a reusable character/scene/prop card.
  *
  * Deliberately a plain PATCH, not a chat turn: this is a structural edit the
  * user makes by picking from a list, not a content revision described in
@@ -135,11 +147,14 @@ export function updateScriptLinks(
   input: {
     characters?: { name: string; character_ref_id: string | null; look_id?: string | null }[];
     scenes?: { heading: string; ref_id: string | null; variant_id?: string | null }[];
+    /** A name the script has no prop for yet is appended with its link. */
+    props?: { name: string; prop_ref_id: string | null }[];
   },
 ) {
   return api.patch<ScriptDocument>(`/v1/scripts/${episodeId}/links`, {
     characters: input.characters ?? [],
     scenes: input.scenes ?? [],
+    props: input.props ?? [],
   });
 }
 

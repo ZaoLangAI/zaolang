@@ -164,6 +164,25 @@ describe('pendingVideos', () => {
     expect(pending[0]?.prompt).toContain('苏晴');
   });
 
+  it('queues a segment whose only ref is a linked prop it names', () => {
+    const doc = document({
+      characters: [],
+      props: [{ name: '玉佩', description: '', prop_ref_id: 'sk_jade' }],
+      scenes: [
+        scene('公寓客厅', {
+          blocks: [
+            { type: 'action', character: null, text: '桌上放着玉佩' },
+            { type: 'breakpoint', character: null, text: 'cut' },
+          ],
+        }),
+        scene('走廊'),
+      ],
+    });
+    const pending = pendingVideos(doc, {});
+    expect(pending.map((item) => [item.key, item.propIds])).toEqual([['公寓客厅#0', ['sk_jade']]]);
+    expect(unreferencedVideoKeys(doc, {})).toEqual(['走廊#0']);
+  });
+
   it('does not re-queue an in-flight unbound key', () => {
     const doc = document({
       scenes: [scene('公寓客厅', { ref_id: 'sk_apt' })],

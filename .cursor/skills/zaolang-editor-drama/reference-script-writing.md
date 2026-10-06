@@ -17,7 +17,9 @@
 | `front/src/features/script/script-breakpoint.ts` | breakpoint keys, locations, hrefs, video index (`orderedBreakpointKeys`, `resolveBreakpointHref`…) |
 | `front/src/features/script/script-prompts.ts` | every prompt helper (`composeClipPrompt`, `breakpointSegmentPrompt`, `characterImagePrompt`…) |
 | `front/src/features/script/script-clip-studio.tsx` | one-cut video studio at `/create/script/{episodeId}/clip?key=` |
-| `front/src/features/script/script-link-picker.tsx` | 关联角色卡/场景卡 picker → `PATCH /v1/scripts/{id}/links`; 新建…卡 / 去创作 footer |
+| `front/src/features/script/script-link-picker.tsx` | 关联角色卡/场景卡/道具卡 picker (`kind: 'character' \| 'scene' \| 'prop'`) → `PATCH /v1/scripts/{id}/links`; 新建…卡 / 去创作 footer; `script-props-section.tsx` renders the script's props with it |
+| `back/app/domain/script_writing/breakdown.py` | 剧本拆解建卡 (AC-9): `propose`, `plan_apply`, `write_cards`, `first_image_params`; routes `back/app/api/v1/script_breakdown.py` |
+| `front/src/features/script/asset-breakdown-dialog.tsx` | 角色 / 场景 / 道具 columns, per row 新建 / 关联已有 / 忽略, live `quote:batch` total; state in `asset-breakdown-model.ts` (pure reducer); entries: the toolbar's 拆解建卡 and 「从剧本导入」 (`script-import-button.tsx`, picks an episode first) on the three card libraries |
 | `front/src/features/script/batch-plan.ts` | pure pending/bound computations (`pendingCharacters`, `pendingVideos`, `pendingDialogueLines`…) |
 | `front/src/features/script/use-script-batch.ts` | batch runner, `BatchKind` characters/scenes/videos/audio, `quoteForBatch`, `submitJob`/`pollJob` (reused by 白膜) |
 | `front/src/features/script/script-batch-dialog.tsx` | batch params + live quote before submit |
@@ -34,6 +36,7 @@
 4. `script_writing.service._owned_episode` is really the accessible check (owner or active collaborator).
 5. `delete_script`: 422 if `canonical_work_id`; runs `purge_unpublished_editor_graph`; never hard-deletes the `Series`. When the owner deletes the last episode of a still-uncurated shell (empty `target_platforms_json`, never through the series form), the series goes to the recycle bin via `trash_drama_series`. Dashboard series, already-trashed series and co-creator deletes leave the series untouched.
 6. Extracted upload bytes are never stored as an `Asset`; the text lands in `source_idea`.
+6b. `script_json.props` (`ScriptProp{name, description, prop_ref_id}`, ≤ `copywriter.MAX_PROPS` = 40, one per name via `copywriter.sanitize_props`) is never written by a model turn: only the breakdown apply and `PATCH …/links` (`props: [{name, prop_ref_id}]`, a linked name the script lacks is appended — `service.link_props`) set it. `_carry_over_links` keeps the whole list when a revision echoes none, and re-attaches `prop_ref_id` by name when it does.
 
 ## Streaming
 
@@ -51,6 +54,13 @@
 15. Clip studio polish sends `script_segment` (heading + ≤60 blocks) to `POST /v1/generation/prompts/enhance`; the block union rejects `breakpoint` (a new cut would shift keys and orphan bound drafts). Two rounds: response `questions`, next request `question_answers` (≤8). Accept patches only that cut's block texts.
 16. Submit composes `composeClipPrompt` into `params.prompt` and stores `link_episode_id`, `link_breakpoint_key`, `clip_user_prompt` on the draft.
 17. Link picker writes `character_ref_id`/`ref_id` against the existing `/v1/characters`/`/v1/scenes` library. With nothing linked its 新建角色卡 / 新建场景卡 (`onCreate` in `script-document-view.tsx`) creates a text-only card from the script's character traits / scene heading + `scene` blocks and links it via `PATCH /v1/scripts/{id}/links`; once linked the footer offers 去创作 (the card's workspace). There is no image-studio jump-out or 返回文案创作 link-back any more (AC-8).
+
+## 剧本拆解建卡 (AC-9)
+
+21. `POST /v1/scripts/{id}:breakdown` runs the `copy` slot `asset_breakdown` (`back/app/agents/asset_breakdown.py`) and pairs each proposal with the **caller's** same-named cards (a scene also matches its headings' place names); `linked_card_id` only when the caller owns the link. Writes nothing but the `AgentRun`. `asset_breakdown.sanitize` binds the output to the script — characters are exactly the script's, a heading belongs to one place, presets are closed-vocabulary — and fills gaps from the script; the script's registered props stay listed under their own names (so their links match), and a degraded run (`degraded: true`) is the script's characters, places and registered props only.
+22. `POST /v1/scripts/{id}:breakdown-apply {items[create|link|skip], generate{enabled, quality_tier}, dry_run=true}`: `plan_apply` validates every row (422 per `items.{i}.*`: unknown character, missing / foreign / doubly-claimed heading, link without card, a character create whose name the caller's library already has; 404 for a card the caller cannot use) and prices one first image per create (`quote_for`, as `quote:batch`). A submit refuses up front on balance / monthly cap (`InsufficientCredits` / `SpendLimitExceeded`), counts one `generation_submit` hit per image, creates the cards (DRAFT / PRIVATE; `age_stage` on the default look, `period` / `lighting` on the default scene variant, `period` on a prop), writes all links in one `update_links` call, then submits each image in a savepoint (portrait `character_portrait`, scene master `target_variant_id`, prop hero) with key `{key[:100]}:{sha1(kind:name)[:12]}` — a refused image keeps its card. Non-dry-run outcomes are remembered under `Idempotency-Key` in the same transaction (`hash_request`/`find_replay`/`remember`); dry runs are never remembered.
+23. Both routes: `script_studio_write`, `script_studio_enabled`, owner or active co-creator; cards are always the caller's (same rule as a hand-picked link).
+24. `resolveBreakpointRefs` returns `propIds` — linked props whose name appears in the segment's text, ≤4 — sent as `prop_ids` by batch videos (a prop alone makes a segment generatable) and seeded into the clip studio's prop references (`prop_ref_selection`).
 
 ## Batch generation
 

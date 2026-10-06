@@ -3998,8 +3998,8 @@ export interface paths {
         head?: never;
         /**
          * Update Script Links
-         * @description Links characters/scene headings to reusable `Character`/`Scene`
-         *     assets. Unlike every other route in this file, this is a plain
+         * @description Links characters/scene headings/props to reusable character/scene/
+         *     prop cards. Unlike every other route in this file, this is a plain
          *     request/response — it is a structural edit, not a content revision, so
          *     it never touches the SSE turn machinery (see `update_links`'s docstring).
          */
@@ -4017,6 +4017,40 @@ export interface paths {
         put?: never;
         /** Create Turn */
         post: operations["create_turn_v1_scripts__episode_id__turns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}:breakdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Script Breakdown */
+        post: operations["script_breakdown"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}:breakdown-apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Script Breakdown Apply */
+        post: operations["script_breakdown_apply"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13601,6 +13635,172 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** ScriptBreakdownApplyItem */
+        ScriptBreakdownApplyItem: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "character" | "scene" | "prop";
+            /** Name */
+            name: string;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "create" | "link" | "skip";
+            /** Card Id */
+            card_id?: string | null;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Headings */
+            headings?: string[];
+            /** Age Stage */
+            age_stage?: ("child" | "teen" | "youth" | "adult" | "middle_aged" | "elderly") | null;
+            /** Period */
+            period?: ("ancient" | "republic" | "1980s" | "1990s" | "contemporary" | "near_future") | null;
+            /** Lighting */
+            lighting?: ("dawn" | "day" | "dusk" | "night_interior" | "night_exterior" | "candle" | "neon" | "overcast") | null;
+        };
+        /** ScriptBreakdownApplyRequest */
+        ScriptBreakdownApplyRequest: {
+            /** Items */
+            items?: components["schemas"]["ScriptBreakdownApplyItem"][];
+            generate?: components["schemas"]["ScriptBreakdownGenerate"];
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+        };
+        /** ScriptBreakdownApplyResponse */
+        ScriptBreakdownApplyResponse: {
+            /** Items */
+            items: components["schemas"]["ScriptBreakdownApplyResult"][];
+            script: components["schemas"]["ScriptDocument"];
+            /** Total Credits */
+            total_credits: number;
+            /** Available Credits */
+            available_credits: number;
+            /** Period Remaining */
+            period_remaining?: number | null;
+            /** Within Spend Limit */
+            within_spend_limit: boolean;
+            /** Sufficient */
+            sufficient: boolean;
+            /**
+             * Submitted
+             * @default 0
+             */
+            submitted: number;
+            /** Dry Run */
+            dry_run: boolean;
+        };
+        /** ScriptBreakdownApplyResult */
+        ScriptBreakdownApplyResult: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "character" | "scene" | "prop";
+            /** Name */
+            name: string;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "create" | "link" | "skip";
+            /** Card Id */
+            card_id?: string | null;
+            /**
+             * Created
+             * @default false
+             */
+            created: boolean;
+            /** Job Id */
+            job_id?: string | null;
+            /**
+             * Credits
+             * @default 0
+             */
+            credits: number;
+            /** Error */
+            error?: string | null;
+        };
+        /**
+         * ScriptBreakdownGenerate
+         * @description First images for the cards this apply creates: a character's identity
+         *     portrait, a scene's master plate, a prop's hero plate.
+         */
+        ScriptBreakdownGenerate: {
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /** @default standard */
+            quality_tier: components["schemas"]["QualityTier"];
+        };
+        /**
+         * ScriptBreakdownItem
+         * @description One proposed card. `headings`: a scene's headings set at this place,
+         *     or the headings a prop appears in; empty for a character. Presets are
+         *     only set for the kind they belong to (`age_stage` character, `period` /
+         *     `lighting` scene).
+         */
+        ScriptBreakdownItem: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "character" | "scene" | "prop";
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Headings */
+            headings?: string[];
+            /** Age Stage */
+            age_stage?: ("child" | "teen" | "youth" | "adult" | "middle_aged" | "elderly") | null;
+            /** Period */
+            period?: ("ancient" | "republic" | "1980s" | "1990s" | "contemporary" | "near_future") | null;
+            /** Lighting */
+            lighting?: ("dawn" | "day" | "dusk" | "night_interior" | "night_exterior" | "candle" | "neon" | "overcast") | null;
+            /** Linked Card Id */
+            linked_card_id?: string | null;
+            /** Matches */
+            matches?: components["schemas"]["ScriptBreakdownMatch"][];
+        };
+        /**
+         * ScriptBreakdownMatch
+         * @description One of the caller's own cards with the proposal's name.
+         */
+        ScriptBreakdownMatch: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** ScriptBreakdownResponse */
+        ScriptBreakdownResponse: {
+            /** Characters */
+            characters: components["schemas"]["ScriptBreakdownItem"][];
+            /** Scenes */
+            scenes: components["schemas"]["ScriptBreakdownItem"][];
+            /** Props */
+            props: components["schemas"]["ScriptBreakdownItem"][];
+            /**
+             * Degraded
+             * @default false
+             */
+            degraded: boolean;
+        };
         /** ScriptCharacter */
         ScriptCharacter: {
             /** Name */
@@ -13699,6 +13899,8 @@ export interface components {
             characters?: components["schemas"]["ScriptCharacter"][];
             /** Scenes */
             scenes?: components["schemas"]["ScriptScene"][];
+            /** Props */
+            props?: components["schemas"]["ScriptProp"][];
         };
         /** ScriptExtractResponse */
         ScriptExtractResponse: {
@@ -13724,6 +13926,32 @@ export interface components {
             characters?: components["schemas"]["ScriptCharacterLinkUpdate"][];
             /** Scenes */
             scenes?: components["schemas"]["ScriptSceneLinkUpdate"][];
+            /** Props */
+            props?: components["schemas"]["ScriptPropLinkUpdate"][];
+        };
+        /**
+         * ScriptProp
+         * @description A story object (信物、凶器…) the asset breakdown found in the script
+         *     (`POST /v1/scripts/{id}:breakdown-apply`). The model never writes props
+         *     itself; `copywriter._carry_over_links` keeps them across revision turns.
+         */
+        ScriptProp: {
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Prop Ref Id */
+            prop_ref_id?: string | null;
+        };
+        /** ScriptPropLinkUpdate */
+        ScriptPropLinkUpdate: {
+            /** Name */
+            name: string;
+            /** Prop Ref Id */
+            prop_ref_id?: string | null;
         };
         /**
          * ScriptRetryRequest
@@ -24468,6 +24696,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    script_breakdown: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScriptBreakdownResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    script_breakdown_apply: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptBreakdownApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScriptBreakdownApplyResponse"];
                 };
             };
             /** @description Validation Error */

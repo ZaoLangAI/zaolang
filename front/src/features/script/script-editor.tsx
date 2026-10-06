@@ -33,6 +33,7 @@ import {
   unreferencedVideoKeys,
 } from './batch-plan';
 import { clearCreateStream, startRetry, useCreateStream } from './create-stream-store';
+import { AssetBreakdownDialog } from './asset-breakdown-dialog';
 import { ScriptBatchDialog } from './script-batch-dialog';
 import { dialogueSpeakers } from './voice-plan';
 import { ScriptBatchToolbar } from './script-batch-toolbar';
@@ -92,6 +93,7 @@ export function ScriptEditor({ episodeId }: { episodeId: string }) {
   const [retrySkillIds, setRetrySkillIds] = useState<string[]>([]);
   const [linkedDrafts, setLinkedDrafts] = useState<Draft[]>([]);
   const [libraryRevision, setLibraryRevision] = useState(0);
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [batchKind, setBatchKind] = useState<BatchKind | null>(null);
   const [retryIdeaSeeded, setRetryIdeaSeeded] = useState(false);
   const stream = useScriptTurnStream();
@@ -218,7 +220,8 @@ export function ScriptEditor({ episodeId }: { episodeId: string }) {
     async (
       update:
         | { kind: 'character'; name: string; refId: string | null; variantId?: string | null }
-        | { kind: 'scene'; heading: string; refId: string | null; variantId?: string | null },
+        | { kind: 'scene'; heading: string; refId: string | null; variantId?: string | null }
+        | { kind: 'prop'; name: string; refId: string | null },
     ) => {
       try {
         const script = await scriptApi.updateScriptLinks(episodeId, {
@@ -242,6 +245,7 @@ export function ScriptEditor({ episodeId }: { episodeId: string }) {
                   },
                 ]
               : [],
+          props: update.kind === 'prop' ? [{ name: update.name, prop_ref_id: update.refId }] : [],
         });
         setDetail((current) => (current ? { ...current, script } : current));
         setViewedScript(script);
@@ -255,6 +259,7 @@ export function ScriptEditor({ episodeId }: { episodeId: string }) {
   const bumpLibrary = useCallback(() => {
     invalidateResource('/v1/characters');
     invalidateResource('/v1/scenes');
+    invalidateResource('/v1/props');
     setLibraryRevision((current) => current + 1);
     refetchCharacterLibrary();
   }, [refetchCharacterLibrary]);
@@ -571,6 +576,7 @@ export function ScriptEditor({ episodeId }: { episodeId: string }) {
               progress={batchProgress}
               onOpen={setBatchKind}
               onResume={() => void batch.resumeQueue()}
+              onBreakdown={() => setBreakdownOpen(true)}
             />
           ) : null}
           {documentStreaming ? (
@@ -591,6 +597,19 @@ export function ScriptEditor({ episodeId }: { episodeId: string }) {
           )}
         </div>
       </div>
+      {breakdownOpen ? (
+        <AssetBreakdownDialog
+          episodeId={episodeId}
+          onClose={() => setBreakdownOpen(false)}
+          onApplied={(result) => {
+            // The server always fills the lists the generated type marks optional.
+            const script = result.script as ScriptDocument;
+            setDetail((current) => (current ? { ...current, script } : current));
+            setViewedScript(script);
+            bumpLibrary();
+          }}
+        />
+      ) : null}
       <ScriptBatchDialog
         key={batchKind ?? 'closed'}
         kind={batchKind}

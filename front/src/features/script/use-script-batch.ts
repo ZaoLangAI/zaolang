@@ -218,6 +218,7 @@ export async function submitJob(input: {
   targetSceneId?: string | null;
   characterIds?: string[];
   sceneIds?: string[];
+  propIds?: string[];
   videoOptions?: {
     resolution?: '480p' | '720p' | '1080p' | '2K';
     reference_mode: 'input_references' | 'frame_images';
@@ -271,6 +272,7 @@ export async function submitJob(input: {
         video_options: input.videoOptions,
         character_ids: input.characterIds ?? [],
         scene_ids: input.sceneIds ?? [],
+        prop_ids: input.propIds ?? [],
         skill_ids: [],
         style_gallery_id: null,
         asset_kind: input.assetKind ?? 'general',
@@ -504,6 +506,7 @@ export function useScriptBatch({
           draftId: existing?.draftId,
           characterIds: video.characterIds,
           sceneIds: video.sceneId ? [video.sceneId] : [],
+          propIds: video.propIds,
           // The script's linked look / scene variant for this segment.
           assetPresets: video.selections,
           videoOptions: {
