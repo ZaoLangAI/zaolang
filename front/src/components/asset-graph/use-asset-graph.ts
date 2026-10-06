@@ -27,6 +27,8 @@ export interface AssetGraphActions {
   upload: (variantId: string, file: File, entryType: AssetEntryType) => Promise<unknown>;
   updateEntry: (id: string, body: Record<string, unknown>) => Promise<unknown>;
   deleteEntry: (id: string) => Promise<true | undefined>;
+  /** Several entries, one refresh — 清空候选 on a 创作 slot. */
+  deleteEntries: (ids: string[]) => Promise<true | undefined>;
   approveEntry: (id: string) => Promise<unknown>;
   anchorEntry: (id: string) => Promise<unknown>;
   createEdge: (body: Record<string, unknown>) => Promise<AssetEdge | undefined>;
@@ -102,6 +104,11 @@ export function useAssetGraph(kind: CardKind, initial: AssetGraph) {
     deleteEntry: (id) =>
       run(async () => {
         await api.delete(`${base}/entries/${id}`);
+        return true as const;
+      }),
+    deleteEntries: (ids) =>
+      run(async () => {
+        for (const id of ids) await api.delete(`${base}/entries/${id}`);
         return true as const;
       }),
     approveEntry: (id) => run(() => api.post(`${base}/entries/${id}:approve`)),

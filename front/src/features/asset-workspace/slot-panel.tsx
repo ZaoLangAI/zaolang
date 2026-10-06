@@ -6,8 +6,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { CardKind } from '@/components/library/entry-actions';
 import { ChipGroup } from '@/features/image-assets/chip-group';
-import { Button } from '@/components/ui/button';
+import { Button, IconButton } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Select, TextArea } from '@/components/ui/field';
+import { IconTrash } from '@/components/ui/icons';
 import { Badge, ErrorNotice } from '@/components/ui/primitives';
 import {
   CHARACTER_EXPRESSIONS,
@@ -284,6 +286,7 @@ export function SlotPanel({
         candidates={state.candidates}
         wide={slot.kind === 'panorama'}
         onApprove={(entry) => void actions.approveEntry(entry.id)}
+        onDelete={(entries) => void actions.deleteEntries(entries.map((e) => e.id))}
       />
 
       {slot.kind === 'panorama' ? (
@@ -420,14 +423,20 @@ function SlotImages({
   candidates,
   wide = false,
   onApprove,
+  onDelete,
 }: {
   approved: AssetEntry | null;
   candidates: AssetEntry[];
   /** A 2:1 panorama: shown whole rather than cropped. */
   wide?: boolean;
   onApprove: (entry: AssetEntry) => void;
+  /** Candidates are never pruned by the system (P2-1): the owner removes
+   * one, or clears the slot after a confirmation. */
+  onDelete: (entries: AssetEntry[]) => void;
 }) {
   const t = useTranslations('assetWorkspace');
+  const tVariants = useTranslations('assetVariants');
+  const [clearing, setClearing] = useState(false);
   if (!approved && !candidates.length) return null;
   return (
     <div className="flex flex-col gap-2">
@@ -443,7 +452,19 @@ function SlotImages({
       ) : null}
       {candidates.length ? (
         <>
-          <p className="text-xs text-muted">{t('candidatesHint', { count: candidates.length })}</p>
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-xs text-muted">
+              {t('candidatesHint', { count: candidates.length })}
+            </p>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="shrink-0 text-danger"
+              onClick={() => setClearing(true)}
+            >
+              {tVariants('clearCandidates', { count: candidates.length })}
+            </Button>
+          </div>
           <ul className="grid grid-cols-3 gap-2">
             {candidates.map((entry) => (
               <li key={entry.id} className="flex flex-col gap-1">
@@ -463,12 +484,39 @@ function SlotImages({
                     />
                   ) : null}
                 </div>
-                <Button size="sm" variant="secondary" onClick={() => onApprove(entry)}>
-                  {t('approve')}
-                </Button>
+                <div className="flex gap-1">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="flex-1"
+                    onClick={() => onApprove(entry)}
+                  >
+                    {t('approve')}
+                  </Button>
+                  <IconButton
+                    size="sm"
+                    variant="danger"
+                    label={tVariants('removeEntry')}
+                    onClick={() => onDelete([entry])}
+                  >
+                    <IconTrash className="size-4" />
+                  </IconButton>
+                </div>
               </li>
             ))}
           </ul>
+          <ConfirmDialog
+            open={clearing}
+            onClose={() => setClearing(false)}
+            title={tVariants('clearCandidatesTitle', { count: candidates.length })}
+            description={tVariants('clearCandidatesHint')}
+            confirmLabel={tVariants('clearCandidatesConfirm')}
+            cancelLabel={tVariants('cancel')}
+            onConfirm={() => {
+              onDelete(candidates);
+              setClearing(false);
+            }}
+          />
         </>
       ) : null}
     </div>
