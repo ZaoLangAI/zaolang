@@ -33,6 +33,8 @@ enum NotificationGroup {
 enum NotificationDestination: Equatable {
     case work(workID: String)
     case job(jobID: String)
+    /// An image job's card workspace (`AssetJobLink`).
+    case assetCard(AssetJobLink)
     case profile(handle: String)
     case learn(postID: String)
     case publish(draftID: String)
@@ -166,6 +168,7 @@ extension NotificationResponse {
         case "work":
             return targetID.map { .work(workID: $0) }
         case "generation_job":
+            if let link = AssetJobLink(field: { payload.string($0) }) { return .assetCard(link) }
             return targetID.map { .job(jobID: $0) }
         case "learn_post":
             return targetID.map { .learn(postID: $0) }

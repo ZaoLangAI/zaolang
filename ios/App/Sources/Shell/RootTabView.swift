@@ -233,6 +233,10 @@ struct RootTabView: View {
                 onOpenPublish: { draftID in
                     router.selectTab(.create)
                     router.createPath.append(CreateRoute.publish(draftID: draftID))
+                },
+                onOpenAssetCard: { link in
+                    router.selectTab(.create)
+                    router.createPath.append(link.route)
                 }
             )
         case .billing:
