@@ -127,6 +127,18 @@ class ValidationFailed(DomainError):
     default_message = "请求参数不合法。"
 
 
+class ImageAssetKindRequired(DomainError):
+    """A consumer image job must be a library asset (character/scene/prop).
+
+    General and cover image generation were retired with the image studio;
+    the canvas Agent still submits general images through the domain.
+    """
+
+    code = "IMAGE_ASSET_KIND_REQUIRED"
+    http_status = 422
+    default_message = "通用图片生成已下线，请在角色、场景或道具创作中生成。"
+
+
 class Conflict(DomainError):
     code = "CONFLICT"
     http_status = 409

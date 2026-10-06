@@ -33,7 +33,8 @@ def _succeeded_preview_job(
         user_id=author.id,
         operation=Operation.TEXT_TO_IMAGE,
         quality_tier=QualityTier.PREVIEW,
-        params={"prompt": "雨后的东京街头", "aspect_ratio": "16:9"},
+        # A general image can no longer be promoted at the API (AC-8).
+        params={"prompt": "雨后的东京街头", "aspect_ratio": "16:9", "asset_kind": "scene"},
         idempotency_key=new_id("idk"),
         draft_id=draft_id,
     )
@@ -171,7 +172,7 @@ def test_promoting_with_insufficient_credits_is_refused(
         user_id=author.id,
         operation=Operation.TEXT_TO_IMAGE,
         quality_tier=QualityTier.PREVIEW,
-        params={"prompt": "雨后的东京街头", "aspect_ratio": "16:9"},
+        params={"prompt": "雨后的东京街头", "aspect_ratio": "16:9", "asset_kind": "scene"},
         idempotency_key=new_id("idk"),
     )
     pipeline.run_generation_pipeline(db, result.job.id)

@@ -53,7 +53,12 @@ def test_a_batch_quote_is_an_exact_sum_checked_against_balance_and_cap(
     credits.grant(db, author.id, 1_000, idempotency_key=f"grant:{author.id}")
     body = {
         "items": [
-            {"operation": "text_to_image", "quality_tier": "standard", "count": 3},
+            {
+                "operation": "text_to_image",
+                "quality_tier": "standard",
+                "asset_kind": "scene",
+                "count": 3,
+            },
             {
                 "operation": "text_to_video",
                 "quality_tier": "standard",

@@ -146,6 +146,7 @@ def test_submitting_a_job_persists_style_gallery_id(
             "params": {
                 "prompt": "海边的黄昏",
                 "aspect_ratio": "16:9",
+                "asset_kind": "scene",
                 "style_gallery_id": entry_id,
             },
         },

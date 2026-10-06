@@ -71,7 +71,7 @@ def test_paid_work_hides_params_until_unlocked(
         json={
             "operation": "text_to_image",
             "quality_tier": "standard",
-            "params": {"prompt": "二创"},
+            "params": {"prompt": "二创", "asset_kind": "scene"},
             "source_work_id": work.id,
         },
         headers={**auth_header(remixer), "Idempotency-Key": new_id("idk")},

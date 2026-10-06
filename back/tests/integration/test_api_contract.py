@@ -185,7 +185,7 @@ def test_quote_is_returned_before_any_credits_move(
     before = client.get("/v1/credits/balance", headers=auth_header(author)).json()
     quote = client.post(
         "/v1/generation-jobs/quote",
-        json={"operation": "text_to_image", "quality_tier": "standard"},
+        json={"operation": "text_to_image", "quality_tier": "standard", "asset_kind": "scene"},
         headers=auth_header(author),
     )
     after = client.get("/v1/credits/balance", headers=auth_header(author)).json()
