@@ -101,23 +101,32 @@ export function ThemeProvider({
   const systemPrefersDark = useSystemPrefersDark();
 
   const resolved = resolveTheme(preference, systemPrefersDark);
-  const hasMountedRef = useRef(false);
+  const appliedThemeRef = useRef<ResolvedTheme | null>(null);
 
   useEffect(() => {
     // 首次挂载时 `<html>` 已经是服务端渲染好的目标主题，直接落地即可，
-    // 不需要（也不应该）对着同一个状态放一次转场动画。
-    if (!hasMountedRef.current) {
-      hasMountedRef.current = true;
+    // 不需要（也不应该）对着同一个状态放一次转场动画。按"上次落地的主题"
+    // 而不是"是否挂载过"来判断：StrictMode 下 effect 会在挂载后重跑一次，
+    // 只切换 reduceMotion 也会重跑，这些情况主题都没变，同样不该放转场。
+    if (appliedThemeRef.current === null || appliedThemeRef.current === resolved) {
+      appliedThemeRef.current = resolved;
       applyToDocument(resolved);
       return;
     }
+    appliedThemeRef.current = resolved;
 
     if (shouldSkipViewTransition(reduceMotion)) {
       applyToDocument(resolved);
       return;
     }
 
-    document.startViewTransition(() => applyToDocument(resolved));
+    // 上一次转场还没结束时再开一次，浏览器会跳过前一次（它的更新回调照常执行，
+    // 最终主题仍以最后一次为准），但被跳过的那次 `ready` / `updateCallbackDone`
+    // 会以 `InvalidStateError: Transition was skipped` reject。没人 await 它们，
+    // 不接住就会变成未处理的 rejection，所以这里显式吞掉。
+    const transition = document.startViewTransition(() => applyToDocument(resolved));
+    transition.ready.catch(() => {});
+    transition.updateCallbackDone.catch(() => {});
   }, [resolved, reduceMotion]);
 
   useEffect(() => {
