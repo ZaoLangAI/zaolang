@@ -274,7 +274,7 @@ private struct DraftRow: View {
                         Text(draft.displayTitle ?? L10n.t("createPage.untitledDraft"))
                             .font(.subheadline.weight(.medium))
                             .lineLimit(1)
-                        Text(draft.isRemix ? L10n.t("createPage.modeRemixTitle") : L10n.t("createPage.modeTextToVideoTitle"))
+                        Text(draft.isRemix ? L10n.t("work.remix") : L10n.t("publishPage.operation.text_to_video"))
                             .font(.caption)
                             .foregroundStyle(Color.zl.textMuted)
                     }

@@ -4154,6 +4154,12 @@
     "generating": "已提交，完成后出现在候选里。",
     "generateFailed": "生成失败，请稍后重试。"
   },
+  "iosCreate": {
+    "subtitle": "只需表达创作意图，造浪会为你安排素材、安全、模型和质量流程。",
+    "remixTitle": "基于作品二创",
+    "remixDesc": "继承授权素材、参数和署名，创作可追溯的新版本。",
+    "remixTag": "来源链已保留"
+  },
   "assetWorkspace": {
     "tabCreate": "创作",
     "tabGraph": {
