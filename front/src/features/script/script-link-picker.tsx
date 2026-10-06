@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   DropdownMenu,
@@ -12,6 +12,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { IconImage, IconUser } from '@/components/ui/icons';
 import type { Character, Scene } from '@/lib/api/types';
+import { characterManageHref } from '@/lib/characters';
+import { sceneManageHref } from '@/lib/scenes';
 import { useResource } from '@/lib/use-resource';
 
 type LinkKind = 'character' | 'scene';
@@ -25,19 +27,19 @@ type LinkKind = 'character' | 'scene';
  * menu's footer, matching the plan's "reuse a lightweight picker, not the
  * full library page" for picking, while keeping creation itself in one place.
  *
- * `createHref`, when set, adds a second footer link that jumps out to the
- * full image-creation studio (`/create/new?mode=image_creation&...`,
- * assembled by the caller in `script-document-view.tsx`) to generate a
- * fresh character/scene image — still not an inline create form, just a
- * deep link carrying enough context (and a `returnTo`) for that separate
- * page to come back here afterwards.
+ * `onCreate`, when set and nothing is linked yet, adds 新建角色卡 / 新建场景卡
+ * to the footer: the caller (`script-document-view.tsx`) creates the card
+ * straight from the script's character / scene, links it via
+ * `PATCH /v1/scripts/{episode}/links` and resolves with its id. Once a card
+ * is linked the footer offers 去创作 — the card's workspace, where its
+ * images are generated (there is no image studio to jump out to).
  */
 export function ScriptLinkPicker({
   kind,
   refId,
   variantId = null,
   onChange,
-  createHref,
+  onCreate,
   refreshKey,
 }: {
   kind: LinkKind;
@@ -45,7 +47,8 @@ export function ScriptLinkPicker({
   /** The linked card's look (character) / variant (scene); null = default. */
   variantId?: string | null;
   onChange: (refId: string | null, variantId?: string | null) => void;
-  createHref?: string;
+  /** Creates and links a card from the script; resolves with its id. */
+  onCreate?: () => Promise<string | null>;
   /** Bumped after a batch job writes a new card so the picker reloads. */
   refreshKey?: number;
 }) {
@@ -67,7 +70,31 @@ export function ScriptLinkPicker({
   const linkedVariant = linkedVariants.find((variant) => variant.id === variantId) ?? null;
   const manageHref = kind === 'character' ? '/create/characters' : '/create/scenes';
   const label = kind === 'character' ? t('linkCharacter') : t('linkScene');
-  const createLabel = kind === 'character' ? t('generateCharacterImage') : t('generateSceneImage');
+  const createLabel = kind === 'character' ? t('createCharacterCard') : t('createSceneCard');
+  const [creating, setCreating] = useState(false);
+  // The new card's id until the parent's link update lands in `refId`, so
+  // 去创作 shows the moment the card exists.
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  const cardId = refId ?? createdId;
+  const workspaceHref = cardId
+    ? kind === 'character'
+      ? characterManageHref(cardId, refId ? variantId : null)
+      : sceneManageHref(cardId, refId ? variantId : null)
+    : null;
+
+  const create = async () => {
+    if (!onCreate || creating) return;
+    setCreating(true);
+    try {
+      const id = await onCreate();
+      if (id) {
+        setCreatedId(id);
+        resource.refetch();
+      }
+    } finally {
+      setCreating(false);
+    }
+  };
 
   return (
     <DropdownMenu
@@ -131,12 +158,25 @@ export function ScriptLinkPicker({
             <Link href={manageHref} className="hover:text-text" onClick={close}>
               {kind === 'character' ? t('manageCharacters') : t('manageScenes')}
             </Link>
-            {createHref ? (
+            {workspaceHref ? (
               <>
                 <span aria-hidden="true">·</span>
-                <Link href={createHref} className="hover:text-text" onClick={close}>
-                  {createLabel}
+                <Link href={workspaceHref} className="hover:text-text" onClick={close}>
+                  {t('goCreate')}
                 </Link>
+              </>
+            ) : onCreate ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <button
+                  type="button"
+                  className="hover:text-text disabled:cursor-wait disabled:opacity-60"
+                  disabled={creating}
+                  aria-busy={creating}
+                  onClick={() => void create()}
+                >
+                  {creating ? t('creatingCard') : createLabel}
+                </button>
               </>
             ) : null}
           </DropdownMenuFooter>

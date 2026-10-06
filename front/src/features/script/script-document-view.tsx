@@ -7,11 +7,11 @@ import { Fragment, useEffect, useState } from 'react';
 import { CharacterDescribeDialog } from '@/components/characters/character-describe-dialog';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { useToast } from '@/components/ui/toast';
 import type { Character, Scene } from '@/lib/api/types';
 import { api } from '@/lib/api/client';
+import { isApiError } from '@/lib/api/errors';
 import { characterHeroUrl } from '@/lib/characters';
-import type { ScenePresets } from '@/features/image-assets/vocabulary';
-import { parseScenePresets } from '@/features/script/scene-heading';
 import { useResource } from '@/lib/use-resource';
 
 import type { ScriptCharacter, ScriptDocument, ScriptScene } from './api';
@@ -25,51 +25,8 @@ import {
   type BreakpointVideoBinding,
 } from './script-breakpoint';
 import { ScriptLinkPicker } from './script-link-picker';
-import { characterImagePrompt, resolveBreakpointRefs, sceneImagePrompt } from './script-prompts';
+import { resolveBreakpointRefs, sceneImagePrompt } from './script-prompts';
 import type { BatchItemKind, BatchItemState } from './use-script-batch';
-
-/**
- * The deep link `ScriptLinkPicker`'s "生成角色图/场景图" footer entry jumps
- * out to, carrying enough context for `/create/new` to pre-fill the image
- * studio and, on success, jump back here with the new/updated link already
- * known (`InlineImageResult`'s "返回文案创作", read back in `ScriptEditor`).
- *
- * Already-linked (`targetId` set) reuses that same card instead of creating
- * another one — `subjectNameHint` is included regardless but only takes
- * effect when there is no target, i.e. when a brand-new card gets created.
- */
-function buildCreateHref({
-  episodeId,
-  assetKind,
-  prompt,
-  subjectNameHint,
-  targetId,
-  scenePresets,
-}: {
-  episodeId: string;
-  assetKind: 'character' | 'scene';
-  prompt: string;
-  subjectNameHint: string;
-  targetId: string | null;
-  /** Lighting/weather read off the scene heading (`parseScenePresets`). */
-  scenePresets?: ScenePresets;
-}): string {
-  const params = new URLSearchParams({
-    mode: 'image_creation',
-    assetKind,
-    prompt,
-    subjectNameHint,
-    returnTo: `/create/script/${episodeId}`,
-    returnLinkKind: assetKind,
-    returnLinkLabel: subjectNameHint,
-  });
-  if (targetId) {
-    params.set(assetKind === 'character' ? 'targetCharacterId' : 'targetSceneId', targetId);
-  }
-  if (scenePresets?.lighting) params.set('sceneLighting', scenePresets.lighting);
-  if (scenePresets?.weather) params.set('sceneWeather', scenePresets.weather);
-  return `/create/new?${params.toString()}`;
-}
 
 function sceneCloserChip({
   document,
@@ -101,8 +58,8 @@ function sceneCloserChip({
  * `onLink` is only passed while viewing the episode's true latest turn
  * (see `ScriptEditor`) — linking is a structural edit to `episode.script_json`
  * itself, so it makes no sense against a browsed historical snapshot; when
- * omitted, chips/headings render without the picker (and without the
- * "生成角色图/场景图" jump-out, which needs `episodeId` for its `returnTo`).
+ * omitted, chips/headings render without the picker (and without its
+ * 新建角色卡 / 新建场景卡, which links the new card to this episode).
  *
  * `onSaveContent` is the same "only while viewing the latest turn" story,
  * for hand-editing the copy itself (logline, character traits, block text)
@@ -165,6 +122,7 @@ export function ScriptDocumentView({
   libraryRevision?: number;
 }) {
   const t = useTranslations('scriptStudio');
+  const { notify } = useToast();
   const characters = useResource<Character[]>('/v1/characters');
   const scenes = useResource<Scene[]>('/v1/scenes');
 
@@ -203,6 +161,40 @@ export function ScriptDocumentView({
     onSaveContent({ ...document, scenes: nextScenes });
   };
 
+  // 新建角色卡 / 新建场景卡: a text-only card from the script's own copy,
+  // linked at once; its images are made in the card's workspace (去创作).
+  const createCard = async (
+    source:
+      { kind: 'character'; character: ScriptCharacter } | { kind: 'scene'; scene: ScriptScene },
+  ): Promise<string | null> => {
+    if (!onLink) return null;
+    try {
+      if (source.kind === 'character') {
+        const { character } = source;
+        const card = await api.post<Character>('/v1/characters', {
+          name: character.name.slice(0, 80),
+          description: character.traits.trim().slice(0, 2000) || null,
+        });
+        onLink({ kind: 'character', name: character.name, refId: card.id });
+        characters.refetch();
+        notify(t('cardCreated', { name: card.name }), 'success');
+        return card.id;
+      }
+      const { scene } = source;
+      const card = await api.post<Scene>('/v1/scenes', {
+        name: scene.heading.slice(0, 80),
+        description: sceneImagePrompt(scene).slice(0, 2000),
+      });
+      onLink({ kind: 'scene', heading: scene.heading, refId: card.id });
+      scenes.refetch();
+      notify(t('cardCreated', { name: card.name }), 'success');
+      return card.id;
+    } catch (error) {
+      notify(isApiError(error) ? error.message : t('unavailable'), 'error');
+      return null;
+    }
+  };
+
   const scenePickerFor = (scene: ScriptScene) =>
     onLink ? (
       <ScriptLinkPicker
@@ -213,18 +205,7 @@ export function ScriptDocumentView({
         onChange={(refId, variantId) =>
           onLink({ kind: 'scene', heading: scene.heading, refId, variantId })
         }
-        createHref={
-          episodeId
-            ? buildCreateHref({
-                episodeId,
-                assetKind: 'scene',
-                prompt: sceneImagePrompt(scene),
-                subjectNameHint: scene.heading,
-                targetId: scene.ref_id,
-                scenePresets: parseScenePresets(scene),
-              })
-            : undefined
-        }
+        onCreate={episodeId ? () => createCard({ kind: 'scene', scene }) : undefined}
       />
     ) : undefined;
 
@@ -319,16 +300,8 @@ export function ScriptDocumentView({
                         onChange={(refId, variantId) =>
                           onLink({ kind: 'character', name: character.name, refId, variantId })
                         }
-                        createHref={
-                          episodeId
-                            ? buildCreateHref({
-                                episodeId,
-                                assetKind: 'character',
-                                prompt: characterImagePrompt(character),
-                                subjectNameHint: character.name,
-                                targetId: character.character_ref_id,
-                              })
-                            : undefined
+                        onCreate={
+                          episodeId ? () => createCard({ kind: 'character', character }) : undefined
                         }
                       />
                     ) : null}
