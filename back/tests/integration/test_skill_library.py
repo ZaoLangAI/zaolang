@@ -9,7 +9,13 @@ from app.domain.characters import service as characters_service
 from app.domain.scenes import service as scenes_service
 from app.domain.skill_library import service as skill_library_service
 from app.models import CreationSkill, User
-from app.models.enums import CreationSkillStatus, ModerationStatus, Operation
+from app.models.enums import (
+    CreationSkillCategory,
+    CreationSkillStatus,
+    CreationSkillVisibility,
+    ModerationStatus,
+    Operation,
+)
 from tests.conftest import auth_header
 
 
@@ -296,3 +302,66 @@ def test_generic_update_route_rejects_the_character_category(
     assert skill is not None
     assert skill.category == "character"
     assert "character" in skill.params_json
+
+
+# ---- cover skills are retired (AC-8) ---------------------------------------
+
+
+def _planted_cover(db: Session, owner: User) -> CreationSkill:
+    """An old published cover row, as the catalogue planted them before."""
+    row = CreationSkill(
+        owner_user_id=owner.id,
+        title="竖屏标题安全区封面",
+        description="旧封面配方",
+        category=CreationSkillCategory.COVER_ASSET,
+        params_json={"prompt_suffix": "vertical key art"},
+        applicable_operations_json=[Operation.TEXT_TO_IMAGE.value],
+        status=CreationSkillStatus.PUBLISHED,
+        visibility=CreationSkillVisibility.PUBLIC,
+    )
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_a_new_cover_skill_is_refused(client: TestClient, author: User) -> None:
+    response = client.post(
+        "/v1/skills",
+        json=_create_payload(category="cover_asset"),
+        headers=auth_header(author),
+    )
+    assert response.status_code == 422, response.text
+    assert "category" in response.json()["error"]["details"]["fields"]
+
+
+def test_a_template_cannot_be_refiled_as_a_cover(client: TestClient, author: User) -> None:
+    template = client.post("/v1/skills", json=_create_payload(), headers=auth_header(author))
+    response = client.patch(
+        f"/v1/skills/{template.json()['id']}",
+        json=_create_payload(category="cover_asset"),
+        headers=auth_header(author),
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_the_plaza_hides_old_cover_skills_everywhere(
+    client: TestClient, db: Session, author: User
+) -> None:
+    cover = _planted_cover(db, author)
+
+    for params in (
+        {},
+        {"content_type": "template"},
+        {"content_type": "image_asset"},
+        {"category": "cover_asset"},
+    ):
+        listed = client.get("/v1/skills/public", params=params)
+        assert listed.status_code == 200, listed.text
+        assert cover.id not in {item["id"] for item in listed.json()["items"]}, params
+
+    mine = client.get("/v1/skills", headers=auth_header(author))
+    assert cover.id not in {item["id"] for item in mine.json()["items"]}
+    # Still readable by id: historic rows keep parsing.
+    detail = client.get(f"/v1/skills/{cover.id}", headers=auth_header(author))
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["category"] == "cover_asset"

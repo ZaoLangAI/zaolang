@@ -409,18 +409,28 @@ def record_usage(session: Session, *, skill: CreationSkill) -> CreationSkill:
     return skill
 
 
+# Categories the plaza and 我的技能 never list (AC-8): cover image generation
+# is retired, so a planted or user `cover_asset` row stays readable by id
+# but is never browsed. Kept apart from `IMAGE_ASSET_SKILL_CATEGORIES` on
+# purpose — dropping `COVER_ASSET` there would push old cover rows into the
+# template side of `list_public` instead of hiding them.
+HIDDEN_PUBLIC_CATEGORIES: frozenset[CreationSkillCategory] = frozenset(
+    {CreationSkillCategory.COVER_ASSET}
+)
+
+
 def list_mine(session: Session, *, owner_user_id: str, limit: int = 60) -> ListPage:
     """The generic "我的技能" tab (`ManageSkillDialog`-backed) only knows how
     to edit the flat `prompt`/`aspect_ratio`/... template shape — an
-    `IMAGE_ASSET_SKILL_CATEGORIES` skill (character/scene_asset/cover_asset)
-    is always excluded here in favor of its dedicated maintenance page
-    (`/create/characters`, `/create/scenes`), same as `list_public`'s default
-    landing view."""
+    `IMAGE_ASSET_SKILL_CATEGORIES` skill (character/scene_asset/prop_asset,
+    plus the hidden cover_asset) is always excluded here in favor of its
+    dedicated maintenance page (`/create/{characters,scenes,props}`), same
+    as `list_public`'s default landing view."""
     stmt = (
         select(CreationSkill)
         .where(
             CreationSkill.owner_user_id == owner_user_id,
-            CreationSkill.category.notin_(IMAGE_ASSET_SKILL_CATEGORIES),
+            CreationSkill.category.notin_(IMAGE_ASSET_SKILL_CATEGORIES | HIDDEN_PUBLIC_CATEGORIES),
         )
         .order_by(CreationSkill.created_at.desc(), CreationSkill.id.desc())
         .limit(limit + 1)
@@ -445,9 +455,11 @@ def list_public(
     `content_type` picks a side of the marketplace's two-tier filter: a
     "template" (`scene`/`lens`/`style`/`format`/`other`, `SkillCard`-rendered from
     flat `prompt`/`aspect_ratio`/... params) or an "image_asset" (`character`
-    /`scene_asset`/`cover_asset`, each purchasable but not template-shaped —
+    /`scene_asset`/`prop_asset`, each purchasable but not template-shaped —
     see `IMAGE_ASSET_SKILL_CATEGORIES`). `None` (the plaza's default landing
     view, same as before this parameter existed) behaves like `"template"`.
+    `HIDDEN_PUBLIC_CATEGORIES` (`cover_asset`) never lists, even by exact
+    `category`.
     """
     anchor: CreationSkill | None = None
     if cursor:
@@ -455,7 +467,10 @@ def list_public(
         if anchor is None or anchor.status != CreationSkillStatus.PUBLISHED:
             return ListPage(items=[], next_cursor=None, has_more=False)
 
-    stmt = select(CreationSkill).where(CreationSkill.status == CreationSkillStatus.PUBLISHED)
+    stmt = select(CreationSkill).where(
+        CreationSkill.status == CreationSkillStatus.PUBLISHED,
+        CreationSkill.category.notin_(HIDDEN_PUBLIC_CATEGORIES),
+    )
     if category:
         stmt = stmt.where(CreationSkill.category == category)
     elif content_type == "image_asset":

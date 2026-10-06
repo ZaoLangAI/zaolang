@@ -308,8 +308,9 @@ def apply_skill(
 
 
 def _reject_character_category(category: str) -> None:
-    """Characters and scenes are created and edited only via `/v1/characters`
-    / `/v1/scenes`: those paths enforce the one-name-per-owner rule and go
+    """Characters, scenes and props are created and edited only via
+    `/v1/characters` / `/v1/scenes` / `/v1/props`, and `cover_asset` not at
+    all: those paths enforce the one-name-per-owner rule and go
     through the looks/variants tables, while this route would skip the
     first (surfacing the unique index as an `IntegrityError`) and overwrite
     the card's `params_json` payload wholesale."""
@@ -327,6 +328,13 @@ def _reject_character_category(category: str) -> None:
         raise ValidationFailed(
             "道具请通过道具库接口创建和编辑。",
             fields={"category": "prop skills are managed via /v1/props"},
+        )
+    # Cover images are retired (AC-8): no new cover skill, and the hidden
+    # old ones are not edited back into circulation.
+    if category == CreationSkillCategory.COVER_ASSET:
+        raise ValidationFailed(
+            "封面技能已下线，不能再新建或编辑。",
+            fields={"category": "cover_asset skills are retired"},
         )
 
 
