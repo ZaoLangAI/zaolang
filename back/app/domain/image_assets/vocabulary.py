@@ -55,6 +55,8 @@ SceneState = Literal[
     "festive",
 ]
 ScenePeriod = Literal["ancient", "republic", "1980s", "1990s", "contemporary", "near_future"]
+# A prop's condition (道具状态, AC-4) — one prop card's variants.
+PropState = Literal["new", "worn", "damaged", "broken"]
 # A character look's age stage (P2-6): the same person at another age.
 AgeStage = Literal["child", "teen", "youth", "adult", "middle_aged", "elderly"]
 
@@ -64,6 +66,7 @@ SCENE_WEATHERS: tuple[str, ...] = get_args(SceneWeather)
 SCENE_STATES: tuple[str, ...] = get_args(SceneState)
 SCENE_PERIODS: tuple[str, ...] = get_args(ScenePeriod)
 AGE_STAGES: tuple[str, ...] = get_args(AgeStage)
+PROP_STATES: tuple[str, ...] = get_args(PropState)
 
 # One composite expression image holds at most this many faces.
 MAX_CHARACTER_EXPRESSIONS = 9
@@ -419,6 +422,36 @@ CHARACTER_PERIOD_PRESETS: dict[str, Preset] = {
 def character_period_fragments(period: object) -> tuple[str, str]:
     """`(prompt sentence, negative)` for a look's period; empty when unset."""
     preset = CHARACTER_PERIOD_PRESETS.get(str(period or ""))
+    if preset is None:
+        return "", ""
+    return f"{preset.prompt}。", preset.negative
+
+
+PROP_STATE_PRESETS: dict[str, Preset] = {
+    "new": Preset(
+        "全新", "物品全新完好，表面洁净，边角锐利，材质光泽自然", "划痕，锈迹，污渍，破损"
+    ),
+    "worn": Preset(
+        "旧化",
+        "物品明显使用过：边角磨圆、表面细小划痕与手摸包浆、局部褪色，但结构完整",
+        "崭新反光，破碎，断裂",
+    ),
+    "damaged": Preset(
+        "破损",
+        "物品有明显损伤：裂纹、凹痕、缺口或撕裂，仍能辨认原貌",
+        "崭新无瑕，完全粉碎",
+    ),
+    "broken": Preset(
+        "损毁",
+        "物品已损毁：断成数截或碎裂变形，碎片就近散落，材质断面清晰",
+        "完好无损，崭新",
+    ),
+}
+
+
+def prop_state_fragments(state: object) -> tuple[str, str]:
+    """`(prompt sentence, negative)` for a prop variant's condition."""
+    preset = PROP_STATE_PRESETS.get(str(state or ""))
     if preset is None:
         return "", ""
     return f"{preset.prompt}。", preset.negative

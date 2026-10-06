@@ -40,6 +40,7 @@ from app.domain.characters import service as characters_service
 from app.domain.errors import Conflict, NotFound, ValidationFailed
 from app.domain.moderation_queue import service as moderation_queue
 from app.domain.notifications import push as notifications
+from app.domain.props import service as props_service
 from app.domain.publishing import service as publishing
 from app.domain.scenes import service as scenes_service
 from app.domain.skill_library import service as skill_library
@@ -201,7 +202,9 @@ def moderation_detail(
                     session, skill
                 ),
                 character_portrait_consent_at=characters_service.admin_portrait_consent_at(skill),
-                scene_reference_assets=scenes_service.admin_reference_assets(session, skill),
+                # A prop card's images use the same scene-shaped projection.
+                scene_reference_assets=scenes_service.admin_reference_assets(session, skill)
+                or props_service.admin_reference_assets(session, skill),
             )
     elif item is not None and item.subject_type == "generation_job":
         job_detail = _job_detail_view(session, item.subject_id)

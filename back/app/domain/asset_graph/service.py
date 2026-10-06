@@ -41,6 +41,7 @@ from app.models import (
 from app.models.base import utcnow
 from app.models.enums import (
     CHARACTER_RELATIONS,
+    PROP_RELATIONS,
     SCENE_RELATIONS,
     VOICE_RELATIONS,
     AssetEdgeOrigin,
@@ -87,7 +88,11 @@ def find_edge(session: Session, skill: CreationSkill, edge_id: str) -> SkillAsse
 def _allowed_relations(skill: CreationSkill, level: str | None = None) -> frozenset[str]:
     if level == AssetGraphLevel.VOICE:
         return VOICE_RELATIONS
-    return CHARACTER_RELATIONS if av.is_character(skill) else SCENE_RELATIONS
+    return {
+        "character": CHARACTER_RELATIONS,
+        "scene": SCENE_RELATIONS,
+        "prop": PROP_RELATIONS,
+    }[av.card_kind(skill)]
 
 
 def _check_relations(
@@ -357,7 +362,11 @@ PENDING_WINDOW = dt.timedelta(hours=2)
 def pending_jobs(session: Session, skill: CreationSkill) -> list[dict[str, Any]]:
     """The owner's still-running jobs filing into this card (last two
     hours) — the graph's placeholder nodes."""
-    key = "target_character_id" if av.is_character(skill) else "target_scene_id"
+    key = {
+        "character": "target_character_id",
+        "scene": "target_scene_id",
+        "prop": "target_prop_id",
+    }[av.card_kind(skill)]
     rows = session.scalars(
         select(GenerationJob)
         .where(

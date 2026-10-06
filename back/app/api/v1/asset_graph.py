@@ -23,6 +23,7 @@ from app.api.schemas.asset_graph import (
 )
 from app.domain.asset_graph import service as graph_service
 from app.domain.characters import service as characters_service
+from app.domain.props import service as props_service
 from app.domain.scenes import service as scenes_service
 from app.models import CreationSkill
 from app.presenters import asset_graph as presenter
@@ -47,6 +48,13 @@ def _scene(
     session: Session, user_id: str, card_id: str
 ) -> tuple[CreationSkill, str | None, str | None]:
     view = scenes_service.get_scene(session, user_id=user_id, scene_id=card_id)
+    return view.skill, view.description, None
+
+
+def _prop(
+    session: Session, user_id: str, card_id: str
+) -> tuple[CreationSkill, str | None, str | None]:
+    view = props_service.get_prop(session, user_id=user_id, prop_id=card_id)
     return view.skill, view.description, None
 
 
@@ -136,3 +144,4 @@ def _register(prefix: str, load: Loader) -> None:
 
 _register("characters", _character)
 _register("scenes", _scene)
+_register("props", _prop)

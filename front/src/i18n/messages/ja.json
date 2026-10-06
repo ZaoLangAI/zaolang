@@ -3514,6 +3514,7 @@
     "categoryCharacter": "キャラクター画像",
     "categorySceneAsset": "シーン画像",
     "categoryCoverAsset": "カバー画像",
+    "categoryPropAsset": "小道具",
     "categoryOther": "その他",
     "byAuthor": "{name} が共有",
     "usageCount": "{count} 回使用",

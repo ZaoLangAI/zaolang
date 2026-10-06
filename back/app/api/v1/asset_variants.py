@@ -29,6 +29,7 @@ from app.domain.asset_variants import service as av
 from app.domain.characters import service as characters_service
 from app.domain.characters import voices as voices_service
 from app.domain.errors import NotFound
+from app.domain.props import service as props_service
 from app.domain.scenes import service as scenes_service
 from app.domain.skill_library import service as skill_library_service
 from app.models import CreationSkill, SkillAssetEntry, SkillAssetVariant
@@ -45,6 +46,10 @@ def _character(session: Session, user_id: str, card_id: str) -> CreationSkill:
 
 def _scene(session: Session, user_id: str, card_id: str) -> CreationSkill:
     return scenes_service.get_scene(session, user_id=user_id, scene_id=card_id).skill
+
+
+def _prop(session: Session, user_id: str, card_id: str) -> CreationSkill:
+    return props_service.get_prop(session, user_id=user_id, prop_id=card_id).skill
 
 
 def _variant(skill: CreationSkill, variant_id: str) -> SkillAssetVariant:
@@ -286,3 +291,4 @@ def _register(
 
 _register("characters", "looks", _character)
 _register("scenes", "variants", _scene)
+_register("props", "variants", _prop)

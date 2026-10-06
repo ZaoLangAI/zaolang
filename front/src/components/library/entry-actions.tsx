@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/primitives';
 import type { AssetEntry, AssetEntryType, AssetVariant } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 
-export type CardKind = 'character' | 'scene';
+export type CardKind = 'character' | 'scene' | 'prop';
 
 export const CHARACTER_ENTRY_TYPES: AssetEntryType[] = [
   'identity_portrait',

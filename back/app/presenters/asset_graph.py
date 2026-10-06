@@ -48,7 +48,7 @@ def graph_response(
     character = av.is_character(skill)
     return AssetGraphResponse(
         card_id=skill.id,
-        card_kind="character" if character else "scene",
+        card_kind=av.card_kind(skill),
         name=skill.title,
         description=description,
         voice_description=voice_description,

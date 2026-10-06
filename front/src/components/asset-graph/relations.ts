@@ -9,6 +9,8 @@ import type { CardKind } from '@/components/library/entry-actions';
 export const RELATIONS_BY_KIND: Record<CardKind, AssetRelation[]> = {
   character: ['age', 'outfit', 'emotion', 'scene', 'period', 'custom'],
   scene: ['lighting', 'weather', 'state', 'period', 'custom'],
+  // Mirrors `PROP_RELATIONS` (AC-4).
+  prop: ['state', 'period', 'custom'],
 };
 
 /** Mirrors `VOICE_RELATIONS` (`back/app/models/enums.py`). */

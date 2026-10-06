@@ -173,6 +173,7 @@ class GenerationJob(Base, TimestampMixin):
     # learn which card a succeeded job landed on without re-deriving it.
     linked_character_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     linked_scene_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    linked_prop_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     # `operation == video_analysis`'s own output shape: a structured
     # camera-movement/scene/style breakdown (see `VideoAnalysisResult` in

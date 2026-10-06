@@ -190,6 +190,11 @@ _ASSET_KIND_BRIEF: dict[str, str] = {
     ImageAssetKind.COVER.value: (
         "短剧/系列封面：突出主视觉与氛围，适合竖版封面裁切，避免杂乱前景遮挡标题区。"
     ),
+    ImageAssetKind.PROP.value: (
+        "道具资产图：单件物体的产品式主视图或局部特写，物体完整、居中、无人物与手，"
+        "背景为浅灰纯色；写清形状、尺度感、材质、颜色、年代工艺与磨损状态，"
+        "以便在不同镜头里复用为参考图。"
+    ),
 }
 
 # Only consulted when `asset_kind == character` — the specific angle each of

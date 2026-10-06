@@ -39,6 +39,7 @@ from app.api.v1 import (
     privacy,
     profiles,
     prompts,
+    props,
     scene_matrix,
     scenes,
     scripts,
@@ -70,6 +71,7 @@ def build_router() -> APIRouter:
     router.include_router(characters.router)
     router.include_router(character_voices.router)
     router.include_router(scenes.router)
+    router.include_router(props.router)
     router.include_router(asset_variants.router)
     router.include_router(asset_graph.router)
     router.include_router(asset_derive.router)
