@@ -658,6 +658,10 @@ class GenerationParams(ApiModel):
         is_character = self.asset_kind == ImageAssetKind.CHARACTER
         is_scene = self.asset_kind == ImageAssetKind.SCENE
         is_prop = self.asset_kind == ImageAssetKind.PROP
+        # Cover images are retired (AC-8); `COVER` stays on the enum only so
+        # historic jobs and templates still read.
+        if self.asset_kind == ImageAssetKind.COVER:
+            raise ValueError("封面图片生成已下线，请在角色、场景或道具创作中生成。")
         if self.prop_state and not is_prop:
             raise ValueError("道具状态仅适用于 asset_kind=prop。")
         if self.target_prop_id and not is_prop:

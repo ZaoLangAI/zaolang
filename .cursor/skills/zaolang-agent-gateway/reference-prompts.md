@@ -5,14 +5,14 @@ Copy coaches, asset-kind prompt rules, scene skill packs, follow-up questions. S
 ## Prompt resolution
 
 - What runs is the published `AgentSkill` for `(agent, slot)` via `agent_skills.service.resolve_prompt`; module constants are only seed + fallback. Changing a constant does nothing in an env whose operator edited that prompt.
-- `sync_seeded_copy_agent_prompts` (`back/app/scripts/seed.py`) republishes constants onto the seeded copy agents (role default + `enhance-character`/`enhance-scene`/`enhance-cover`, created by `ensure_default_enhance_asset_agents`) only while their draft still looks factory; custom wording is left alone.
-- Copy requests choose an agent by `resolve_copy_agent_id` using `AgentProfile.default_for_asset_kind` (`character`/`scene`/`cover`, else the `copy` bucket).
+- `sync_seeded_copy_agent_prompts` (`back/app/scripts/seed.py`) republishes constants onto the seeded copy agents (role default + `enhance-character`/`enhance-scene`, created by `ensure_default_enhance_asset_agents`) only while their draft still looks factory; custom wording is left alone.
+- Copy requests choose an agent by `resolve_copy_agent_id` using `AgentProfile.default_for_asset_kind` (`character`/`scene`, else the `copy` bucket; a historic `cover` binding still reads but no longer resolves — cover images are retired, AC-8).
 - `SKILL_TEMPLATES` (`back/app/domain/agent_skills/templates.py`) seed the admin editor's "fill from template"; copy templates carry `asset_kind` so a dedicated agent only offers its own kind. Opening the editor never overwrites a published prompt.
 
 ## Copy coaches (`back/app/agents/copywriter.py`)
 
 - Slots (`PROMPT_SLOTS["copy"]`): `suggest` (`SYSTEM_PROMPT`, work title/description/tags), `enhance`, `clarify`, `script_draft`/`script_revise` (streamed), `skill_match` (`skill_matcher`), plus 白膜 `blocking_route`/`blocking_derive`. Copy never returns a pass/fail verdict.
-- `enhance` coaches: `ENHANCE_SYSTEM_PROMPT` (general) and per-kind `ENHANCE_SYSTEM_PROMPT_CHARACTER`/`_SCENE`/`_COVER`; video kinds use `_VIDEO_ENHANCE_SYSTEM_PROMPTS` (fallback dict only, no seeded profiles). All share `_ENHANCE_CONTRACT` for the JSON shape — add a first-class constant per kind, never a footnote on the generic coach, and never a new slot for a kind.
+- `enhance` coaches: `ENHANCE_SYSTEM_PROMPT` (general) and per-kind `ENHANCE_SYSTEM_PROMPT_CHARACTER`/`_SCENE` (a `cover` polish falls back to the general coach); video kinds use `_VIDEO_ENHANCE_SYSTEM_PROMPTS` (fallback dict only, no seeded profiles). All share `_ENHANCE_CONTRACT` for the JSON shape — add a first-class constant per kind, never a footnote on the generic coach, and never a new slot for a kind.
 - Enhance success needs an enhance-shaped object (`ENHANCE_JSON_KEYS` = `prompt` + `detail_level`); the first `{...}` in a reasoning trace is often a decoy.
 - `_sanitize_enhance_outcome` runs kind-specific repairs (below) and `_sanitize_script_segment` (clip-studio `script_segment`: rewrite block `text` in place; add/drop/retype/`breakpoint` → fall back to the request segment).
 - Repairs **append a sentence**, never cut words mid-sentence (broken Chinese).

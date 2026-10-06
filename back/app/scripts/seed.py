@@ -397,12 +397,6 @@ _ENHANCE_ASSET_AGENT_SPECS: dict[str, tuple[str, str, str, str]] = {
         "按空间类型挑技能包润色，并在信息不足时追问作者。",
         copywriter_agent.ENHANCE_SYSTEM_PROMPT_SCENE,
     ),
-    "cover": (
-        "enhance-cover",
-        "文案润色 · 封面",
-        "封面海报教练：单一主视觉、缩略图可读，并预留标题安全区。",
-        copywriter_agent.ENHANCE_SYSTEM_PROMPT_COVER,
-    ),
 }
 
 
@@ -419,7 +413,7 @@ def ensure_default_enhance_asset_agents(session: Session) -> None:
     also passes as a default.
 
     A later rewrite of those constants is synced onto the *seeded* keys
-    (`enhance-character` / `enhance-scene` / `enhance-cover`) when the
+    (`enhance-character` / `enhance-scene`) when the
     active draft still looks like a factory prompt. An operator's own
     wording, or a different profile occupying the bucket, is not clobbered.
     """
@@ -469,17 +463,12 @@ _FACTORY_ENHANCE_OPENERS = {
         "你是造浪平台的提示词教练。",
         "你是造浪平台的场景空镜提示词教练。",
     ),
-    "cover": (
-        "你是造浪平台的提示词教练。",
-        "你是造浪平台的封面海报提示词教练。",
-    ),
 }
 _FACTORY_ENHANCE_DESCRIPTIONS = {
     "角色资产的画面描述润色，额外关注人物一致性与表情神态，并要求全身入镜、纯色背景。",
     "场景资产的画面描述润色，额外关注环境细节与氛围。",
     "场景空镜教练：把空间本身写清楚，画面不得出现任何人物痕迹。",
     "场景空镜教练：把空间写成单一机位的连续空镜，遮挡成立，禁止分割构图与人物痕迹。",
-    "封面资产的画面描述润色，额外关注视觉焦点与文字安全区。",
 }
 
 
@@ -531,7 +520,7 @@ def sync_seeded_copy_agent_prompts(session: Session) -> None:
     code-level fallback, so rewriting `copywriter.SYSTEM_PROMPT` /
     `ENHANCE_SYSTEM_PROMPT_*` / `SCRIPT_*_SYSTEM_PROMPT` is invisible until
     those rows move. This keeps the four product-owned agents (`文案生成 · 默认`
-    plus the three 文案润色 keys) on the factory draft — including the
+    plus the two 文案润色 keys) on the factory draft — including the
     default copy agent's `script_draft` / `script_revise` slots — without
     touching a custom prompt or a different profile an operator pointed
     the bucket at.

@@ -445,8 +445,9 @@ def ensure_default_templates(session: Session) -> None:
     """Idempotently seeds one active v1 template per `(Operation, asset_kind)`.
 
     Every `Operation` gets the generic (`asset_kind=None`) template it always
-    had; the image family additionally gets one per non-`GENERAL`
-    `ImageAssetKind` (`character`/`scene`/`cover`), and the video family one
+    had; the image family additionally gets one per library `ImageAssetKind`
+    (`character`/`scene`/`prop` — `GENERAL` and the retired `COVER` are
+    skipped; an existing cover template is left alone), and the video family one
     per non-`GENERAL` `VideoAssetKind` (`character_action`/
     `transition_video`/`cover_video`), each running the `asset_planning`/
     `asset_output_link`-augmented graph — the image `character` kind also
@@ -455,7 +456,7 @@ def ensure_default_templates(session: Session) -> None:
     folded into `text_to_image`, and `image_to_video`/`video_to_video` into
     `text_to_video`, by `get_active`/`canonical_operation`, so this loop only
     ever creates rows under `text_to_image`/`text_to_video` for each family —
-    four image rows plus four video rows, not sixteen. Safe to call on every
+    three image rows plus three video rows, not sixteen. Safe to call on every
     startup/seed run: any `(operation, asset_kind)` that already has an
     active template (including one an operator hand-edited) is left alone.
     """
@@ -476,7 +477,7 @@ def ensure_default_templates(session: Session) -> None:
             )
         if operation in IMAGE_ASSET_OPERATIONS:
             for kind in ImageAssetKind:
-                if kind == ImageAssetKind.GENERAL:
+                if kind in (ImageAssetKind.GENERAL, ImageAssetKind.COVER):
                     continue
                 if _has_specific_active_template(session, operation.value, kind.value):
                     continue

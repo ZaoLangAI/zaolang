@@ -162,21 +162,40 @@ def test_batch_quote_prices_asset_and_video_lines(client: TestClient, funded: Us
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("kind", RETIRED_KINDS)
+@pytest.mark.parametrize("kind", ["general", None])
 def test_submit_refuses_a_non_asset_image(
-    client: TestClient, db: Session, funded: User, kind: str
+    client: TestClient, db: Session, funded: User, kind: str | None
 ) -> None:
+    before = db.query(GenerationJob).count()
+    params: dict[str, object] = {"prompt": "雨后的东京街头"}
+    if kind is not None:
+        params["asset_kind"] = kind
+    response = client.post(
+        "/v1/generation-jobs",
+        json={"operation": "text_to_image", "quality_tier": "standard", "params": params},
+        headers=auth_header(funded),
+    )
+    _assert_refused(response, "params.asset_kind")
+    assert db.query(GenerationJob).count() == before
+
+
+def test_submit_refuses_a_cover_image_before_the_route(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    """`GenerationParams` itself refuses a new `cover` job (the enum value
+    stays for historic rows), so the request never reaches the handler."""
     before = db.query(GenerationJob).count()
     response = client.post(
         "/v1/generation-jobs",
         json={
             "operation": "text_to_image",
             "quality_tier": "standard",
-            "params": {"prompt": "雨后的东京街头", "asset_kind": kind},
+            "params": {"prompt": "短剧封面", "asset_kind": "cover"},
         },
         headers=auth_header(funded),
     )
-    _assert_refused(response, "params.asset_kind")
+    assert response.status_code == 422, response.text
+    assert "封面图片生成已下线" in response.json()["error"]["message"]
     assert db.query(GenerationJob).count() == before
 
 

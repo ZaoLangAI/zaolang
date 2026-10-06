@@ -791,13 +791,13 @@ def test_update_profile_leaves_the_asset_kind_default_untouched_when_omitted(
     profile = agent_skills_service.create_profile(
         db,
         role="copy",
-        key="enhance-cover",
-        display_name="封面润色",
-        default_for_asset_kind="cover",
+        key="enhance-scene",
+        display_name="场景润色",
+        default_for_asset_kind="scene",
     )
-    agent_skills_service.update_profile(db, profile.id, display_name="封面润色 · 改名")
+    agent_skills_service.update_profile(db, profile.id, display_name="场景润色 · 改名")
     db.refresh(profile)
-    assert profile.default_for_asset_kind == "cover"
+    assert profile.default_for_asset_kind == "scene"
 
 
 def test_default_profile_for_asset_kind_is_none_for_an_unclaimed_bucket(db: Session) -> None:
@@ -817,13 +817,15 @@ def test_ensure_default_enhance_asset_agents_is_idempotent(db: Session) -> None:
     _seeded(db)
     seed_script.ensure_default_enhance_asset_agents(db)
 
-    buckets = {"character", "scene", "cover"}
+    # Cover images are retired (AC-8): no cover polish agent is seeded.
+    assert agent_skills_service.find_profile(db, "copy", "enhance-cover") is None
+    buckets = {"character", "scene"}
     profiles_by_bucket = {
         bucket: agent_skills_service.default_profile_for_asset_kind(db, "copy", bucket)
         for bucket in buckets
     }
     assert all(profile is not None for profile in profiles_by_bucket.values())
-    assert len({profile.id for profile in profiles_by_bucket.values()}) == 3
+    assert len({profile.id for profile in profiles_by_bucket.values()}) == 2
 
     # An operator demotes one and repoints it manually; a second run must not
     # re-seed the bucket out from under that choice.
@@ -877,8 +879,8 @@ def test_seed_syncs_factory_copy_prompts_onto_the_seeded_agents(db: Session) -> 
     assert copy_default is not None
     character = agent_skills_service.find_profile(db, "copy", "enhance-character")
     scene = agent_skills_service.find_profile(db, "copy", "enhance-scene")
-    cover = agent_skills_service.find_profile(db, "copy", "enhance-cover")
-    assert character is not None and scene is not None and cover is not None
+    assert character is not None and scene is not None
+    assert agent_skills_service.find_profile(db, "copy", "enhance-cover") is None
 
     agent_skills_service.publish(
         db,
@@ -930,10 +932,6 @@ def test_seed_syncs_factory_copy_prompts_onto_the_seeded_agents(db: Session) -> 
         actor_user_id=None,
         reason="operator edit",
     )
-    cover_before = agent_skills_service.get_active_prompt(
-        db, "copy", "FALLBACK", agent_id=cover.id, slot=copywriter.ENHANCE_SLOT
-    )
-
     seed_script.sync_seeded_copy_agent_prompts(db)
 
     script_draft, _ = agent_skills_service.get_active_prompt(
@@ -951,15 +949,11 @@ def test_seed_syncs_factory_copy_prompts_onto_the_seeded_agents(db: Session) -> 
     scene_prompt, _ = agent_skills_service.get_active_prompt(
         db, "copy", "FALLBACK", agent_id=scene.id, slot=copywriter.ENHANCE_SLOT
     )
-    cover_after = agent_skills_service.get_active_prompt(
-        db, "copy", "FALLBACK", agent_id=cover.id, slot=copywriter.ENHANCE_SLOT
-    )
     assert suggest == copywriter.SYSTEM_PROMPT
     assert script_draft == copywriter.SCRIPT_DRAFT_SYSTEM_PROMPT
     assert script_revise == "你是运营自己写的剧本修改提示词，不要覆盖。"
     assert character_prompt == copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER
     assert scene_prompt == "你是运营自己写的场景润色提示词，不要覆盖。"
-    assert cover_after == cover_before
     db.refresh(character)
     assert character.description == (
         "角色设定图教练：把同一个人写成一张多分区设定图（左三视图、右特写与色板），禁止改回单视角。"
