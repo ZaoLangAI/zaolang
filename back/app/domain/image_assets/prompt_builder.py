@@ -669,8 +669,47 @@ def sanitize_enhancements(
 REFERENCE_LEGEND_PREFIX = "参考图说明："
 GENERIC_REFERENCE_LABEL = "参考图"
 
+# What a video model should take from each kind of labelled card image, and
+# what it should leave to the prompt. Without it a reference-to-video model
+# tends to reproduce the sheet's plain backdrop and standing pose, or keeps
+# the face and quietly redesigns the outfit. Keyed by the card noun
+# `asset_variants.service.entry_label` writes first (`角色「…」`, …); a
+# character card's own prop entry (`角色「林夏」·道具`) borrows like a prop.
+_REFERENCE_SCOPES = (
+    ("character", "角色参考图沿用其相貌、发型、体型与服装"),
+    ("scene", "场景参考图沿用空间结构、陈设与材质"),
+    ("prop", "道具参考图沿用其外形、材质与颜色"),
+)
+_REFERENCE_SCOPE_TAIL = "人物姿态、构图与光线以下文描述为准"
 
-def reference_legend(references: Iterable[Any], labels: dict[str, str], *, cap: int | None) -> str:
+
+def _reference_scope_kind(name: str) -> str | None:
+    # A `（…）` role suffix (`reference_resolver.FACE_ONLY_ROLE` & co.) already
+    # says what to borrow, and a generic sentence would contradict it.
+    if name.endswith("）"):
+        return None
+    if name.startswith("道具「") or name.endswith("·道具"):
+        return "prop"
+    if name.startswith("角色「"):
+        return "character"
+    if name.startswith("场景「"):
+        return "scene"
+    return None
+
+
+def reference_scope_sentence(names: Iterable[str]) -> str:
+    """`角色参考图沿用其相貌…；…；人物姿态、构图与光线以下文描述为准` for
+    the card kinds present in `names`, or `""` when none is scopable."""
+    kinds = {_reference_scope_kind(name) for name in names}
+    clauses = [text for kind, text in _REFERENCE_SCOPES if kind in kinds]
+    if not clauses:
+        return ""
+    return "；".join([*clauses, _REFERENCE_SCOPE_TAIL])
+
+
+def reference_legend(
+    references: Iterable[Any], labels: dict[str, str], *, cap: int | None, scope: bool = False
+) -> str:
     """`参考图说明：图1 是…；图2 是…。` naming the images the provider receives.
 
     Only generic image references (no `frame_type`) are numbered, truncated
@@ -679,6 +718,12 @@ def reference_legend(references: Iterable[Any], labels: dict[str, str], *, cap: 
     unknown, a first/last frame is present (positional frames, not a
     labelled set), fewer than two images survive, or no image has a
     meaningful label.
+
+    `scope` adds `reference_scope_sentence` after the names. Only video
+    callers ask for it: image asset passes carry their own reference locks
+    (`OUTFIT_CHANGE_PREFIX` replaces the outfit, `CAMERA_ORBIT_LOCKS` keeps
+    the light) that a generic sentence would contradict. The legend stays a
+    single line either way — `strip_reference_legend` cuts at its `\\n`.
     """
     if cap is None or cap < 2:
         return ""
@@ -699,6 +744,9 @@ def reference_legend(references: Iterable[Any], labels: dict[str, str], *, cap: 
     if all(name == GENERIC_REFERENCE_LABEL for name in names):
         return ""
     parts = "；".join(f"图{index} 是{name}" for index, name in enumerate(names, 1))
+    scope_sentence = reference_scope_sentence(names) if scope else ""
+    if scope_sentence:
+        parts = f"{parts}。{scope_sentence}"
     return f"{REFERENCE_LEGEND_PREFIX}{parts}。请按以上对应关系使用各参考图。\n"
 
 

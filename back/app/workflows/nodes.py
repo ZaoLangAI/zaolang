@@ -1946,7 +1946,10 @@ def _with_reference_legend(
     prompt: str, references: list[Any], capability: Any, ctx: WorkflowContext
 ) -> str:
     """Prefixes the "参考图说明" legend naming each labelled reference image
-    the provider will receive (`prompt_builder.reference_legend`)."""
+    the provider will receive (`prompt_builder.reference_legend`).
+
+    A video job (not an image asset pass, whose prefixes lock references
+    their own way) also gets the per-kind borrowing scope."""
     raw_labels = ctx.params.get("reference_labels")
     labels = {
         str(item.get("asset_id")): str(item.get("label"))
@@ -1955,8 +1958,10 @@ def _with_reference_legend(
     }
     if not labels:
         return prompt
+    axis = _asset_axis(ctx)
+    scope = ctx.job.operation in _VIDEO_OPERATIONS and (axis is None or axis[0] == "video")
     legend = prompt_builder.reference_legend(
-        references, labels, cap=getattr(capability, "max_image_references", None)
+        references, labels, cap=getattr(capability, "max_image_references", None), scope=scope
     )
     return f"{legend}{prompt}" if legend else prompt
 
