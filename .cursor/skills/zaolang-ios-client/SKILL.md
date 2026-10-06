@@ -5,7 +5,7 @@ description: Native iOS client under ios/ — SwiftUI, XcodeGen project.yml, Zao
 
 # ZaoLang iOS Client
 
-**Scope**: `ios/` — native client on the same backend contract (`back/openapi.json`) as `front/`. Guest-readable discover/work/lineage/profile/learn plus login and write flows (studio, jobs, publish, library, settings, notifications, billing, push, onboarding). No admin surface. Canvas, blocking, script and drama-editor are web-only; iOS has no stance on them yet. Credits are bought on web (no StoreKit).
+**Scope**: `ios/` — native client on the same backend contract (`back/openapi.json`) as `front/`. Guest-readable discover/work/lineage/profile/learn plus login and write flows (角色/场景/道具创作, video studio, jobs, publish, library, settings, notifications, billing, push, onboarding). No admin surface. Canvas, blocking, script and drama-editor are web-only; iOS has no stance on them yet. Credits are bought on web (no StoreKit).
 Not here → `zaolang-api-contract` (errors, idempotency), `zaolang-generation-jobs` (SSE), `zaolang-i18n-region` (copy), `zaolang-theming` (tokens), `zaolang-community` (push backend).
 
 ## Key Paths
@@ -23,8 +23,8 @@ Not here → `zaolang-api-contract` (errors, idempotency), `zaolang-generation-j
 | `ios/App/Sources/Support/` | `AppEnvironment` (`requireAuth`, `trackJob`, push token), `AppConfig`, `L10n`, `PushManager`, `GenerationOperation`, `ReachabilityMonitor` (global offline banner) |
 | `ios/App/Sources/Common/` | `LoadableState`, `StateViews`, `SharedComponents`, `Date+ZL.swift` (`ZLClock`) |
 | `ios/App/Sources/DesignSystem/` | `Color.zl.*`, radius/shadow, `zlMotion`, `.zlEyebrow()`, `.zlSkeletonPulse()` |
-| `ios/App/Sources/Create/` | Create hub, `StudioView`/`StudioViewModel`, job detail, publish, draft detail, `CreateJobBanner`, `AssetLibrary/LibraryPickerSheet.swift` |
-| `ios/App/Sources/CharacterLibrary/` | 角色库 (create hub card → `CreateRoute.characterLibrary` / `.characterDetail`): list, detail with 造型 \| 音色 tabs over `GET /v1/characters/{id}/graph`; `CharacterGraphModel` = phone outline of the web DAG (depth-indented looks, version folding mirrors `front/src/components/asset-graph/versions.ts`) |
+| `ios/App/Sources/Create/` | Create hub, `StudioView`/`StudioViewModel` (video + remix only), job detail, publish, draft detail, `CreateJobBanner` |
+| `ios/App/Sources/AssetLibrary/` | 角色 / 场景 / 道具创作 (hub cards → `CreateRoute.assetLibrary(kind)` / `.assetDetail`): `AssetListView`, `AssetDetailView` with 创作 \| 图谱 \| 音色 (character) tabs over `GET /v1/{kind}/{id}/graph`; `AssetSlots` mirrors the web workspace slot table / camera grid / completeness / primary slot job; `AssetSlotBoard` + `SlotSheet`; `AssetGraphModel` = phone outline of the web DAG (depth-indented looks, version folding mirrors `front/src/components/asset-graph/versions.ts`); `AssetJobLink` routes image-job notifications into the card |
 | `ios/App/Resources/` | `Assets.xcassets`, `Localizable.xcstrings`, `Info.plist`, `PrivacyInfo.xcprivacy`, `Zaolang.entitlements` (`aps-environment` = development) |
 | `ios/tools/gen-colors.py` | Generates `Assets.xcassets/Colors` from `front/src/app/globals.css` (light + dark blocks) |
 | `ios/tools/gen-strings.py` | Generates `Localizable.xcstrings` from the JSON files in `front/src/i18n/messages/`; `NAMESPACES` = exported set |
@@ -39,9 +39,9 @@ Other feature dirs under `ios/App/Sources/` pair `*View` + `*ViewModel`. Learn u
 4. `zl_refresh` is taken over manually: `URLSessionFactory` sets `httpShouldSetCookies = false`, `CookieCodec` parses `Set-Cookie` into Keychain, `SessionManager.inFlightRefresh` single-flights 401s. Changing the cookie (`back/app/api/deps.py:REFRESH_COOKIE_NAME`) or its attributes silently breaks renewal.
 5. Reduced motion: read `@Environment(\.zlMotion)` (system OR server `reduce_motion`, merged in `RootView`), never `accessibilityReduceMotion` directly. Gate every new animation/transition on it.
 6. `ref` (inspiration) ≠ `source_work_id` (remix → lineage edge + license). Both go through one `StudioView`/`StudioViewModel` distinguished by `StudioMode` — never split. See `reference-write-flows.md`.
-7. Parse every list as `Page<T>` even when the backend only takes `limit` (of the lists iOS calls, only `/v1/works`, `/v1/credits/ledger`, `/v1/learn/posts` take `cursor`). Exception: `/v1/characters` and `/v1/scenes` return bare arrays — decode `[T]` (`APIClient+AssetLibrary.swift`; the 角色库 list passes `summary: true`, so its rows have no `looks` and lead with `heroUrl`); `/v1/characters/{id}/graph` is one object (`AssetGraphResponse`, `Models/AssetGraph.swift`).
+7. Parse every list as `Page<T>` even when the backend only takes `limit` (of the lists iOS calls, only `/v1/works`, `/v1/credits/ledger`, `/v1/learn/posts` take `cursor`). Exception: `/v1/characters`, `/v1/scenes` and `/v1/props` return bare arrays — decode `[T]` (`APIClient+AssetLibrary.swift`; the library lists fetch the full payload, not `?view=summary`, because the completeness badge needs the variants' entries); `/v1/{characters,scenes,props}/{id}/graph` is one object (`AssetGraphResponse`, `Models/AssetGraph.swift`).
 8. Lineage graph requests depth 3 (`LineageViewModel.depth`), not the API default 4 — phone width. Deliberate.
-9. Amounts are `Int`; enum raw values follow `back/app/models/enums.py`; mirror backend enum additions (`Operation`, `ImageAssetKind`, `CharacterViewAngle` in `Models/Enums.swift`) in the same change. Known drift: `Operation` lacks `music_generation`/`video_analysis` (response DTOs decode them as unknown via `RawOrUnknown`).
+9. Amounts are `Int`; enum raw values follow `back/app/models/enums.py`; mirror backend enum additions (`Operation`, `ImageAssetKind` — response fields wrap it in `RawOrUnknown`, `CharacterViewAngle` in `Models/Enums.swift`; `AssetCardKind` / `CameraPose` in `Models/AssetCard.swift`) in the same change. Known drift: `Operation` lacks `music_generation`/`video_analysis` (response DTOs decode them as unknown via `RawOrUnknown`).
 10. XcodeGen 2.46.0's top-level `resources:` emits no resources phase. Put new resource files in the target's `sources:` with `buildPhase: resources`, as `project.yml` does.
 11. `GENERATE_INFOPLIST_FILE: NO` → `App/Resources/Info.plist` must keep `CFBundleIdentifier`/`Executable`/`PackageType`/`Name`/`InfoDictionaryVersion` by hand, or install fails.
 12. `Operation` collides with `Foundation.Operation`, and `ZaolangKit.Operation` hits the namespace enum `ZaolangKit.ZaolangKit`. Files importing Foundation use the `GenerationOperation` alias (`Support/GenerationOperation.swift`).
@@ -73,5 +73,5 @@ Manual runs need `make up && make migrate && make seed && make dev-api` (port 30
 
 ## References
 
-- `reference-write-flows.md` — read when touching auth, studio/remix, job detail, publish, character view completion, push, or billing.
+- `reference-write-flows.md` — read when touching auth, studio/remix, the asset libraries (定稿, primary-slot generate), job detail, publish, push, or billing.
 - `reference-roadmap.md` — read before scoping new iOS work: shipped milestones, locked decisions, open contract gaps.
