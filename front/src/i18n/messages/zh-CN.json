@@ -1773,7 +1773,10 @@
     "describeDraft": "生成的{field}",
     "describeEmpty": "（暂无）",
     "describeNoLinks": "还没有剧本关联这个角色。先在文案创作里把剧本角色关联到角色库。",
-    "describeFailed": "生成失败，请稍后重试"
+    "describeFailed": "生成失败，请稍后重试",
+    "startImageLabel": "从图片开始（可选）",
+    "startImageHint": "上传一张清晰的正脸照或角色图，会作为定妆照；创作板接着生成设定图与转面。",
+    "startImageFailed": "图片上传失败，可以在创作板里重新上传。"
   },
   "collectionPage": {
     "eyebrow": "MY LIBRARY",
@@ -4143,5 +4146,114 @@
     "relationTo": "{relations} → {name}",
     "boundLooks": "用于造型：{names}",
     "describeHint": "根据关联剧本起草描述，填入上方后需保存才生效。"
+  },
+  "assetWorkspace": {
+    "tabCreate": "创作",
+    "tabGraph": {
+      "character": "造型图谱 · {count}",
+      "scene": "变体图谱 · {count}",
+      "prop": "状态图谱 · {count}"
+    },
+    "genericError": "操作失败，请重试",
+    "variantsLabel": {
+      "character": "造型",
+      "scene": "场景变体",
+      "prop": "道具状态"
+    },
+    "newVariant": {
+      "character": "新造型名称",
+      "scene": "新变体名称",
+      "prop": "新状态名称"
+    },
+    "add": "新建",
+    "boardLabel": "资产板",
+    "panelLabel": "生成面板",
+    "completeness": "完备度 {done}/{total}",
+    "noVariants": "这张卡片还没有造型或变体。",
+    "empty": "待生成",
+    "optional": "可选",
+    "candidateBadge": "{count} 张候选",
+    "slot": {
+      "portrait": "定妆照",
+      "sheet": "正面设定图",
+      "front_figure": "正面全身",
+      "side": "右侧 90°",
+      "back": "背面 180°",
+      "left": "左侧 270°",
+      "three_quarter": "右前侧 45°",
+      "expressions": "表情组",
+      "in_scene": "入场景",
+      "master": "主图",
+      "reverse": "反打 180°",
+      "right": "右机位 90°",
+      "overhead": "俯视全景",
+      "detail": "细节特写",
+      "top": "俯视 60°"
+    },
+    "status": {
+      "missing": "缺失",
+      "pending": "生成中",
+      "candidate": "待定稿",
+      "approved": "已定稿"
+    },
+    "orbit": {
+      "elevation": "俯仰",
+      "distance": "景别",
+      "dialLabel": "机位方位（相对主体）",
+      "subject": "主体",
+      "legend": "下方为正面；实心=已定稿，虚线=有候选。一次最多 8 个机位，每个机位一张图。",
+      "selected": "已选机位"
+    },
+    "azimuth": {
+      "0": "正面 0°",
+      "45": "右前侧 45°",
+      "90": "右侧 90°",
+      "135": "右后侧 135°",
+      "180": "背面 180°",
+      "225": "左后侧 225°",
+      "270": "左侧 270°",
+      "315": "左前侧 315°"
+    },
+    "elevation": {
+      "-30": "仰拍",
+      "0": "平视",
+      "30": "俯拍",
+      "60": "高位俯拍"
+    },
+    "distance": {
+      "close": "特写",
+      "medium": "中景",
+      "wide": "远景"
+    },
+    "coverage": {
+      "approved": "已定稿",
+      "candidate": "有候选"
+    },
+    "needSheet": "先生成并定稿一张正面设定图，转面机位会从它画出。",
+    "needMaster": "先生成并定稿主图，其他机位会从它画出。",
+    "needSceneLink": "这个造型还没有关联场景：在「造型图谱」里选中造型，在属性中选择场景。",
+    "orbitSource": "从{source}画出所选机位；看不见的部分由模型推测，生成结果先作为候选。",
+    "sourceSheet": "正面设定图（会先取出正面全身）",
+    "sourceImage": "已定稿的主图",
+    "expressionsLabel": "表情",
+    "extraLabel": "补充描述",
+    "extraHint": "会接在卡片描述之后，例如光线、姿态或画风。",
+    "styleSkill": "风格技能",
+    "styleSkillHint": "技能的画风会叠加进提示词；写明画风（如水彩、二次元）效果更稳定。",
+    "styleSkillNone": "不使用",
+    "candidates": "候选数量",
+    "candidateCount": "{count} 张",
+    "quality": "画质档位",
+    "tier": {
+      "preview": "预览",
+      "standard": "标准",
+      "cinematic": "电影级"
+    },
+    "generateFor": "生成（{credits} 积分）",
+    "generatePricing": "正在报价…",
+    "insufficient": "积分不足，当前可用 {available}。",
+    "fillAll": "一键补齐缺失",
+    "candidatesHint": "{count} 张候选：选一张定稿，原有的会退为候选。",
+    "approve": "定稿"
   }
 }

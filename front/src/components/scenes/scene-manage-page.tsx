@@ -1,25 +1,32 @@
 'use client';
 
-import { AssetGraphWorkspace } from '@/components/asset-graph/asset-graph-workspace';
+import { AssetWorkspace } from '@/features/asset-workspace/asset-workspace';
+import type { WorkspaceTab } from '@/features/asset-workspace/tabs';
 import type { AssetGraph } from '@/lib/api/types';
 import { sceneImageStudioHref, sceneManageHref } from '@/lib/scenes';
 
-/** `/create/scenes/[id]` body: the scene's variants and images as a
- * relation graph (`AssetGraphWorkspace`). */
+/** `/create/scenes/[id]` body: the scene workspace — 创作 board and the
+ * variants graph (`AssetWorkspace`). */
 export function SceneManagePage({
   initial,
   initialVariantId,
+  initialTab,
+  initialSlotId,
 }: {
   initial: AssetGraph;
   /** `?look=`: the variant to open on. */
   initialVariantId?: string | null;
+  initialTab?: WorkspaceTab | null;
+  initialSlotId?: string | null;
 }) {
   const returnTo = sceneManageHref(initial.card_id);
   return (
-    <AssetGraphWorkspace
+    <AssetWorkspace
       kind="scene"
       initial={initial}
-      initialLookId={initialVariantId}
+      initialTab={initialTab}
+      initialVariantId={initialVariantId}
+      initialSlotId={initialSlotId}
       generateHref={(variant) =>
         sceneImageStudioHref({
           sceneId: initial.card_id,

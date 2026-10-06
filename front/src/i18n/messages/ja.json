@@ -1773,7 +1773,10 @@
     "describeDraft": "生成された{field}",
     "describeEmpty": "（なし）",
     "describeNoLinks": "このキャラクターを使う台本はまだありません。台本スタジオでキャラクターを関連付けてください。",
-    "describeFailed": "生成に失敗しました。後でもう一度お試しください。"
+    "describeFailed": "生成に失敗しました。後でもう一度お試しください。",
+    "startImageLabel": "画像から始める（任意）",
+    "startImageHint": "はっきりした正面の顔写真やキャラクター画像がメイク写真になり、ボードで設定画と回転アングルを生成します。",
+    "startImageFailed": "画像のアップロードに失敗しました。ボードで再度追加してください。"
   },
   "collectionPage": {
     "eyebrow": "MY LIBRARY",
@@ -4143,5 +4146,114 @@
     "relationTo": "{relations} → {name}",
     "boundLooks": "使用する造形：{names}",
     "describeHint": "関連する脚本から説明を下書きします。上で確認してから保存してください。"
+  },
+  "assetWorkspace": {
+    "tabCreate": "制作",
+    "tabGraph": {
+      "character": "衣装グラフ · {count}",
+      "scene": "バリエーショングラフ · {count}",
+      "prop": "状態グラフ · {count}"
+    },
+    "genericError": "操作に失敗しました。もう一度お試しください",
+    "variantsLabel": {
+      "character": "衣装",
+      "scene": "バリエーション",
+      "prop": "状態"
+    },
+    "newVariant": {
+      "character": "新しい衣装名",
+      "scene": "新しいバリエーション名",
+      "prop": "新しい状態名"
+    },
+    "add": "追加",
+    "boardLabel": "アセットボード",
+    "panelLabel": "生成",
+    "completeness": "完成度 {done}/{total}",
+    "noVariants": "このカードにはまだ衣装やバリエーションがありません。",
+    "empty": "未生成",
+    "optional": "任意",
+    "candidateBadge": "候補 {count} 枚",
+    "slot": {
+      "portrait": "メイク写真",
+      "sheet": "正面の設定画",
+      "front_figure": "正面全身",
+      "side": "右側 90°",
+      "back": "背面 180°",
+      "left": "左側 270°",
+      "three_quarter": "右斜め前 45°",
+      "expressions": "表情セット",
+      "in_scene": "シーンの中で",
+      "master": "メイン画像",
+      "reverse": "切り返し 180°",
+      "right": "右アングル 90°",
+      "overhead": "俯瞰",
+      "detail": "ディテール",
+      "top": "俯瞰 60°"
+    },
+    "status": {
+      "missing": "未作成",
+      "pending": "生成中",
+      "candidate": "確定待ち",
+      "approved": "確定済み"
+    },
+    "orbit": {
+      "elevation": "高さ",
+      "distance": "距離",
+      "dialLabel": "被写体に対するカメラの向き",
+      "subject": "被写体",
+      "legend": "下が正面。塗り=確定、破線=候補あり。一度に最大 8 アングル、各 1 枚。",
+      "selected": "選択したアングル"
+    },
+    "azimuth": {
+      "0": "正面 0°",
+      "45": "右斜め前 45°",
+      "90": "右側 90°",
+      "135": "右斜め後ろ 135°",
+      "180": "背面 180°",
+      "225": "左斜め後ろ 225°",
+      "270": "左側 270°",
+      "315": "左斜め前 315°"
+    },
+    "elevation": {
+      "-30": "アオリ",
+      "0": "目線",
+      "30": "俯瞰",
+      "60": "真俯瞰寄り"
+    },
+    "distance": {
+      "close": "アップ",
+      "medium": "ミディアム",
+      "wide": "ロング"
+    },
+    "coverage": {
+      "approved": "確定済み",
+      "candidate": "候補あり"
+    },
+    "needSheet": "まず正面の設定画を生成して確定してください。回転アングルはそこから描かれます。",
+    "needMaster": "まずメイン画像を生成して確定してください。他のアングルはそこから描かれます。",
+    "needSceneLink": "この衣装にはシーンが未設定です。グラフタブの衣装属性で選んでください。",
+    "orbitSource": "{source}から選んだアングルを描きます。見えない部分は推測のため、結果はまず候補になります。",
+    "sourceSheet": "正面の設定画（先に正面全身を取り出します）",
+    "sourceImage": "確定済みのメイン画像",
+    "expressionsLabel": "表情",
+    "extraLabel": "追加の指示",
+    "extraHint": "カードの説明の後に追加されます（光、ポーズ、画風など）。",
+    "styleSkill": "スタイルスキル",
+    "styleSkillHint": "スキルの画風がプロンプトに加わります。画材（水彩・アニメなど）を明記したスキルが安定します。",
+    "styleSkillNone": "使わない",
+    "candidates": "候補数",
+    "candidateCount": "{count} 枚",
+    "quality": "画質",
+    "tier": {
+      "preview": "プレビュー",
+      "standard": "標準",
+      "cinematic": "シネマ"
+    },
+    "generateFor": "生成（{credits} クレジット）",
+    "generatePricing": "見積もり中…",
+    "insufficient": "クレジット不足（利用可能 {available}）。",
+    "fillAll": "不足分をまとめて補完",
+    "candidatesHint": "候補 {count} 枚：1 枚を確定すると現在の画像は候補に戻ります。",
+    "approve": "確定"
   }
 }

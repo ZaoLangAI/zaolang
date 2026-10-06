@@ -48,7 +48,8 @@ export function useAssetGraph(kind: CardKind, initial: AssetGraph) {
   const t = useTranslations('assetGraph');
   const { notify } = useToast();
   const segment = kind === 'character' ? 'looks' : 'variants';
-  const base = `/v1/${kind === 'character' ? 'characters' : 'scenes'}/${initial.card_id}`;
+  const api_ = { character: 'characters', scene: 'scenes', prop: 'props' }[kind];
+  const base = `/v1/${api_}/${initial.card_id}`;
   const [graph, setGraph] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,3 +124,5 @@ export function useAssetGraph(kind: CardKind, initial: AssetGraph) {
 
   return { graph, busy, error, actions, clearError: () => setError(null) };
 }
+
+export type AssetGraphStore = ReturnType<typeof useAssetGraph>;

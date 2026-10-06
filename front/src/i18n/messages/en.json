@@ -1773,7 +1773,10 @@
     "describeDraft": "Drafted {field}",
     "describeEmpty": "(empty)",
     "describeNoLinks": "No script uses this character yet. Link a script character to it in the script studio first.",
-    "describeFailed": "Couldn't draft it. Try again later."
+    "describeFailed": "Couldn't draft it. Try again later.",
+    "startImageLabel": "Start from an image (optional)",
+    "startImageHint": "A clear face photo or character image becomes the identity portrait; the board then draws the sheet and turnaround.",
+    "startImageFailed": "The image could not be uploaded — add it again on the board."
   },
   "collectionPage": {
     "eyebrow": "MY LIBRARY",
@@ -4143,5 +4146,114 @@
     "relationTo": "{relations} → {name}",
     "boundLooks": "Used by looks: {names}",
     "describeHint": "Drafts the descriptions from linked scripts. Review them above, then save."
+  },
+  "assetWorkspace": {
+    "tabCreate": "Create",
+    "tabGraph": {
+      "character": "Looks graph · {count}",
+      "scene": "Variants graph · {count}",
+      "prop": "Conditions graph · {count}"
+    },
+    "genericError": "Something went wrong. Try again.",
+    "variantsLabel": {
+      "character": "Looks",
+      "scene": "Variants",
+      "prop": "Conditions"
+    },
+    "newVariant": {
+      "character": "New look name",
+      "scene": "New variant name",
+      "prop": "New condition name"
+    },
+    "add": "Add",
+    "boardLabel": "Asset board",
+    "panelLabel": "Generate",
+    "completeness": "Complete {done}/{total}",
+    "noVariants": "This card has no looks or variants yet.",
+    "empty": "Not yet",
+    "optional": "Optional",
+    "candidateBadge": "{count} candidates",
+    "slot": {
+      "portrait": "Identity portrait",
+      "sheet": "Front sheet",
+      "front_figure": "Front figure",
+      "side": "Right side 90°",
+      "back": "Back 180°",
+      "left": "Left side 270°",
+      "three_quarter": "Front-right 45°",
+      "expressions": "Expressions",
+      "in_scene": "In its scene",
+      "master": "Hero image",
+      "reverse": "Reverse 180°",
+      "right": "Right 90°",
+      "overhead": "Overhead",
+      "detail": "Detail",
+      "top": "Top 60°"
+    },
+    "status": {
+      "missing": "Missing",
+      "pending": "Generating",
+      "candidate": "To approve",
+      "approved": "Approved"
+    },
+    "orbit": {
+      "elevation": "Height",
+      "distance": "Distance",
+      "dialLabel": "Camera angle around the subject",
+      "subject": "Subject",
+      "legend": "Front is at the bottom; filled = approved, dashed = has candidates. Up to 8 angles, one image each.",
+      "selected": "Selected angles"
+    },
+    "azimuth": {
+      "0": "Front 0°",
+      "45": "Front-right 45°",
+      "90": "Right side 90°",
+      "135": "Back-right 135°",
+      "180": "Back 180°",
+      "225": "Back-left 225°",
+      "270": "Left side 270°",
+      "315": "Front-left 315°"
+    },
+    "elevation": {
+      "-30": "Low angle",
+      "0": "Eye level",
+      "30": "High angle",
+      "60": "Bird's eye"
+    },
+    "distance": {
+      "close": "Close-up",
+      "medium": "Medium",
+      "wide": "Wide"
+    },
+    "coverage": {
+      "approved": "approved",
+      "candidate": "has candidates"
+    },
+    "needSheet": "Generate and approve a front sheet first — the turnaround is drawn from it.",
+    "needMaster": "Generate and approve the hero image first — the other angles are drawn from it.",
+    "needSceneLink": "This look has no linked scene yet: pick one in the look's attributes on the graph tab.",
+    "orbitSource": "The angles are drawn from the {source}; unseen parts are inferred, so results start as candidates.",
+    "sourceSheet": "front sheet (its front figure is drawn first)",
+    "sourceImage": "approved hero image",
+    "expressionsLabel": "Expressions",
+    "extraLabel": "Extra direction",
+    "extraHint": "Appended to the card's description — light, pose or style.",
+    "styleSkill": "Style skill",
+    "styleSkillHint": "The skill's look is folded into the prompt; skills that name a medium (watercolour, anime) work best.",
+    "styleSkillNone": "None",
+    "candidates": "Candidates",
+    "candidateCount": "{count}",
+    "quality": "Quality",
+    "tier": {
+      "preview": "Preview",
+      "standard": "Standard",
+      "cinematic": "Cinematic"
+    },
+    "generateFor": "Generate ({credits} credits)",
+    "generatePricing": "Pricing…",
+    "insufficient": "Not enough credits — {available} available.",
+    "fillAll": "Fill everything missing",
+    "candidatesHint": "{count} candidates — approve one; the current image becomes a candidate.",
+    "approve": "Approve"
   }
 }
