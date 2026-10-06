@@ -85,35 +85,6 @@ export function referenceByView(
 }
 
 /**
- * True once a front reference exists and either the side or back is still
- * missing. Web no longer offers completion; kept for tests and any
- * remaining API/iOS caller that still builds a side/back job.
- */
-export function canCompleteViews(character: Character): boolean {
-  return (
-    Boolean(referenceByView(character, 'front')) &&
-    (!referenceByView(character, 'side') || !referenceByView(character, 'back'))
-  );
-}
-
-/**
- * Which of `side`/`back` a completion job should actually request — never
- * a view the character already has a reference for. Submitting the missing
- * subset (instead of always hardcoding `['side', 'back']`) is what lets a
- * user delete just one unsatisfying view and regenerate only that one
- * without a fresh request silently overwriting the other, already-approved
- * view.
- *
- * Empty when there's no front reference yet — mirrors `canCompleteViews`'s
- * own guard, since a completion job always needs the front view as its
- * material.
- */
-export function missingReferenceViews(character: Character): Array<'side' | 'back'> {
-  if (!referenceByView(character, 'front')) return [];
-  return (['side', 'back'] as const).filter((view) => !referenceByView(character, view));
-}
-
-/**
  * A "补全侧面/背面" completion job — `asset_kind: 'character'` with
  * `character_views` set and *not* including `'front'` (e.g. `['side',
  * 'back']`). Purely data-derived (no character-record lookup needed), so it
