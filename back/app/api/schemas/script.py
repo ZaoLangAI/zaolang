@@ -42,11 +42,25 @@ class ScriptCharacter(ApiModel):
     look_id: str | None = None
 
 
+class ScriptProp(ApiModel):
+    """A story object (信物、凶器…) the asset breakdown found in the script
+    (`POST /v1/scripts/{id}:breakdown-apply`). The model never writes props
+    itself; `copywriter._carry_over_links` keeps them across revision turns."""
+
+    name: str
+    description: str = ""
+    # Links this prop to a reusable prop card — same rule as
+    # `ScriptCharacter.character_ref_id`.
+    prop_ref_id: str | None = None
+
+
 class ScriptDocument(ApiModel):
     title: str = ""
     logline: str = ""
     characters: list[ScriptCharacter] = Field(default_factory=list)
     scenes: list[ScriptScene] = Field(default_factory=list)
+    # ≤ `copywriter.MAX_PROPS`, trimmed by `_sanitize_script`.
+    props: list[ScriptProp] = Field(default_factory=list)
 
 
 class ScriptCreateRequest(ApiModel):
@@ -98,6 +112,11 @@ class ScriptSceneLinkUpdate(ApiModel):
     variant_id: str | None = Field(default=None, max_length=40)
 
 
+class ScriptPropLinkUpdate(ApiModel):
+    name: str = Field(min_length=1, max_length=60)
+    prop_ref_id: str | None = None
+
+
 class ScriptLinksUpdateRequest(ApiModel):
     """A structural edit, not a content revision — never goes through the
     LLM turn machinery (no `AgentRun`, no new `EpisodeScriptTurn`). Matched
@@ -108,6 +127,8 @@ class ScriptLinksUpdateRequest(ApiModel):
 
     characters: list[ScriptCharacterLinkUpdate] = Field(default_factory=list, max_length=20)
     scenes: list[ScriptSceneLinkUpdate] = Field(default_factory=list, max_length=40)
+    # A name the script has no prop for yet is appended (with a link only).
+    props: list[ScriptPropLinkUpdate] = Field(default_factory=list, max_length=40)
 
 
 class ScriptContentUpdateRequest(ApiModel):

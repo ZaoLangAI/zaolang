@@ -951,6 +951,74 @@ def test_links_carry_a_look_and_a_scene_variant(
     assert unlinked.json()["characters"][0]["look_id"] is None
 
 
+def test_links_attach_props_and_keep_them_across_turns_and_hand_edits(
+    client: TestClient, db: Session, author: User, remixer: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.domain.props import service as props_service
+
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+    jade = props_service.create_prop(
+        db, user_id=author.id, name="玉佩", description="碎成两半", reference_asset_ids=[]
+    )
+    foreign = props_service.create_prop(
+        db, user_id=remixer.id, name="匕首", description=None, reference_asset_ids=[]
+    )
+    db.flush()
+
+    created = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    first = next(data for kind, data in _parse_sse(created.text) if kind == "complete")
+    episode_id = first["episode_id"]
+    assert first["script"]["props"] == []
+
+    rejected = client.patch(
+        f"/v1/scripts/{episode_id}/links",
+        json={"props": [{"name": "匕首", "prop_ref_id": foreign.id}]},
+        headers=auth_header(author),
+    )
+    assert rejected.status_code == 404
+
+    # An unknown name with no link is a no-op; with a link it is appended.
+    linked = client.patch(
+        f"/v1/scripts/{episode_id}/links",
+        json={
+            "props": [
+                {"name": "玉佩", "prop_ref_id": jade.id},
+                {"name": "雨伞", "prop_ref_id": None},
+            ]
+        },
+        headers=auth_header(author),
+    )
+    assert linked.status_code == 200, linked.text
+    assert linked.json()["props"] == [{"name": "玉佩", "description": "", "prop_ref_id": jade.id}]
+
+    revised = client.post(
+        f"/v1/scripts/{episode_id}/turns",
+        json={"message": "继续修改"},
+        headers=auth_header(author),
+    )
+    revised_complete = next(data for kind, data in _parse_sse(revised.text) if kind == "complete")
+    assert revised_complete["script"]["props"][0]["prop_ref_id"] == jade.id
+
+    edited = client.patch(
+        f"/v1/scripts/{episode_id}",
+        json={"script": revised_complete["script"]},
+        headers=auth_header(author),
+    )
+    assert edited.json()["props"][0]["prop_ref_id"] == jade.id
+
+    unlinked = client.patch(
+        f"/v1/scripts/{episode_id}/links",
+        json={"props": [{"name": "玉佩", "prop_ref_id": None}]},
+        headers=auth_header(author),
+    )
+    assert unlinked.json()["props"] == [{"name": "玉佩", "description": "", "prop_ref_id": None}]
+
+
 def test_update_content_saves_hand_edited_text_without_creating_a_turn(
     client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:

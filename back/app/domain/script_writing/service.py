@@ -51,6 +51,7 @@ from app.domain.editor import collaborators
 from app.domain.editor import service as editor_service
 from app.domain.errors import DomainError, NotFound, ValidationFailed
 from app.domain.notifications import push
+from app.domain.props import service as props_service
 from app.domain.scenes import service as scenes_service
 from app.domain.script_writing.extract import ExtractedScriptSource, extract_script_source
 from app.domain.skill_library import service as skill_library_service
@@ -828,9 +829,10 @@ def update_links(
     episode_id: str,
     character_links: list[tuple[str, str | None, str | None]],
     scene_links: list[tuple[str, str | None, str | None]],
+    prop_links: list[tuple[str, str | None]] | None = None,
 ) -> DramaEpisode:
-    """Links a script's characters/scene headings to reusable `Character`/
-    `Scene` assets — a structural edit, not a content revision, so it writes
+    """Links a script's characters/scene headings/props to reusable
+    character/scene/prop cards — a structural edit, not a content revision, so it writes
     directly to `episode.script_json` without going through the LLM turn
     machinery: no `AgentRun`, no new `EpisodeScriptTurn`, no model call spent
     on something the user decided by clicking a picker rather than describing
@@ -862,6 +864,11 @@ def update_links(
             scene_card = scenes_service.get_scene(session, user_id=user_id, scene_id=ref_id)
             _require_variant(scene_card.skill, variant_id, field="scenes.variant_id")
         scene_ref_by_heading[heading] = (ref_id, variant_id if ref_id else None)
+    prop_ref_by_name: dict[str, str | None] = {}
+    for name, ref_id in prop_links or []:
+        if ref_id:
+            props_service.get_prop(session, user_id=user_id, prop_id=ref_id)
+        prop_ref_by_name[name.strip()] = ref_id
 
     next_characters = []
     for item in script.get("characters") or []:
@@ -877,12 +884,49 @@ def update_links(
             scene["ref_id"], scene["variant_id"] = scene_ref_by_heading[scene["heading"]]
         next_scenes.append(scene)
 
+    next_props = link_props(script.get("props") or [], prop_ref_by_name)
+
     # A fresh dict, not a mutated nested one — SQLAlchemy only detects a
     # JSONB column change on reassignment, matching how every other turn
     # here writes `episode.script_json` (see `stream_new_script`/`stream_turn`).
-    episode.script_json = {**script, "characters": next_characters, "scenes": next_scenes}
+    episode.script_json = {
+        **script,
+        "characters": next_characters,
+        "scenes": next_scenes,
+        "props": next_props,
+    }
     session.flush()
     return episode
+
+
+def link_props(
+    props: list[dict[str, Any]],
+    ref_by_name: dict[str, str | None],
+    *,
+    descriptions: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """`props` with each named prop's link set; a linked name the script has
+    no prop for yet is appended (the script only learns its props from a
+    breakdown or a link). Over `copywriter.MAX_PROPS` is a 422."""
+    descriptions = descriptions or {}
+    next_props = [dict(item) for item in props if isinstance(item, dict)]
+    known = {str(item.get("name")): item for item in next_props}
+    for name, ref_id in ref_by_name.items():
+        item = known.get(name)
+        if item is None:
+            if not ref_id and name not in descriptions:
+                continue
+            item = {"name": name, "description": "", "prop_ref_id": None}
+            next_props.append(item)
+            known[name] = item
+        item["prop_ref_id"] = ref_id
+        if descriptions.get(name) and not item.get("description"):
+            item["description"] = descriptions[name]
+    if len(next_props) > copywriter.MAX_PROPS:
+        raise ValidationFailed(
+            f"一个剧本最多关联 {copywriter.MAX_PROPS} 个道具。", fields={"props": "数量超限"}
+        )
+    return copywriter.sanitize_props(next_props)
 
 
 def update_content(

@@ -3998,8 +3998,8 @@ export interface paths {
         head?: never;
         /**
          * Update Script Links
-         * @description Links characters/scene headings to reusable `Character`/`Scene`
-         *     assets. Unlike every other route in this file, this is a plain
+         * @description Links characters/scene headings/props to reusable character/scene/
+         *     prop cards. Unlike every other route in this file, this is a plain
          *     request/response — it is a structural edit, not a content revision, so
          *     it never touches the SSE turn machinery (see `update_links`'s docstring).
          */
@@ -13684,6 +13684,8 @@ export interface components {
             characters?: components["schemas"]["ScriptCharacter"][];
             /** Scenes */
             scenes?: components["schemas"]["ScriptScene"][];
+            /** Props */
+            props?: components["schemas"]["ScriptProp"][];
         };
         /** ScriptExtractResponse */
         ScriptExtractResponse: {
@@ -13709,6 +13711,32 @@ export interface components {
             characters?: components["schemas"]["ScriptCharacterLinkUpdate"][];
             /** Scenes */
             scenes?: components["schemas"]["ScriptSceneLinkUpdate"][];
+            /** Props */
+            props?: components["schemas"]["ScriptPropLinkUpdate"][];
+        };
+        /**
+         * ScriptProp
+         * @description A story object (信物、凶器…) the asset breakdown found in the script
+         *     (`POST /v1/scripts/{id}:breakdown-apply`). The model never writes props
+         *     itself; `copywriter._carry_over_links` keeps them across revision turns.
+         */
+        ScriptProp: {
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Prop Ref Id */
+            prop_ref_id?: string | null;
+        };
+        /** ScriptPropLinkUpdate */
+        ScriptPropLinkUpdate: {
+            /** Name */
+            name: string;
+            /** Prop Ref Id */
+            prop_ref_id?: string | null;
         };
         /**
          * ScriptRetryRequest

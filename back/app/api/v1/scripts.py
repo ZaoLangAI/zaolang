@@ -484,8 +484,8 @@ def update_script_links(
     session: DbSession,
     _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> ScriptDocument:
-    """Links characters/scene headings to reusable `Character`/`Scene`
-    assets. Unlike every other route in this file, this is a plain
+    """Links characters/scene headings/props to reusable character/scene/
+    prop cards. Unlike every other route in this file, this is a plain
     request/response — it is a structural edit, not a content revision, so
     it never touches the SSE turn machinery (see `update_links`'s docstring).
     """
@@ -495,6 +495,7 @@ def update_script_links(
         episode_id=episode_id,
         character_links=[(c.name, c.character_ref_id, c.look_id) for c in payload.characters],
         scene_links=[(s.heading, s.ref_id, s.variant_id) for s in payload.scenes],
+        prop_links=[(p.name, p.prop_ref_id) for p in payload.props],
     )
     session.commit()
     return ScriptDocument.model_validate(episode.script_json or {})

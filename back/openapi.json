@@ -17211,7 +17211,7 @@
           "scripts"
         ],
         "summary": "Update Script Links",
-        "description": "Links characters/scene headings to reusable `Character`/`Scene`\nassets. Unlike every other route in this file, this is a plain\nrequest/response — it is a structural edit, not a content revision, so\nit never touches the SSE turn machinery (see `update_links`'s docstring).",
+        "description": "Links characters/scene headings/props to reusable character/scene/\nprop cards. Unlike every other route in this file, this is a plain\nrequest/response — it is a structural edit, not a content revision, so\nit never touches the SSE turn machinery (see `update_links`'s docstring).",
         "operationId": "update_script_links_v1_scripts__episode_id__links_patch",
         "parameters": [
           {
@@ -45665,6 +45665,13 @@
             },
             "type": "array",
             "title": "Scenes"
+          },
+          "props": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptProp"
+            },
+            "type": "array",
+            "title": "Props"
           }
         },
         "type": "object",
@@ -45715,11 +45722,75 @@
             "type": "array",
             "maxItems": 40,
             "title": "Scenes"
+          },
+          "props": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptPropLinkUpdate"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "title": "Props"
           }
         },
         "type": "object",
         "title": "ScriptLinksUpdateRequest",
         "description": "A structural edit, not a content revision — never goes through the\nLLM turn machinery (no `AgentRun`, no new `EpisodeScriptTurn`). Matched\nby `name`/`heading` against the episode's current `script_json` rather\nthan by index, since either list can be reordered by a revision turn\nthat runs concurrently with a link update landing."
+      },
+      "ScriptProp": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "prop_ref_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prop Ref Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ScriptProp",
+        "description": "A story object (信物、凶器…) the asset breakdown found in the script\n(`POST /v1/scripts/{id}:breakdown-apply`). The model never writes props\nitself; `copywriter._carry_over_links` keeps them across revision turns."
+      },
+      "ScriptPropLinkUpdate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "prop_ref_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prop Ref Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ScriptPropLinkUpdate"
       },
       "ScriptRetryRequest": {
         "properties": {

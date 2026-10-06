@@ -194,6 +194,42 @@ def test_carry_over_links_reattaches_links_the_model_output_omits() -> None:
     assert updated["scenes"][0]["ref_id"] == "scn_1"
 
 
+def test_sanitize_script_bounds_props_and_keeps_their_links() -> None:
+    raw = {
+        "scenes": [
+            {"heading": "第一场", "blocks": [{"type": "scene", "character": None, "text": "开场"}]}
+        ],
+        "props": [
+            {"name": " 玉佩 ", "description": "碎成两半", "prop_ref_id": "sk_1"},
+            {"name": "玉佩", "description": "重复"},
+            {"name": ""},
+            "not a prop",
+            *({"name": f"道具{i}"} for i in range(copywriter.MAX_PROPS + 5)),
+        ],
+    }
+    sanitized = copywriter._sanitize_script(raw)
+    assert sanitized is not None
+    props = sanitized["props"]
+    assert len(props) == copywriter.MAX_PROPS
+    assert props[0] == {"name": "玉佩", "description": "碎成两半", "prop_ref_id": "sk_1"}
+    assert [p["name"] for p in props].count("玉佩") == 1
+
+
+def test_carry_over_links_keeps_the_breakdown_props_the_model_never_writes() -> None:
+    previous = {
+        "characters": [],
+        "scenes": [],
+        "props": [{"name": "玉佩", "description": "", "prop_ref_id": "sk_1"}],
+    }
+    updated = {"characters": [], "scenes": [], "props": []}
+    copywriter._carry_over_links(previous, updated)
+    assert updated["props"] == previous["props"]
+
+    echoed = {"characters": [], "scenes": [], "props": [{"name": "玉佩", "prop_ref_id": None}]}
+    copywriter._carry_over_links(previous, echoed)
+    assert echoed["props"][0]["prop_ref_id"] == "sk_1"
+
+
 def test_carry_over_links_does_not_match_a_renamed_character() -> None:
     previous = {"characters": [{"name": "小雨", "character_ref_id": "chr_1"}], "scenes": []}
     updated = {"characters": [{"name": "小晴", "character_ref_id": None}], "scenes": []}
