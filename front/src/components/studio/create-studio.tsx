@@ -4,13 +4,6 @@ import dynamic from 'next/dynamic';
 
 import { StudioSkeleton } from '@/components/studio/studio-skeleton';
 import type { Draft, StyleGalleryEntry, WorkDetail } from '@/lib/api/types';
-import type { ScenePresets } from '@/features/image-assets/vocabulary';
-
-const ImageGenerationStudio = dynamic(
-  () =>
-    import('@/components/studio/image-generation-studio').then((mod) => mod.ImageGenerationStudio),
-  { loading: () => <StudioSkeleton /> },
-);
 
 const VideoGenerationStudio = dynamic(
   () =>
@@ -30,14 +23,12 @@ const MusicGenerationStudio = dynamic(
   { loading: () => <StudioSkeleton /> },
 );
 
-type ImageAssetKind = 'general' | 'character' | 'scene' | 'cover';
 type VideoAssetKind = 'general' | 'character_action' | 'transition_video' | 'cover_video';
-type LinkKind = 'character' | 'scene';
 
 /**
  * Loads exactly one generation studio chunk for `/create/new`.
  *
- * Declaring all three `next/dynamic` factories in this module keeps the RSC
+ * Declaring every `next/dynamic` factory in this module keeps the RSC
  * page free of static studio imports; only the branch that mounts actually
  * fetches its chunk.
  */
@@ -48,14 +39,9 @@ export function CreateStudio({
   initialDraft,
   initialJobId,
   style,
-  initialAssetKind,
   initialVideoAssetKind,
   initialTargetCharacterId,
-  initialTargetSceneId,
   subjectNameHint,
-  returnTo,
-  returnLinkKind,
-  returnLinkLabel,
   initialReferenceCharacterIds,
   initialReferenceSceneIds,
   initialReferencePropIds,
@@ -63,26 +49,17 @@ export function CreateStudio({
   linkBreakpointKey,
   continuitySourceAssetId,
   initialSkillId,
-  initialReferenceAssetIds,
-  initialScenePresets,
-  initialTargetVariantId,
-  initialCharacterPortrait,
 }: {
-  operation: 'text_to_image' | 'text_to_video' | 'audio_generation' | 'music_generation';
+  operation: 'text_to_video' | 'audio_generation' | 'music_generation';
   initialPrompt?: string;
   reference?: WorkDetail;
   initialDraft?: Draft;
   /** Notification click-through — which job under `initialDraft` to show. */
   initialJobId?: string;
   style?: StyleGalleryEntry | null;
-  initialAssetKind?: ImageAssetKind;
   initialVideoAssetKind?: VideoAssetKind;
   initialTargetCharacterId?: string;
-  initialTargetSceneId?: string;
   subjectNameHint?: string;
-  returnTo?: string;
-  returnLinkKind?: LinkKind;
-  returnLinkLabel?: string;
   initialReferenceCharacterIds?: string[];
   initialReferenceSceneIds?: string[];
   initialReferencePropIds?: string[];
@@ -92,44 +69,12 @@ export function CreateStudio({
    * `VideoGenerationStudio`'s own doc comment. */
   continuitySourceAssetId?: string;
   initialSkillId?: string;
-  /** Reference images handed over by a deep link — the canvas turns an edge
-   * from a picture card into this. */
-  initialReferenceAssetIds?: string[];
-  /** Scene lighting/weather from a script heading jump-out. */
-  initialScenePresets?: ScenePresets;
-  /** Look / scene variant the output is filed under (`target_variant_id`). */
-  initialTargetVariantId?: string;
-  /** Open the image studio on the identity portrait (定妆照). */
-  initialCharacterPortrait?: boolean;
 }) {
   if (operation === 'audio_generation') {
     return <AudioGenerationStudio initialPrompt={initialPrompt} reference={reference} />;
   }
   if (operation === 'music_generation') {
     return <MusicGenerationStudio initialPrompt={initialPrompt} />;
-  }
-  if (operation === 'text_to_image') {
-    return (
-      <ImageGenerationStudio
-        initialPrompt={initialPrompt}
-        reference={reference}
-        initialDraft={initialDraft}
-        initialJobId={initialJobId}
-        initialAssetKind={initialAssetKind}
-        initialTargetCharacterId={initialTargetCharacterId}
-        initialTargetSceneId={initialTargetSceneId}
-        subjectNameHint={subjectNameHint}
-        returnTo={returnTo}
-        returnLinkKind={returnLinkKind}
-        returnLinkLabel={returnLinkLabel}
-        linkEpisodeId={linkEpisodeId}
-        initialSkillId={initialSkillId}
-        initialReferenceAssetIds={initialReferenceAssetIds}
-        initialScenePresets={initialScenePresets}
-        initialTargetVariantId={initialTargetVariantId}
-        initialCharacterPortrait={initialCharacterPortrait}
-      />
-    );
   }
   return (
     <VideoGenerationStudio

@@ -1,5 +1,4 @@
-export type StudioPrefetchMode =
-  'image_creation' | 'video_creation' | 'audio_generation' | 'music_generation';
+export type StudioPrefetchMode = 'video_creation' | 'audio_generation' | 'music_generation';
 
 /**
  * Warms the `/create/new` studio chunk that a create-mode card will open.
@@ -10,9 +9,6 @@ export type StudioPrefetchMode =
  */
 export function prefetchStudio(mode: StudioPrefetchMode): void {
   switch (mode) {
-    case 'image_creation':
-      void import('@/components/studio/image-generation-studio');
-      return;
     case 'video_creation':
       void import('@/components/studio/video-generation-studio');
       return;

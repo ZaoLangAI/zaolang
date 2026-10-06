@@ -68,7 +68,7 @@ export function useJobStream(jobId: string, initial: GenerationJob | null): JobS
 
   // Every existing caller mounts this hook once per job (a new page instance
   // per navigation), so `job`/`events` only ever needed their `useState`
-  // initializer. The image studio's inline preview instead keeps one long-
+  // initializer. The video studio's inline preview instead keeps one long-
   // lived hook instance and swaps `jobId` in place when the user submits a
   // new iteration or clicks an older version in the history strip — without
   // this reset, the previous job's state (and its `Last-Event-ID` position)
@@ -89,7 +89,7 @@ export function useJobStream(jobId: string, initial: GenerationJob | null): JobS
   }, [jobId]);
 
   useEffect(() => {
-    // An empty id means "nothing selected yet" — the image studio's inline
+    // An empty id means "nothing selected yet" — the video studio's inline
     // preview calls this hook unconditionally (hooks can't be called
     // conditionally) before a job exists, so this has to be a safe no-op
     // rather than opening a stream against `/generation-jobs//events`.

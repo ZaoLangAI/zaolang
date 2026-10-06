@@ -79,11 +79,11 @@ type Operation = 'text_to_video' | 'image_to_video' | 'video_to_video';
 type ReferenceMode = 'input_references' | 'frame_images';
 type Orientation = 'landscape' | 'portrait' | 'adaptive';
 /** What a video job's output is *for* — mirrors the backend's `VideoAssetKind`
- * (`back/app/models/enums.py`), the video-side equivalent of
- * `ImageGenerationStudio`'s `AssetKind`. `character_action` auto-attaches
+ * (`back/app/models/enums.py`), the video-side equivalent of the image
+ * `asset_kind`. `character_action` auto-attaches
  * the succeeded output to a character's clip list
  * (`execute_asset_output_link`); `transition_video`/`cover_video` are
- * tagged but not attached to any library, same as image's `cover` today. */
+ * tagged but not attached to any library. */
 type VideoAssetKind = 'general' | 'character_action' | 'transition_video' | 'cover_video';
 const VIDEO_ASSET_KINDS = [
   'general',
@@ -158,7 +158,7 @@ export function VideoGenerationStudio({
    * `/create/new`, or the "最近草稿"/"草稿" tab's edit entry — so its full
    * version history and latest output (`GenerationVersionHistory`) reappear
    * instead of starting blank. Every later submit in this session reuses
-   * the same draft id, exactly like `ImageGenerationStudio`.
+   * the same draft id.
    */
   initialDraft?: Draft;
   /** Notification click-through (`?jobId=`). Preferred over
@@ -171,10 +171,7 @@ export function VideoGenerationStudio({
   initialStyleGalleryId?: string;
   /**
    * Pre-fills the asset-kind picker below — the character library's
-   * "生成动作视频" button deep-links here the same way the script studio's
-   * image jump-out pre-fills `ImageGenerationStudio`'s `initialAssetKind`
-   * (see the `zaolang-frontend-ui` skill's studios reference on the jump-out
-   * convention).
+   * "生成动作视频" button deep-links here.
    */
   initialVideoAssetKind?: VideoAssetKind;
   initialTargetCharacterId?: string;
@@ -225,8 +222,7 @@ export function VideoGenerationStudio({
   );
   // `Draft.params.aspect_ratio`/`duration_seconds` are written once, at the
   // draft's first submit — a session-level setting, not necessarily what
-  // the *latest* job under it actually used, same trade-off
-  // `ImageGenerationStudio` already accepts for its own `aspect` seed.
+  // the *latest* job under it actually used.
   const [aspect, setAspect] = useState<string>(() => {
     const draftAspect = initialDraft?.params?.aspect_ratio;
     return typeof draftAspect === 'string' && (ASPECTS as readonly string[]).includes(draftAspect)
@@ -254,8 +250,7 @@ export function VideoGenerationStudio({
   const [uploads, setUploads] = useState<Asset[]>([]);
   const [presetExtra, setPresetExtra] = useState<Record<string, unknown>>({});
   // "视频创作" — what this output is for, and which existing character/scene
-  // (if any) it should write back to. Mirrors `ImageGenerationStudio`'s own
-  // asset-kind state one-for-one.
+  // (if any) it should write back to.
   const [videoAssetKind, setVideoAssetKind] = useState<VideoAssetKind>(
     initialVideoAssetKind ?? 'general',
   );
@@ -280,8 +275,8 @@ export function VideoGenerationStudio({
   // prompt's 「镜头：」 line on the backend.
   const [referenceEmotion, setReferenceEmotion] = useState<CharacterExpression | ''>('');
 
-  // Inline progress/result + version history state — the same shape
-  // `ImageGenerationStudio` uses. `draftId` is created on the first submit
+  // Inline progress/result + version history state. `draftId` is created on
+  // the first submit
   // and reused by every later "continue refining" submit, so the whole
   // session's iterations file under one draft.
   const [draftId, setDraftId] = useState<string | null>(initialDraft?.id ?? null);
@@ -317,16 +312,14 @@ export function VideoGenerationStudio({
   ) {
     setResumeFallbackJobId(resumeDefaultJobId);
   }
-  // Adjusted during render rather than in an effect (same pattern as
-  // `ImageGenerationStudio`), guarded by `!activeJobId` so it only ever
+  // Adjusted during render rather than in an effect, guarded by `!activeJobId` so it only ever
   // fires once, the moment the resumed job's data arrives. `video_asset_kind`
-  // rides along here (not on `Draft.params`, only on the job response), same
-  // as image's `asset_kind`. `prompt` is re-seeded from the resumed *job*
+  // rides along here (not on `Draft.params`, only on the job response).
+  // `prompt` is re-seeded from the resumed *job*
   // (not `initialDraft.params.prompt`, frozen at the draft's first submit)
   // so a several-versions-deep resume shows the actual last-edited prompt —
   // deliberately does *not* also re-attach that job's own output as a
-  // reference upload the way `ImageGenerationStudio` does for its
-  // image-to-image chaining: silently turning a plain "tweak the prompt and
+  // reference upload: silently turning a plain "tweak the prompt and
   // regenerate" resume into a `video_to_video` job would be a surprising
   // default. `InlineVideoResult`'s "基于此视频继续创作" does that instead,
   // deliberately, on click.

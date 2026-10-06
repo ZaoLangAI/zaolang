@@ -18,7 +18,6 @@ import { jobStageState } from '@/components/job/job-stage-state';
 import { DevicePreview } from '@/components/media/device-preview';
 import { DownloadAssetButton } from '@/components/media/download-asset-button';
 import { OutputGallery } from '@/components/media/output-gallery';
-import { SaveCoverAsSkillDialog } from '@/components/studio/save-cover-as-skill-dialog';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { IconCheck, IconClock, IconCopy, IconSparkle } from '@/components/ui/icons';
@@ -59,7 +58,6 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [openingEditor, setOpeningEditor] = useState(false);
-  const [savingCoverSkillOpen, setSavingCoverSkillOpen] = useState(false);
   const [promoteOpen, setPromoteOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
   /**
@@ -239,15 +237,6 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
   // not loaded yet) fails open, same as the old probe's own "don't hide on
   // a transient error" stance.
   const showEnterEditor = canEnterEditor && (user?.features.web_editor ?? true);
-
-  // A cover-kind job's output is a single, standalone image with no roster
-  // to maintain (unlike a character/scene) — see `CreationSkillCategory.
-  // COVER_ASSET`'s own note on why it has no dedicated CRUD surface, just
-  // this `POST /v1/skills` call with the job's own output as the thumbnail.
-  const canSaveCoverSkill =
-    current.status === 'succeeded' &&
-    current.asset_kind === 'cover' &&
-    Boolean(current.output_asset_id);
 
   // A preview-tier success is a cheap, fast sample — this is the only route
   // from it to a full-priced standard/cinematic render (`POST .../promote`
@@ -566,11 +555,6 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
                 </Button>
               )
             ) : null}
-            {canSaveCoverSkill ? (
-              <Button variant="secondary" onClick={() => setSavingCoverSkillOpen(true)}>
-                {t('saveCoverSkill')}
-              </Button>
-            ) : null}
             {canPromote ? (
               <Button variant="secondary" onClick={() => setPromoteOpen(true)}>
                 {t('promote')}
@@ -678,12 +662,6 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
       >
         <p className="text-sm text-muted">{t('failedHint')}</p>
       </ConfirmDialog>
-
-      <SaveCoverAsSkillDialog
-        open={savingCoverSkillOpen}
-        onClose={() => setSavingCoverSkillOpen(false)}
-        outputAssetId={current.output_asset_id}
-      />
 
       <PromoteJobDialog
         open={promoteOpen}

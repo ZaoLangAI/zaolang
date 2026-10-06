@@ -4,51 +4,40 @@ import { CreateStudio } from '@/components/studio/create-studio';
 import { BackLink } from '@/components/ui/back-link';
 import { GoBackLink } from '@/components/ui/go-back-link';
 import { PageHeading } from '@/components/ui/primitives';
+import { redirect } from '@/i18n/navigation';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { Draft, StyleGalleryEntry, WorkDetail } from '@/lib/api/types';
+import { imageDraftHref } from '@/lib/asset-job-href';
 import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
-import { readDraftReturnContext, sanitizeReturnTo, studioSessionKey } from '@/lib/studio-session';
-import { isSceneLighting, isSceneWeather } from '@/features/image-assets/vocabulary';
+import { studioSessionKey } from '@/lib/studio-session';
 
-// `image_creation`/`video_creation` are URL-level modes only — the merged
-// "图片创作"/"视频创作" cards from `create-mode-cards.tsx` — not backend
-// `Operation`s. `image_creation` always starts the studio on `text_to_image`;
-// `video_creation` always starts it on `text_to_video`. Each studio derives
-// the actual operation itself the moment a reference is attached
-// (`ImageGenerationStudio`'s `text_to_image → image_to_image`,
-// `VideoGenerationStudio`'s `text_to_video → image_to_video/video_to_video`
-// — the same "derive from what's attached" pattern on both sides).
-const MODES = ['image_creation', 'video_creation', 'audio_generation', 'music_generation'] as const;
+// `video_creation` is a URL-level mode only — the "视频创作" card from
+// `create-mode-cards.tsx` — not a backend `Operation`. It always starts the
+// studio on `text_to_video`; `VideoGenerationStudio` derives
+// `image_to_video`/`video_to_video` itself the moment a reference is
+// attached. There is no image mode any more (AC-8): images are made in the
+// card workspaces, and a leftover `?mode=image_creation` link is redirected.
+const MODES = ['video_creation', 'audio_generation', 'music_generation'] as const;
 type Mode = (typeof MODES)[number];
 
-const OPERATION_BY_MODE: Record<
-  Mode,
-  'text_to_image' | 'text_to_video' | 'audio_generation' | 'music_generation'
-> = {
-  image_creation: 'text_to_image',
+const OPERATION_BY_MODE: Record<Mode, 'text_to_video' | 'audio_generation' | 'music_generation'> = {
   video_creation: 'text_to_video',
   audio_generation: 'audio_generation',
   music_generation: 'music_generation',
 };
 
 const TITLE_KEYS: Record<Mode, string> = {
-  image_creation: 'modeImageCreationTitle',
   video_creation: 'modeVideoCreationTitle',
   audio_generation: 'modeAudioGenerationTitle',
   music_generation: 'modeMusicGenerationTitle',
 };
 
 const DESCRIPTION_KEYS: Record<Mode, string> = {
-  image_creation: 'modeImageCreationDesc',
   video_creation: 'modeVideoCreationDesc',
   audio_generation: 'modeAudioGenerationDesc',
   music_generation: 'modeMusicGenerationDesc',
 };
 
-// `ImageGenerationStudio`'s own asset-kind union — validated here rather
-// than trusted blindly from the query string.
-const ASSET_KINDS = ['general', 'character', 'scene', 'cover'] as const;
-type AssetKind = (typeof ASSET_KINDS)[number];
 // `VideoGenerationStudio`'s asset-kind union — mirrors the backend
 // `VideoAssetKind` enum (see `zaolang-generation-jobs`).
 const VIDEO_ASSET_KINDS = [
@@ -58,8 +47,6 @@ const VIDEO_ASSET_KINDS = [
   'cover_video',
 ] as const;
 type VideoAssetKind = (typeof VIDEO_ASSET_KINDS)[number];
-const LINK_KINDS = ['character', 'scene'] as const;
-type LinkKind = (typeof LINK_KINDS)[number];
 
 // Comma-joined id list from the script studio's "建议切分" video jump-out
 // (`buildBreakpointVideoHref`) — capped to match `GenerationParams.character_ids`/
@@ -79,19 +66,6 @@ function parseReferenceIds(raw: string | undefined): string[] | undefined {
     .split(',')
     .map((id) => id.trim())
     .filter(Boolean)
-    .slice(0, 4);
-  return ids.length > 0 ? ids : undefined;
-}
-
-/** Same strictness as `parseAssetId`, for the comma-separated list the canvas
- * sends: every entry must look like a real asset id before it is forwarded
- * into `GET /v1/assets/{id}`. */
-function parseAssetIds(raw: string | undefined): string[] | undefined {
-  if (!raw) return undefined;
-  const ids = raw
-    .split(',')
-    .map((id) => id.trim())
-    .filter((id) => id.length <= 40 && /^ast_[0-9A-Za-z]+$/.test(id))
     .slice(0, 4);
   return ids.length > 0 ? ids : undefined;
 }
@@ -120,35 +94,27 @@ export async function generateMetadata() {
 }
 
 export default async function NewCreationPage({
+  params,
   searchParams,
 }: {
+  params: Promise<{ locale: string }>;
   searchParams: Promise<{
     mode?: string;
     prompt?: string;
     ref?: string;
     styleId?: string;
     draftId?: string;
-    assetKind?: string;
     videoAssetKind?: string;
     targetCharacterId?: string;
-    targetSceneId?: string;
     subjectNameHint?: string;
-    returnTo?: string;
-    returnLinkKind?: string;
-    returnLinkLabel?: string;
     referenceCharacterIds?: string;
     referenceSceneIds?: string;
     referencePropIds?: string;
     linkEpisodeId?: string;
     linkBreakpointKey?: string;
-    referenceAssetIds?: string;
     continuityAssetId?: string;
     jobId?: string;
     skillId?: string;
-    sceneLighting?: string;
-    sceneWeather?: string;
-    targetVariantId?: string;
-    characterPortrait?: string;
   }>;
 }) {
   const {
@@ -157,29 +123,31 @@ export default async function NewCreationPage({
     ref,
     styleId,
     draftId,
-    assetKind,
     videoAssetKind,
     targetCharacterId,
-    targetSceneId,
     subjectNameHint,
-    returnTo,
-    returnLinkKind,
-    returnLinkLabel,
     referenceCharacterIds,
     referenceSceneIds,
     referencePropIds,
     linkEpisodeId,
     linkBreakpointKey,
-    referenceAssetIds,
     continuityAssetId,
     jobId,
     skillId,
-    sceneLighting,
-    sceneWeather,
-    targetVariantId,
-    characterPortrait,
   } = await searchParams;
   const t = await getTranslations('createPage');
+
+  // A pre-AC-8 image link (an old bookmark or an unrendered notification):
+  // an image draft reopens its card's workspace or its read-only job page.
+  if (mode === 'image_creation') {
+    const { locale } = await params;
+    const draft = draftId
+      ? await serverFetchOrNull<Draft>(`/v1/drafts/${encodeURIComponent(draftId)}`, {
+          authenticated: true,
+        })
+      : null;
+    redirect({ href: draft ? imageDraftHref(draft) : '/create', locale });
+  }
 
   const resolvedMode: Mode = MODES.includes(mode as Mode) ? (mode as Mode) : 'video_creation';
   const operation = OPERATION_BY_MODE[resolvedMode];
@@ -198,68 +166,40 @@ export default async function NewCreationPage({
     ? await serverFetchOrNull<StyleGalleryEntry>(`/v1/style-gallery/${styleId}`)
     : null;
 
-  // `draftId` resumes a creation session — its full version history and
-  // latest output (see `GenerationVersionHistory`) — for `text_to_image` and
-  // (now) `text_to_video` alike; audio still only ever lands on
-  // `/jobs/[jobId]`. `image_to_video`/`video_to_video` sessions (remix,
+  // `draftId` resumes a video creation session — its full version history
+  // and latest output (see `GenerationVersionHistory`); audio still only
+  // ever lands on `/jobs/[jobId]`. `image_to_video`/`video_to_video` sessions (remix,
   // "最近草稿" edit) never carry a `draftId` in the URL, so this only ever
   // resolves for a plain `text_to_video` mode session.
   const initialDraft =
-    draftId && (operation === 'text_to_image' || operation === 'text_to_video')
+    draftId && operation === 'text_to_video'
       ? ((await serverFetchOrNull<Draft>(`/v1/drafts/${draftId}`, { authenticated: true })) ??
         undefined)
       : undefined;
 
   // A notification click is `?draftId=&jobId=`; draft cards are
-  // `?draftId=` only and resume `latest_job_id`. The jump-out trio is
-  // restored from the draft when the URL does not carry it (see
-  // `draftReturnParams`). `jobId` is validated here so the studio never
-  // has to distrust a raw query string.
+  // `?draftId=` only and resume `latest_job_id`. `jobId` is validated here
+  // so the studio never has to distrust a raw query string.
   const resolvedJobId = parseJobId(jobId);
 
-  // Only meaningful for the image studio (the script studio's jump-out
-  // always starts one of those) — validated and defaulted here so the
-  // component itself never has to distrust its own props.
-  const draftReturn = readDraftReturnContext(initialDraft?.params);
-  const sanitizedReturnTo = sanitizeReturnTo(returnTo) ?? draftReturn.returnTo;
-  const resolvedAssetKind: AssetKind | undefined = ASSET_KINDS.includes(assetKind as AssetKind)
-    ? (assetKind as AssetKind)
-    : undefined;
-  // Meaningful for the video studio — the character library's "生成动作
-  // 视频" button deep-links here the same way the script studio's image
-  // jump-out does for `assetKind` above.
+  // The character library's "生成动作视频" button deep-links here.
   const resolvedVideoAssetKind: VideoAssetKind | undefined = VIDEO_ASSET_KINDS.includes(
     videoAssetKind as VideoAssetKind,
   )
     ? (videoAssetKind as VideoAssetKind)
     : undefined;
-  const resolvedReturnLinkKind: LinkKind | undefined = LINK_KINDS.includes(
-    returnLinkKind as LinkKind,
-  )
-    ? (returnLinkKind as LinkKind)
-    : draftReturn.returnLinkKind;
-  const resolvedReturnLinkLabel =
-    returnLinkLabel?.trim().slice(0, 60) || draftReturn.returnLinkLabel;
   const resolvedReferenceCharacterIds = parseReferenceIds(referenceCharacterIds);
   const resolvedReferenceSceneIds = parseReferenceIds(referenceSceneIds);
   const resolvedReferencePropIds = parseReferenceIds(referencePropIds);
-  const resolvedReferenceAssetIds = parseAssetIds(referenceAssetIds);
   // The previous script breakpoint's video, if any — see
   // `previousBoundVideoAssetId`/`buildBreakpointVideoHref`. Only meaningful
   // without an existing `draftId` (a resumed session already has its own
   // material); the studio itself re-derives that condition too.
   const resolvedContinuityAssetId = parseAssetId(continuityAssetId);
   const resolvedSkillId = parseSkillId(skillId);
-  // The script studio's scene jump-out reads 日/夜 (and 雨/雪) off the
-  // heading (`parseScenePresets`); validated against the generated unions.
-  const initialScenePresets = {
-    lighting: isSceneLighting(sceneLighting) ? sceneLighting : undefined,
-    weather: isSceneWeather(sceneWeather) ? sceneWeather : undefined,
-  };
-
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-6 sm:px-6">
-      {resolvedMode === 'image_creation' || resolvedMode === 'video_creation' ? (
+      {resolvedMode === 'video_creation' ? (
         <GoBackLink fallbackHref="/create">{t('backToPrevious')}</GoBackLink>
       ) : (
         <BackLink href="/create">{t('backToCreate')}</BackLink>
@@ -270,19 +210,12 @@ export default async function NewCreationPage({
           draftId: initialDraft?.id ?? draftId,
           jobId: resolvedJobId,
           mode: resolvedMode,
-          assetKind: resolvedAssetKind,
           videoAssetKind: resolvedVideoAssetKind,
           targetCharacterId,
-          targetSceneId,
           subjectNameHint: subjectNameHint?.trim().slice(0, 60),
           linkBreakpointKey,
           continuitySourceAssetId: resolvedContinuityAssetId,
           skillId: resolvedSkillId,
-          targetVariantId: parseVariantId(targetVariantId),
-          characterPortrait: characterPortrait === '1' ? '1' : undefined,
-          scenePresets: [initialScenePresets.lighting, initialScenePresets.weather]
-            .filter(Boolean)
-            .join('+'),
         })}
         operation={operation}
         initialPrompt={prompt?.trim().slice(0, STUDIO_PROMPT_MAX_LENGTH)}
@@ -290,14 +223,9 @@ export default async function NewCreationPage({
         initialDraft={initialDraft}
         initialJobId={resolvedJobId}
         style={style}
-        initialAssetKind={resolvedAssetKind}
         initialVideoAssetKind={resolvedVideoAssetKind}
         initialTargetCharacterId={targetCharacterId}
-        initialTargetSceneId={targetSceneId}
         subjectNameHint={subjectNameHint?.trim().slice(0, 60) || undefined}
-        returnTo={sanitizedReturnTo}
-        returnLinkKind={resolvedReturnLinkKind}
-        returnLinkLabel={resolvedReturnLinkLabel}
         initialReferenceCharacterIds={resolvedReferenceCharacterIds}
         initialReferenceSceneIds={resolvedReferenceSceneIds}
         initialReferencePropIds={resolvedReferencePropIds}
@@ -305,16 +233,7 @@ export default async function NewCreationPage({
         linkBreakpointKey={linkBreakpointKey}
         continuitySourceAssetId={resolvedContinuityAssetId}
         initialSkillId={resolvedSkillId}
-        initialReferenceAssetIds={resolvedReferenceAssetIds}
-        initialScenePresets={initialScenePresets}
-        initialTargetVariantId={parseVariantId(targetVariantId)}
-        initialCharacterPortrait={characterPortrait === '1'}
       />
     </div>
   );
-}
-
-/** A look / scene variant id (`skv_…`) from the query string, else nothing. */
-function parseVariantId(raw: string | undefined): string | undefined {
-  return raw && /^skv_[0-9a-z]{10,40}$/.test(raw) ? raw : undefined;
 }

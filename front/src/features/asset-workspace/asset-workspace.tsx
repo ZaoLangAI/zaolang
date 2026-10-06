@@ -8,7 +8,7 @@ import { useAssetGraph } from '@/components/asset-graph/use-asset-graph';
 import type { CardKind } from '@/components/library/entry-actions';
 import { Button } from '@/components/ui/button';
 import { ErrorNotice } from '@/components/ui/primitives';
-import type { AssetGraph, AssetVariant } from '@/lib/api/types';
+import type { AssetGraph } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 
 import { CreateTab } from './create-tab';
@@ -29,8 +29,6 @@ export function AssetWorkspace({
   initialVariantId,
   initialSlotId,
   initialSkillId,
-  generateHref,
-  portraitHref,
 }: {
   kind: CardKind;
   initial: AssetGraph;
@@ -41,10 +39,6 @@ export function AssetWorkspace({
   initialSlotId?: string | null;
   /** `?skillId=`: the style skill the 创作 slot panel starts on. */
   initialSkillId?: string | null;
-  /** The graph's image-studio jump-out (characters, scenes); a prop has
-   * none, so its looks open in the 创作 tab instead. */
-  generateHref?: (variant: AssetVariant) => string;
-  portraitHref?: string;
 }) {
   const t = useTranslations('assetWorkspace');
   const tGraph = useTranslations('assetGraph');
@@ -55,8 +49,18 @@ export function AssetWorkspace({
   const [tab, setTab] = useState<WorkspaceTab>(
     initialTab && tabs.includes(initialTab) ? initialTab : 'create',
   );
-  // A look the graph asked to generate for — the 创作 tab mounts on it.
-  const [createVariantId, setCreateVariantId] = useState<string | null>(null);
+  // A look (and slot) the graph asked to generate for — the 创作 tab mounts
+  // on it. The graph's 生成 / 生成定妆照 land here, never in a studio.
+  const [createTarget, setCreateTarget] = useState<{
+    variantId: string;
+    slotId: string | null;
+  } | null>(null);
+  const openCreate = (variantId: string, slotId: string | null = null) => {
+    setCreateTarget({ variantId, slotId });
+    setTab('create');
+  };
+  const defaultVariantId =
+    (graph.variants ?? []).find((variant) => variant.is_default)?.id ?? graph.variants?.[0]?.id;
 
   const pendingCount = graph.pending?.length ?? 0;
   const { refresh } = actions;
@@ -113,8 +117,8 @@ export function AssetWorkspace({
             graph={graph}
             actions={actions}
             busy={busy}
-            initialVariantId={createVariantId ?? initialVariantId}
-            initialSlotId={createVariantId ? null : initialSlotId}
+            initialVariantId={createTarget?.variantId ?? initialVariantId}
+            initialSlotId={createTarget ? createTarget.slotId : initialSlotId}
             initialSkillId={initialSkillId}
           />
         </>
@@ -124,12 +128,12 @@ export function AssetWorkspace({
           store={store}
           tab={tab}
           initialLookId={initialVariantId}
-          generateHref={generateHref}
-          onOpenCreate={(variant) => {
-            setCreateVariantId(variant.id);
-            setTab('create');
-          }}
-          portraitHref={portraitHref}
+          onOpenCreate={(variant) => openCreate(variant.id)}
+          onOpenPortrait={
+            kind === 'character' && defaultVariantId
+              ? () => openCreate(defaultVariantId, 'portrait')
+              : undefined
+          }
         />
       )}
     </div>

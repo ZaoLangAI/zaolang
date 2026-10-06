@@ -6,7 +6,6 @@ import {
   assetCreationHref,
   detectMentionTrigger,
   filterMentionSkills,
-  firstSkillReferenceAssetId,
   isImageOnlyTemplate,
   isSkillApplicableToOperation,
   isSkillMentionable,
@@ -139,12 +138,6 @@ describe('skill mention filters', () => {
     expect(videoCreationHref(template, 'usr_me')).toBe(
       '/create/new?mode=video_creation&skillId=skl_a',
     );
-  });
-
-  it('uses the card anchor from the skill detail, else the cover', () => {
-    expect(firstSkillReferenceAssetId('ast_cover', 'ast_anchor')).toBe('ast_anchor');
-    expect(firstSkillReferenceAssetId('ast_cover')).toBe('ast_cover');
-    expect(firstSkillReferenceAssetId(null, null)).toBeUndefined();
   });
 
   it('filters the open menu by title query', () => {

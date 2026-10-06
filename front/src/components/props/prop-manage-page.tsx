@@ -5,8 +5,8 @@ import type { WorkspaceTab } from '@/features/asset-workspace/tabs';
 import type { AssetGraph } from '@/lib/api/types';
 
 /** `/create/props/[id]` body: the prop workspace — 创作 board and the
- * conditions graph (`AssetWorkspace`). No image-studio jump-out: a
- * condition's 生成 opens it on the 创作 tab. */
+ * conditions graph (`AssetWorkspace`). A condition's 生成 opens it on the
+ * 创作 tab. */
 export function PropManagePage({
   initial,
   initialVariantId,

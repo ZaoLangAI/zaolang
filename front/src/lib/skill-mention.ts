@@ -168,17 +168,6 @@ export function videoCreationHref(
   return `/create/new?${params.toString()}`;
 }
 
-/** The still an image-asset recipe should hang on the image studio's
- * reference rail: the card's anchor (`anchor_asset_id` on the skill
- * detail), else the cover. The skill detail's `params` no longer carries a
- * `reference_assets` copy (P2-8 dropped the JSON mirror). */
-export function firstSkillReferenceAssetId(
-  coverAssetId?: string | null,
-  anchorAssetId?: string | null,
-): string | undefined {
-  return anchorAssetId || coverAssetId || undefined;
-}
-
 export function filterMentionSkills(
   skills: CreationSkillSummary[],
   query: string,

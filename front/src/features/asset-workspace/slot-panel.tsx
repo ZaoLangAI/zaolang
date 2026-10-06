@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { CardKind } from '@/components/library/entry-actions';
-import { ChipGroup } from '@/components/studio/asset-preset-fields';
+import { ChipGroup } from '@/features/image-assets/chip-group';
 import { Button } from '@/components/ui/button';
 import { Select, TextArea } from '@/components/ui/field';
 import { Badge, ErrorNotice } from '@/components/ui/primitives';

@@ -57,7 +57,7 @@ export interface PromptPolishContext {
 
 /**
  * The "AI 润色" control used by `PromptField`, in turn used by
- * `ImageGenerationStudio`/`VideoGenerationStudio` through `PromptComposer`
+ * `VideoGenerationStudio` and the script clip studio through `PromptComposer`
  * ("说说你想怎么改" card) — audio never sets `polishContext` below, so this
  * never renders there.
  *
@@ -126,8 +126,7 @@ export function PromptPolish({
     onBlockedChange?.(blocked);
   }
 
-  // Adjusted during render rather than in an effect (same pattern as
-  // `ImageGenerationStudio`'s own resumed-job handling) — closing on a
+  // Adjusted during render rather than in an effect — closing on a
   // `closeSignal` change is a pure reaction to a prop, not a side effect to
   // synchronize with anything external. State, not a ref: refs can't be read
   // or written during render.

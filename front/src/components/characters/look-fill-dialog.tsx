@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 
-import { ChipGroup } from '@/components/studio/asset-preset-fields';
+import { ChipGroup } from '@/features/image-assets/chip-group';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Badge, ErrorNotice } from '@/components/ui/primitives';

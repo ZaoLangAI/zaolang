@@ -47,10 +47,10 @@ export interface StyleAndSkillPicker {
 /**
  * Style preset + system style ("画风库") picking, plus an optional creation
  * skill Select. Factored out of the old monolithic `GenerationStudio` so
- * `ImageGenerationStudio` can skip this hook entirely (template skills apply
- * from the prompt `@` menu via `useAppliedSkills`) and `VideoGenerationStudio`
- * can keep the gallery/preset half while dropping the skill Select — audio
- * is the remaining caller that still shows the full picker.
+ * `VideoGenerationStudio` can keep the gallery/preset half while dropping
+ * the skill Select (template skills apply from the prompt `@` menu via
+ * `useAppliedSkills`) — audio is the remaining caller that still shows the
+ * full picker.
  *
  * Owns its own fetches and dropdown/dialog state; the caller only has to
  * merge whatever a pick applies (`onApplyParams`) into its own `prompt` /

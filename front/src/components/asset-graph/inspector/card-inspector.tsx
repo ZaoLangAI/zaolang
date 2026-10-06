@@ -8,7 +8,6 @@ import { SceneMatrixDialog } from '@/components/scenes/scene-matrix-dialog';
 import { Button } from '@/components/ui/button';
 import { TextArea, TextInput } from '@/components/ui/field';
 import { IconPlus, IconSparkle } from '@/components/ui/icons';
-import { useRouter } from '@/i18n/navigation';
 import type { AssetGraph } from '@/lib/api/types';
 
 import { RELATION_COLOR, RELATIONS_BY_KIND, relationLabelKey } from '../relations';
@@ -23,18 +22,18 @@ export function CardInspector({
   busy,
   actions,
   onCreated,
-  portraitHref,
+  onOpenPortrait,
 }: {
   graph: AssetGraph;
   kind: CardKind;
   busy: boolean;
   actions: AssetGraphActions;
   onCreated: (variantId: string) => void;
-  portraitHref?: string;
+  /** 生成定妆照: the workspace's 创作 tab on the portrait slot. */
+  onOpenPortrait?: () => void;
 }) {
   const t = useTranslations('assetGraph');
   const tVariants = useTranslations('assetVariants');
-  const router = useRouter();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [matrixOpen, setMatrixOpen] = useState(false);
@@ -76,7 +75,7 @@ export function CardInspector({
         ) : null}
       </div>
 
-      {character && portraitHref && !hasPortrait ? (
+      {character && onOpenPortrait && !hasPortrait ? (
         <div className="flex flex-col gap-2 rounded-[var(--radius-sm)] border border-dashed border-border p-3">
           <p className="text-xs text-muted">{tVariants('portraitFirst')}</p>
           <Button
@@ -84,7 +83,7 @@ export function CardInspector({
             variant="secondary"
             className="self-start"
             icon={<IconSparkle className="size-3.5" />}
-            onClick={() => router.push(portraitHref)}
+            onClick={onOpenPortrait}
           >
             {tVariants('generatePortrait')}
           </Button>

@@ -9,8 +9,8 @@ import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
 /**
  * The richer "说说你想怎么改" composer card that sits directly beneath the
  * preview area (`GenerationStudioShell`'s `promptSlot`) instead of inside
- * the params aside/`Sheet` — all three studios (`ImageGenerationStudio`,
- * `VideoGenerationStudio`, `AudioGenerationStudio`) put their `PromptField`
+ * the params aside/`Sheet` — the studios (`VideoGenerationStudio`,
+ * `AudioGenerationStudio`, the script clip studio) put their `PromptField`
  * here so the author writes right next to what they're looking at, and it
  * stays visible on every breakpoint rather than only after opening "调整参数".
  * Audio omits polish and `@` mention; it still applies skills from the
@@ -52,14 +52,12 @@ export function PromptComposer({
   skillChips?: React.ReactNode;
   /** `useAppliedSkills`'s `unlockDialog`. */
   unlockDialog?: React.ReactNode;
-  /** A short, condition-specific line under the field — image's `referenceRequiredHint`. */
+  /** A short, condition-specific line under the field. */
   hint?: string;
   /**
    * The "写得更像导演" writing-tip copy — video and audio. Folds what used
    * to be `GenerationStudioShell`'s standalone `directHint` box into this
-   * card's own header instead of stacking two boxes. Image intentionally
-   * passes nothing here (that copy never applied well to a still image) —
-   * see `hideDirectHint` at the call site.
+   * card's own header instead of stacking two boxes.
    */
   tip?: { title: string; body: string };
   /** Clip studio: the colour-block preview of this suggested cut. */

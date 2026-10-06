@@ -31,7 +31,7 @@ export function OutputGallery({
   labels?: (string | null)[];
   itemLabel: (index: number, total: number) => string;
   /** Forwarded to `DevicePreview` — see its own prop for why a caller with
-   * actions directly below the stage (e.g. `InlineImageResult`) needs this. */
+   * actions directly below the stage needs this. */
   maxHeight?: number;
 }) {
   const [selected, setSelected] = useState(0);
