@@ -42,6 +42,7 @@ from app.domain.asset_variants import service as asset_variants_service
 from app.domain.blocking import camera_language
 from app.domain.characters import service as characters_service
 from app.domain.errors import NotFound, ValidationFailed
+from app.domain.props import service as props_service
 from app.domain.scenes import service as scenes_service
 from app.models import CreationSkill, SkillAssetVariant
 from app.models.enums import AssetEntryType, CharacterViewAngle
@@ -77,6 +78,8 @@ def resolve(
     roles = {**source_roles, **_borrow_identity_reference(session, user_id=user_id, params=params)}
     scenes_service.apply_scene_refs(session, user_id=user_id, params=params, hints=hints)
     _borrow_scene_reference(session, user_id=user_id, params=params)
+    props_service.apply_prop_refs(session, user_id=user_id, params=params, hints=hints)
+    _borrow_prop_reference(session, user_id=user_id, params=params)
     _label_references(session, user_id=user_id, params=params, roles=roles, foreign=foreign_labels)
 
 
@@ -120,17 +123,24 @@ def _source_entry_reference(
     entry_id = params.get("source_entry_id")
     if not entry_id:
         return {}, {}
-    character = params.get("asset_kind") == "character"
-    card_id = params.get("target_character_id" if character else "target_scene_id")
+    kind = params.get("asset_kind")
+    character = kind == "character"
+    target_key = {"character": "target_character_id", "prop": "target_prop_id"}.get(
+        str(kind), "target_scene_id"
+    )
+    card_id = params.get(target_key)
     if not card_id:
         raise ValidationFailed(
             "基于参考图生成需要指定目标卡片。", fields={"source_entry_id": "缺少卡片"}
         )
-    skill = (
-        characters_service.get_character(session, user_id=user_id, character_id=str(card_id))
-        if character
-        else scenes_service.get_scene(session, user_id=user_id, scene_id=str(card_id))
-    ).skill
+    if character:
+        skill = characters_service.get_character(
+            session, user_id=user_id, character_id=str(card_id)
+        ).skill
+    elif kind == "prop":
+        skill = props_service.get_prop(session, user_id=user_id, prop_id=str(card_id)).skill
+    else:
+        skill = scenes_service.get_scene(session, user_id=user_id, scene_id=str(card_id)).skill
     entry = asset_variants_service.find_entry(skill, str(entry_id))
     if entry is None:
         raise ValidationFailed("参考图不在这张卡片上。", fields={"source_entry_id": "图片不存在"})
@@ -297,6 +307,32 @@ def _borrow_scene_reference(session: Session, *, user_id: str, params: dict[str,
         params["reference_asset_ids"] = picked
 
 
+def _borrow_prop_reference(session: Session, *, user_id: str, params: dict[str, Any]) -> None:
+    """A prop image with no reference but a named target (AC-4) starts from
+    that card — `target_variant_id`'s images, else the anchor (hero plate) —
+    so a new condition or turntable keeps the same object."""
+    if params.get("asset_kind") != "prop" or params.get("reference_asset_ids"):
+        return
+    target_id = params.get("target_prop_id")
+    if not target_id:
+        return
+    try:
+        skill = props_service.get_prop(session, user_id=user_id, prop_id=str(target_id)).skill
+    except NotFound:
+        return
+    variant_id = params.get("target_variant_id")
+    variant = asset_variants_service.find_variant(skill, str(variant_id)) if variant_id else None
+    anchor = asset_variants_service.anchor(skill)
+    if variant is not None:
+        picked = asset_variants_service.default_subset(skill, variant)
+    elif anchor is not None and asset_variants_service.is_approved(anchor):
+        picked = [anchor.asset_id]
+    else:
+        picked = []
+    if picked:
+        params["reference_asset_ids"] = picked
+
+
 _CAMERA_LINE = re.compile(r"镜头[：:]\s*([^\n]+)")
 
 
@@ -346,6 +382,11 @@ def _owned_cards(session: Session, *, user_id: str, params: dict[str, Any]) -> l
             cards.append(
                 scenes_service.get_scene(session, user_id=user_id, scene_id=scene_id).skill
             )
+        except NotFound:
+            continue
+    for prop_id in _card_ids(params, "prop_ids", "target_prop_id"):
+        try:
+            cards.append(props_service.get_prop(session, user_id=user_id, prop_id=prop_id).skill)
         except NotFound:
             continue
     return cards

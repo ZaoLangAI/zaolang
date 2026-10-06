@@ -105,6 +105,8 @@ class AssetOutputLinkConfig(NodeConfig):
     # reusing `auto_create_character`) so a future caller can turn one off
     # without the other.
     auto_create_scene: bool = True
+    # A `prop` job with no `target_prop_id` creates a prop card (AC-4).
+    auto_create_prop: bool = True
 
 
 class CustomAgentStepConfig(NodeConfig):

@@ -35,6 +35,7 @@ const CATEGORY_LABEL_KEY: Record<
   | 'categoryCharacter'
   | 'categorySceneAsset'
   | 'categoryCoverAsset'
+  | 'categoryPropAsset'
   | 'categoryOther'
 > = {
   scene: 'categoryScene',
@@ -45,6 +46,7 @@ const CATEGORY_LABEL_KEY: Record<
   character: 'categoryCharacter',
   scene_asset: 'categorySceneAsset',
   cover_asset: 'categoryCoverAsset',
+  prop_asset: 'categoryPropAsset',
   other: 'categoryOther',
 };
 

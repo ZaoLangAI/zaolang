@@ -3514,6 +3514,7 @@
     "categoryCharacter": "角色图",
     "categorySceneAsset": "场景图",
     "categoryCoverAsset": "封面图",
+    "categoryPropAsset": "道具",
     "categoryOther": "其他",
     "byAuthor": "{name} 分享",
     "usageCount": "{count} 次使用",

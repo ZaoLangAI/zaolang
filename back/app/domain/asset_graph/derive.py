@@ -31,6 +31,7 @@ from app.domain.characters.fill import DEFAULT_FILL_EXPRESSIONS
 from app.domain.errors import NotFound, ValidationFailed
 from app.domain.image_assets import camera as camera_vocab
 from app.domain.image_assets.vocabulary import MAX_CHARACTER_EXPRESSIONS
+from app.domain.props import service as props_service
 from app.domain.scenes import service as scenes_service
 from app.models import CreationSkill, SkillAssetEntry, SkillAssetVariant
 from app.models.enums import AssetEntryType, AssetVariantKind, ImageAssetKind
@@ -44,6 +45,8 @@ CHARACTER_OUTPUTS: frozenset[str] = frozenset(
     {"character_sheet", "identity_portrait", "expression_sheet", "in_scene"}
 )
 SCENE_OUTPUTS: frozenset[str] = frozenset({"master", "shot"})
+# A prop's derive draws its hero plate or a detail shot (AC-4).
+PROP_OUTPUTS = SCENE_OUTPUTS
 
 MAX_INSTRUCTION_LEN = 500
 
@@ -86,6 +89,9 @@ def _card(
     if kind == "character":
         character = characters_service.get_character(session, user_id=user_id, character_id=card_id)
         return character.skill, character.name, character.description
+    if kind == "prop":
+        prop = props_service.get_prop(session, user_id=user_id, prop_id=card_id)
+        return prop.skill, prop.name, prop.description
     scene = scenes_service.get_scene(session, user_id=user_id, scene_id=card_id)
     return scene.skill, scene.name, scene.description
 
@@ -97,11 +103,18 @@ def _source(skill: CreationSkill, entry_id: str) -> SkillAssetEntry:
     return entry
 
 
+_BASE_KIND = {
+    "character": (ImageAssetKind.CHARACTER, "target_character_id"),
+    "scene": (ImageAssetKind.SCENE, "target_scene_id"),
+    "prop": (ImageAssetKind.PROP, "target_prop_id"),
+}
+
+
 def _base(kind: str, skill: CreationSkill, name: str) -> dict[str, Any]:
-    character = kind == "character"
+    asset_kind, target_key = _BASE_KIND[kind]
     return {
-        "asset_kind": (ImageAssetKind.CHARACTER if character else ImageAssetKind.SCENE).value,
-        ("target_character_id" if character else "target_scene_id"): skill.id,
+        "asset_kind": asset_kind.value,
+        target_key: skill.id,
         "subject_name_hint": name[:60],
     }
 
@@ -145,9 +158,11 @@ def _draft_variant(skill: CreationSkill, draft: NewVariantDraft) -> SkillAssetVa
         skill, presets=draft.presets, attributes=draft.attributes
     )
     return SkillAssetVariant(
-        kind=(
-            AssetVariantKind.LOOK if av.is_character(skill) else AssetVariantKind.SCENE_VARIANT
-        ).value,
+        kind={
+            "character": AssetVariantKind.LOOK,
+            "scene": AssetVariantKind.SCENE_VARIANT,
+            "prop": AssetVariantKind.PROP_VARIANT,
+        }[av.card_kind(skill)].value,
         name=draft.name.strip(),
         description=(draft.description or "").strip() or None,
         presets_json=presets,
@@ -175,7 +190,7 @@ def plan_derive(
     skill, name, description = _card(session, user_id=user_id, kind=kind, card_id=card_id)
     source = _source(skill, entry_id)
     character = kind == "character"
-    if output not in (CHARACTER_OUTPUTS if character else SCENE_OUTPUTS):
+    if output not in (CHARACTER_OUTPUTS if character else SCENE_OUTPUTS):  # props: as scenes
         raise ValidationFailed("这张卡片不支持这种输出。", fields={"output": "不支持"})
     if (target_variant_id is None) == (new_variant is None):
         raise ValidationFailed(
@@ -237,12 +252,14 @@ def plan_derive(
         entry_type = AssetEntryType.SHOT.value
     else:
         entry_type = output
-    if not character:
+    if kind == "scene":
         # A scene image is drawn to its variant's presets (`scene_*`).
         for axis in ("lighting", "weather", "state", "period"):
             value = (look.presets_json or {}).get(axis)
             if value:
                 params[f"scene_{axis}"] = value
+    elif kind == "prop" and (look.presets_json or {}).get("prop_state"):
+        params["prop_state"] = look.presets_json["prop_state"]
     params["aspect_ratio"] = aspect_ratio or DEFAULT_ASPECT.get(entry_type, "16:9")
     relations = (
         [] if look is source.variant else graph_service.relations_between(source.variant, look)
@@ -270,6 +287,9 @@ _ORBIT_SOURCE_TYPES: dict[str, frozenset[str]] = {
         }
     ),
     "scene": frozenset({AssetEntryType.MASTER, AssetEntryType.SHOT, AssetEntryType.OTHER}),
+    "prop": frozenset(
+        {AssetEntryType.MASTER, AssetEntryType.VIEW, AssetEntryType.SHOT, AssetEntryType.OTHER}
+    ),
 }
 FRONT_POSE = camera_vocab.CameraPose(0)
 
@@ -328,6 +348,6 @@ def plan_orbit(
         "camera_poses": camera_poses,
         "camera_from_sheet": from_sheet,
         "prompt": _sentence(name, description)[:4096],
-        "aspect_ratio": aspect_ratio or ("3:4" if kind == "character" else "16:9"),
+        "aspect_ratio": aspect_ratio or {"character": "3:4", "prop": "1:1"}.get(kind, "16:9"),
     }
     return Plan(skill=skill, source=source, params=params, relations=[])

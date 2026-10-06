@@ -711,6 +711,7 @@ def _job_response(
         duration_seconds=_duration_seconds_of(job),
         linked_character_id=job.linked_character_id,
         linked_scene_id=job.linked_scene_id,
+        linked_prop_id=job.linked_prop_id,
         candidate_entries=_candidate_entries_of(session, job),
         draft_id=job.draft_id,
         prompt=_prompt_of(job),
@@ -808,7 +809,7 @@ def _requested_outputs_of(job: GenerationJob) -> int:
 def _candidate_entries_of(session: Session, job: GenerationJob) -> int:
     """This job's images its write-back filed as candidates (P2-1). Only a
     succeeded job linked to a card can have any, so nothing else queries."""
-    card_id = job.linked_character_id or job.linked_scene_id
+    card_id = job.linked_character_id or job.linked_scene_id or job.linked_prop_id
     if job.status != JobStatus.SUCCEEDED or not card_id:
         return 0
     return int(

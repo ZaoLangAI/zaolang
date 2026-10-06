@@ -4,7 +4,7 @@
 
 | Axis | Enum (`back/app/models/enums.py`) | Valid for | Values |
 | --- | --- | --- | --- |
-| image | `ImageAssetKind` → `GenerationParams.asset_kind` | `text_to_image`, `image_to_image` | `general`, `character`, `scene`, `cover` |
+| image | `ImageAssetKind` → `GenerationParams.asset_kind` | `text_to_image`, `image_to_image` | `general`, `character`, `scene`, `cover`, `prop` (AC-4: `target_prop_id`, `prop_state`, write-back `_link_prop_output`) |
 | video | `VideoAssetKind` → `GenerationParams.video_asset_kind` | the three video operations | `general`, `scene_video`, `character_action`, `transition_video`, `cover_video` |
 
 1. At most one axis is non-`general` (`validate_generation_params` in `back/app/api/schemas/jobs.py`); `nodes._asset_axis(ctx)` returns `("image", kind)` / `("video", kind)` / `None`.

@@ -30,6 +30,7 @@ from app.domain.image_assets.vocabulary import (
     age_stage_fragments,
     character_period_fragments,
     expression_grid,
+    prop_state_fragments,
     scene_preset_label,
     scene_presets_from,
 )
@@ -53,6 +54,8 @@ class AssetPass(StrEnum):
     # AC-2: a sheet-sourced multi-angle job's first pass — the front single
     # figure drawn out of the sheet, which the other poses then orbit.
     SHEET_FRONT_FIGURE = "sheet_front_figure"
+    # AC-4: a prop's hero plate (or a detail shot of it).
+    PROP = "prop"
     OTHER = "other"
 
 
@@ -256,8 +259,11 @@ def resolve_pass(
     if params.get("asset_edit") and asset_kind in (
         ImageAssetKind.CHARACTER.value,
         ImageAssetKind.SCENE.value,
+        ImageAssetKind.PROP.value,
     ):
         return AssetPass.ASSET_EDIT
+    if asset_kind == ImageAssetKind.PROP.value:
+        return AssetPass.PROP
     if (
         asset_kind == ImageAssetKind.CHARACTER.value
         and params.get("asset_output_mode") == "in_scene"
@@ -336,6 +342,8 @@ def compose(
                 prompt_out = _join(prompt_out, fragment)
                 negative_out = merge_negative(negative_out, fragment_negative)
         return prompt_out, negative_out
+    if asset_pass is AssetPass.PROP:
+        return _compose_prop(prompt, negative, params, has_reference=has_reference)
     if asset_pass is AssetPass.SCENE:
         return _compose_scene(
             prompt, negative, scene_presets_from(params), has_reference=has_reference
@@ -385,6 +393,30 @@ def _compose_camera_orbit(
     subject = _strip_sheet_layout(prompt).strip().rstrip("。．.")
     text = _join(lock, f"主体：{subject}") if subject else lock
     return text, merge_negative(negative, CAMERA_ORBIT_NEGATIVE)
+
+
+# 道具 (AC-4): a hero plate reads like a product shot — the whole object,
+# nothing else in frame — so it can be re-used as a reference anywhere.
+PROP_HERO_LAYOUT = (
+    "输出一张道具主视图（单张画面）：物体完整居中、不裁切，三分之四正面角度，"
+    "浅灰纯色背景，柔和均匀的棚拍光，可见材质与细节；画面中只有这一件物体"
+)
+PROP_DETAIL_LAYOUT = "输出一张道具局部特写：聚焦材质、纹理与标志性细节，浅灰纯色背景，单张画面"
+PROP_REFERENCE_PREFIX = "以参考图1中的物体为准，保持形状、比例、材质与颜色完全一致；"
+PROP_NEGATIVE = "人物，手，多个物体，杂乱背景，文字，水印，拼贴分格"
+
+
+def _compose_prop(
+    prompt: str, negative: str | None, params: dict[str, Any], *, has_reference: bool
+) -> tuple[str, str]:
+    detail = params.get("asset_output_entry_type") == "shot"
+    text = (PROP_REFERENCE_PREFIX + prompt) if has_reference else prompt
+    state, state_negative = prop_state_fragments(params.get("prop_state"))
+    if state:
+        text = _join(text, state.rstrip("。"))
+    text = _join(text, PROP_DETAIL_LAYOUT if detail else PROP_HERO_LAYOUT)
+    negative_out = merge_negative(negative, PROP_NEGATIVE)
+    return text, merge_negative(negative_out, state_negative)
 
 
 # 调整修改 (P6): the instruction is the whole intent; everything it does not

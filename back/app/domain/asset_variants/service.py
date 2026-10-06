@@ -39,6 +39,7 @@ from app.domain.image_assets import camera as camera_vocab
 from app.models import Asset, CreationSkill, SkillAssetEntry, SkillAssetVariant
 from app.models.enums import (
     CHARACTER_ENTRY_TYPES,
+    PROP_ENTRY_TYPES,
     SCENE_ENTRY_TYPES,
     AssetEntryStatus,
     AssetEntryType,
@@ -49,6 +50,7 @@ from app.models.enums import (
 
 DEFAULT_LOOK_NAME = "默认造型"
 DEFAULT_SCENE_VARIANT_NAME = "主场景"
+DEFAULT_PROP_VARIANT_NAME = "默认状态"
 # Character looks only. Scene cards are uncapped (P2-5, decided 2026-10-02):
 # a lighting × weather × state × period matrix runs past any fixed number;
 # a scene variant still holds at most `MAX_ENTRIES_PER_VARIANT` approved.
@@ -62,12 +64,42 @@ def is_character(skill: CreationSkill) -> bool:
     return skill.category == CreationSkillCategory.CHARACTER
 
 
+def is_prop(skill: CreationSkill) -> bool:
+    return skill.category == CreationSkillCategory.PROP_ASSET
+
+
+def card_kind(skill: CreationSkill) -> str:
+    """`character` / `scene` / `prop` — a prop (AC-4) is scene-shaped
+    (variants with a master plate) but keeps its own vocabulary."""
+    if is_character(skill):
+        return "character"
+    return "prop" if is_prop(skill) else "scene"
+
+
+_VARIANT_KIND = {
+    "character": AssetVariantKind.LOOK,
+    "scene": AssetVariantKind.SCENE_VARIANT,
+    "prop": AssetVariantKind.PROP_VARIANT,
+}
+_DEFAULT_VARIANT_NAME = {
+    "character": DEFAULT_LOOK_NAME,
+    "scene": DEFAULT_SCENE_VARIANT_NAME,
+    "prop": DEFAULT_PROP_VARIANT_NAME,
+}
+# (card noun, variant noun) for messages and reference labels.
+CARD_NOUNS = {
+    "character": ("角色", "造型"),
+    "scene": ("场景", "场景变体"),
+    "prop": ("道具", "道具状态"),
+}
+
+
 def _kind(skill: CreationSkill) -> str:
-    return (AssetVariantKind.LOOK if is_character(skill) else AssetVariantKind.SCENE_VARIANT).value
+    return _VARIANT_KIND[card_kind(skill)].value
 
 
 def _default_name(skill: CreationSkill) -> str:
-    return DEFAULT_LOOK_NAME if is_character(skill) else DEFAULT_SCENE_VARIANT_NAME
+    return _DEFAULT_VARIANT_NAME[card_kind(skill)]
 
 
 # ---- reads ------------------------------------------------------------------
@@ -177,7 +209,7 @@ def _projected_view(skill: CreationSkill, entry: SkillAssetEntry) -> str:
             return entry.view
         return "general"
     if entry.entry_type == AssetEntryType.MASTER:
-        return "establishing"
+        return "hero" if is_prop(skill) else "establishing"
     return entry.view or "general"
 
 
@@ -251,6 +283,12 @@ def _check_variant_name(skill: CreationSkill, name: str, *, exclude_id: str | No
 
 _LOOK_PRESET_KEYS = frozenset({"age_stage", "period"})
 _SCENE_PRESET_KEYS = frozenset({"lighting", "weather", "state", "period"})
+_PROP_PRESET_KEYS = frozenset({"prop_state", "period"})
+_PRESET_KEYS = {
+    "character": _LOOK_PRESET_KEYS,
+    "scene": _SCENE_PRESET_KEYS,
+    "prop": _PROP_PRESET_KEYS,
+}
 
 # Free-text look attributes (P3) and their lengths; scene variants carry
 # only `custom`. Short on purpose: each one becomes a prompt sentence.
@@ -264,10 +302,10 @@ def _check_presets(skill: CreationSkill, presets: dict[str, Any] | None) -> dict
     """A look carries `age_stage` / `period`; a scene variant only the four
     scene axes (P2-6) — the other kind's keys are a 422, not silently stored."""
     clean = dict(presets or {})
-    allowed = _LOOK_PRESET_KEYS if is_character(skill) else _SCENE_PRESET_KEYS
+    allowed = _PRESET_KEYS[card_kind(skill)]
     foreign = sorted(key for key in clean if key not in allowed)
     if foreign:
-        noun = "造型" if is_character(skill) else "场景变体"
+        noun = CARD_NOUNS[card_kind(skill)][1]
         raise ValidationFailed(
             f"{noun}不支持这些预设：{'、'.join(foreign)}。",
             fields={"presets": "与卡片类别不匹配"},
@@ -468,8 +506,15 @@ def delete_variant(session: Session, skill: CreationSkill, variant: SkillAssetVa
     session.flush()
 
 
+_ENTRY_TYPES = {
+    "character": CHARACTER_ENTRY_TYPES,
+    "scene": SCENE_ENTRY_TYPES,
+    "prop": PROP_ENTRY_TYPES,
+}
+
+
 def _check_entry_type(skill: CreationSkill, entry_type: str) -> None:
-    allowed = CHARACTER_ENTRY_TYPES if is_character(skill) else SCENE_ENTRY_TYPES
+    allowed = _ENTRY_TYPES[card_kind(skill)]
     if entry_type not in allowed:
         raise ValidationFailed("参考图类型与卡片类别不匹配。", fields={"entry_type": "类型无效"})
 
@@ -1047,7 +1092,7 @@ def select_assets(
     return list(dict.fromkeys(asset_ids))
 
 
-_ENTRY_TYPE_NAMES = {
+_ENTRY_TYPE_NAMES: dict[AssetEntryType, str] = {
     AssetEntryType.IDENTITY_PORTRAIT: "定妆照",
     AssetEntryType.CHARACTER_SHEET: "设定图",
     AssetEntryType.EXPRESSION_SHEET: "表情合集",
@@ -1063,7 +1108,7 @@ _VIEW_NAMES = {"side": "侧面", "back": "背面", "detail": "细节", "reverse"
 def entry_label(skill: CreationSkill, entry: SkillAssetEntry) -> str:
     """`角色「林夏」·婚礼·设定图` / `场景「客厅」·黄昏·主图` — what the
     prompt's reference legend calls this image."""
-    noun = "角色" if is_character(skill) else "场景"
+    noun = CARD_NOUNS[card_kind(skill)][0]
     parts = [f"{noun}「{skill.title}」"]
     if not entry.variant.is_default:
         parts.append(entry.variant.name)
@@ -1082,6 +1127,8 @@ def entry_label(skill: CreationSkill, entry: SkillAssetEntry) -> str:
 
 CHARACTER_VIEWS = frozenset({"front", "side", "back", "three_quarter"})
 SCENE_VIEWS = frozenset({"detail", "reverse"})
+PROP_VIEWS = CHARACTER_VIEWS | {"detail"}
+_VIEWS = {"character": CHARACTER_VIEWS, "scene": SCENE_VIEWS, "prop": PROP_VIEWS}
 
 
 def find_entry(skill: CreationSkill, entry_id: str) -> SkillAssetEntry | None:
@@ -1090,7 +1137,7 @@ def find_entry(skill: CreationSkill, entry_id: str) -> SkillAssetEntry | None:
 
 def check_view(skill: CreationSkill, view: str | None) -> str | None:
     clean = (view or "").strip() or None
-    allowed = CHARACTER_VIEWS if is_character(skill) else SCENE_VIEWS
+    allowed = _VIEWS[card_kind(skill)]
     if clean is not None and clean not in allowed:
         raise ValidationFailed("视角无效。", fields={"view": f"可选：{'/'.join(sorted(allowed))}"})
     return clean

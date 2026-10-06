@@ -60,7 +60,7 @@ class AssetGraphPendingJob(ApiModel):
 
 class AssetGraphResponse(ApiModel):
     card_id: str
-    card_kind: Literal["character", "scene"]
+    card_kind: Literal["character", "scene", "prop"]
     name: str
     description: str | None = None
     # Characters: the card's 音色描述 (what 「AI 按描述匹配」 reads).

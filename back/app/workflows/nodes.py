@@ -31,6 +31,7 @@ from app.domain.image_assets import camera as camera_vocab
 from app.domain.image_assets import prompt_builder
 from app.domain.image_assets.vocabulary import (
     EXPRESSION_PRESETS,
+    PROP_STATE_PRESETS,
     scene_preset_label,
     scene_presets_from,
 )
@@ -40,6 +41,7 @@ from app.domain.jobs.cancellation import honor_user_cancel
 from app.domain.media import reference_roles
 from app.domain.media import service as media_service
 from app.domain.moderation_queue import service as moderation_queue
+from app.domain.props import service as props_service
 from app.domain.scenes import service as scenes_service
 from app.domain.skill_library import service as skill_library_service
 from app.domain.skill_library.folding import (
@@ -1029,8 +1031,10 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
     # which carries the script's own character name/scene heading) wins over
     # the planner's own guess from the prompt. The fallback text is kind-
     # specific so a scene auto-create never inherits "新角色".
-    is_scene_kind = asset_kind == ImageAssetKind.SCENE.value
-    default_subject_name = "新场景" if is_scene_kind else "新角色"
+    default_subject_name = {
+        ImageAssetKind.SCENE.value: "新场景",
+        ImageAssetKind.PROP.value: "新道具",
+    }.get(str(asset_kind), "新角色")
     subject_name = (
         str(
             ctx.params.get("subject_name_hint") or plan.get("subject_name") or default_subject_name
@@ -1142,6 +1146,40 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                     )
             if target_id:
                 ctx.job.linked_scene_id = target_id
+                ctx.session.flush()
+        elif asset_kind == ImageAssetKind.PROP.value:
+            target_id = ctx.params.get("target_prop_id")
+            for entry in outputs:
+                try:
+                    with ctx.session.begin_nested():
+                        target_id = _link_prop_output(
+                            ctx,
+                            config,
+                            asset_id=str(entry.get("asset_id")),
+                            subject_name=subject_name,
+                            target_id=target_id,
+                            filing={
+                                "variant_id": ctx.params.get("target_variant_id"),
+                                "presets": {"prop_state": ctx.params["prop_state"]}
+                                if ctx.params.get("prop_state")
+                                else None,
+                                # Names the condition variant on first use.
+                                "label": PROP_STATE_PRESETS[ctx.params["prop_state"]].label
+                                if ctx.params.get("prop_state") in PROP_STATE_PRESETS
+                                else None,
+                                "source_job_id": ctx.job.id,
+                                "generated": True,
+                                "camera": entry.get("camera"),
+                                **_derive_filing(ctx.params),
+                            },
+                        )
+                        _link_derived_output(ctx, target_id, str(entry.get("asset_id")))
+                except Exception:
+                    logger.exception(
+                        "job %s could not attach prop output %s", ctx.job.id, entry.get("asset_id")
+                    )
+            if target_id:
+                ctx.job.linked_prop_id = target_id
                 ctx.session.flush()
         # `COVER` has no library to attach to today — the output stays a
         # plain generated asset (see the plan's "补充功能建议" for a future
@@ -1362,6 +1400,54 @@ def _link_scene_output(
     )
     ctx.state["created_scene_id"] = scene.id
     return scene.id
+
+
+def _link_prop_output(
+    ctx: WorkflowContext,
+    config: AssetOutputLinkConfig,
+    *,
+    asset_id: str,
+    subject_name: str,
+    target_id: str | None,
+    filing: dict[str, Any] | None = None,
+) -> str | None:
+    """Attaches one output to the prop card `target_id`, auto-creating one
+    (named `subject_name`) when there is none or it went stale — the same
+    threading contract as `_link_scene_output` (AC-4)."""
+    if target_id:
+        try:
+            props_service.append_reference_asset(
+                ctx.session,
+                user_id=ctx.job.user_id,
+                prop_id=str(target_id),
+                asset_id=asset_id,
+                **(filing or {}),
+            )
+            return target_id
+        except NotFound:
+            logger.warning(
+                "job %s target_prop_id=%s no longer exists; auto-creating a replacement",
+                ctx.job.id,
+                target_id,
+            )
+    if not getattr(config, "auto_create_prop", True):
+        return None
+    prop = props_service.create_prop(
+        ctx.session,
+        user_id=ctx.job.user_id,
+        name=subject_name,
+        description=None,
+        reference_asset_ids=[],
+    )
+    props_service.append_reference_asset(
+        ctx.session,
+        user_id=ctx.job.user_id,
+        prop_id=prop.id,
+        asset_id=asset_id,
+        **(filing or {}),
+    )
+    ctx.state["created_prop_id"] = prop.id
+    return prop.id
 
 
 def _link_character_action_output(

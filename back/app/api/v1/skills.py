@@ -26,6 +26,7 @@ from app.domain.skill_library import service as skill_library
 from app.domain.skill_library import variables as skill_variables
 from app.models import CreationSkill, Profile
 from app.models.enums import (
+    ASSET_CARD_CATEGORIES,
     AccessSubjectType,
     CreationSkillCategory,
     CreationSkillStatus,
@@ -324,6 +325,11 @@ def _reject_character_category(category: str) -> None:
             "场景请通过场景库接口创建和编辑。",
             fields={"category": "scene skills are managed via /v1/scenes"},
         )
+    if category == CreationSkillCategory.PROP_ASSET:
+        raise ValidationFailed(
+            "道具请通过道具库接口创建和编辑。",
+            fields={"category": "prop skills are managed via /v1/props"},
+        )
 
 
 def _require_owned(session: DbSession, skill_id: str, owner_user_id: str) -> CreationSkill:
@@ -355,7 +361,7 @@ def _summary(
 def _detail(session: DbSession, skill: CreationSkill, viewer_id: str | None) -> CreationSkillDetail:
     summary = _summary(session, skill, viewer_id)
     unlocked = summary.viewer_unlocked
-    is_card = skill.category in (CreationSkillCategory.CHARACTER, CreationSkillCategory.SCENE_ASSET)
+    is_card = skill.category in ASSET_CARD_CATEGORIES
     anchor = asset_variants_service.anchor(skill) if unlocked and is_card else None
     return CreationSkillDetail(
         **summary.model_dump(),
@@ -381,7 +387,7 @@ def _public_params(skill: CreationSkill) -> dict[str, Any]:
     dropped the stored mirror; this still strips any copy a row written by
     an older release might carry (remove one release after P2-8)."""
     params = dict(skill.params_json or {})
-    for key in ("character", "scene"):
+    for key in ("character", "scene", "prop"):
         nested = params.get(key)
         if isinstance(nested, dict) and "reference_assets" in nested:
             params[key] = {k: v for k, v in nested.items() if k != "reference_assets"}

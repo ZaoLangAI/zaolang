@@ -20,6 +20,7 @@ from app.domain.image_assets.vocabulary import (
     MIN_SCENE_VARIANTS,
     AgeStage,
     CharacterExpression,
+    PropState,
     SceneLighting,
     ScenePeriod,
     SceneState,
@@ -28,6 +29,7 @@ from app.domain.image_assets.vocabulary import (
 from app.models.enums import (
     CHARACTER_ENTRY_TYPES,
     CHARACTER_JOB_VIEWS,
+    PROP_ENTRY_TYPES,
     SCENE_ENTRY_TYPES,
     AssetEntryType,
     CharacterViewAngle,
@@ -368,6 +370,21 @@ class CharacterRefSelection(ApiModel):
         return self
 
 
+class PropRefSelection(ApiModel):
+    """Prop-side twin of `SceneRefSelection` (AC-4): a condition variant,
+    exact images, or both."""
+
+    prop_id: str = Field(max_length=40)
+    variant_id: str | None = Field(default=None, max_length=40)
+    asset_ids: list[str] | None = Field(default=None, min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def _names_a_variant_or_images(self) -> PropRefSelection:
+        if not self.variant_id and not self.asset_ids:
+            raise ValueError("请选择状态或具体参考图。")
+        return self
+
+
 class SceneRefSelection(ApiModel):
     """Scene-side twin of `CharacterRefSelection`: a variant (黄昏/战损…),
     exact images, or both."""
@@ -455,6 +472,10 @@ class GenerationParams(ApiModel):
     # merged into `reference_asset_ids` in `scenes.service.apply_scene_refs`,
     # sharing the same 9-slot budget with `character_ids`' references above.
     scene_ids: list[str] = Field(default_factory=list, max_length=4)
+    # Props picked from the prop library (AC-4): their hero plate and the
+    # nearest turntable view join `reference_asset_ids` after characters and
+    # scenes (`props.service.apply_prop_refs`).
+    prop_ids: list[str] = Field(default_factory=list, max_length=4)
     # Which `CreationSkill`s (if any) the client applied to this request, in
     # pick order. Not trusted blindly: the `skill_context` workflow node
     # re-fetches and re-merges each skill's own params server-side before
@@ -484,6 +505,9 @@ class GenerationParams(ApiModel):
     # plan's subject instead of updating an existing one.
     target_character_id: str | None = Field(default=None, max_length=40)
     target_scene_id: str | None = Field(default=None, max_length=40)
+    # `asset_kind=prop`: the prop card the output files into (unset →
+    # auto-create one named after `subject_name_hint`).
+    target_prop_id: str | None = Field(default=None, max_length=40)
     # Overrides the planner's own guessed `subject_name` when auto-creating a
     # new character/scene skill (no `target_character_id`/`target_scene_id`).
     # Only meaningful for a caller that already knows the exact name — e.g.
@@ -558,6 +582,9 @@ class GenerationParams(ApiModel):
     # Per-scene pick of which reference images to send; same rules as
     # `character_ref_selection` against `scene_ids`.
     scene_ref_selection: list[SceneRefSelection] | None = Field(default=None, max_length=4)
+    prop_ref_selection: list[PropRefSelection] | None = Field(default=None, max_length=4)
+    # `asset_kind=prop` only: the condition the image shows.
+    prop_state: PropState | None = None
     # How the picked cards' *default* references are ranked (P2-7) — never
     # an explicit `asset_ids` pick. A close shot leads with the identity
     # portrait (and a matching expression sheet), a wide one with the
@@ -630,6 +657,11 @@ class GenerationParams(ApiModel):
     def _asset_presets_scoped_to_their_kind(self) -> GenerationParams:
         is_character = self.asset_kind == ImageAssetKind.CHARACTER
         is_scene = self.asset_kind == ImageAssetKind.SCENE
+        is_prop = self.asset_kind == ImageAssetKind.PROP
+        if self.prop_state and not is_prop:
+            raise ValueError("道具状态仅适用于 asset_kind=prop。")
+        if self.target_prop_id and not is_prop:
+            raise ValueError("target_prop_id 仅适用于 asset_kind=prop。")
         if not is_character and (self.character_expressions or self.character_outfit_label):
             raise ValueError("表情与造型名称仅适用于 asset_kind=character。")
         if self.character_expressions and self.character_outfit_label:
@@ -641,7 +673,7 @@ class GenerationParams(ApiModel):
                 raise ValueError("定妆照不能同时指定表情或造型名称。")
             if self.character_views not in (None, [CharacterViewAngle.FRONT]):
                 raise ValueError("定妆照不能与侧面/背面视角同时生成。")
-        if self.target_variant_id and not (is_character or is_scene):
+        if self.target_variant_id and not (is_character or is_scene or is_prop):
             raise ValueError("target_variant_id 仅适用于 asset_kind=character/scene。")
         derive = bool(
             self.source_entry_id
@@ -649,7 +681,7 @@ class GenerationParams(ApiModel):
             or self.asset_output_entry_type
             or self.asset_output_mode
         )
-        if derive and not (is_character or is_scene):
+        if derive and not (is_character or is_scene or is_prop):
             raise ValueError("基于参考图的调整/派生仅适用于 asset_kind=character/scene。")
         if (self.asset_edit or self.asset_output_mode) and not self.source_entry_id:
             raise ValueError("调整修改与角色入场景需要指定 source_entry_id。")
@@ -664,8 +696,8 @@ class GenerationParams(ApiModel):
         if self.asset_output_mode and not is_character:
             raise ValueError("角色入场景仅适用于 asset_kind=character。")
         if self.camera_poses:
-            if not (is_character or is_scene):
-                raise ValueError("多机位仅适用于 asset_kind=character/scene。")
+            if not (is_character or is_scene or is_prop):
+                raise ValueError("多机位仅适用于 asset_kind=character/scene/prop。")
             if not (self.source_entry_id or self.reference_asset_ids):
                 raise ValueError("多机位需要一张源图（source_entry_id 或参考图）。")
             if (
@@ -689,7 +721,13 @@ class GenerationParams(ApiModel):
         elif self.camera_from_sheet:
             raise ValueError("camera_from_sheet 仅适用于多机位任务。")
         if self.asset_output_entry_type is not None:
-            allowed = CHARACTER_ENTRY_TYPES if is_character else SCENE_ENTRY_TYPES
+            allowed = (
+                CHARACTER_ENTRY_TYPES
+                if is_character
+                else PROP_ENTRY_TYPES
+                if is_prop
+                else SCENE_ENTRY_TYPES
+            )
             if self.asset_output_entry_type not in allowed:
                 raise ValueError("输出的参考图类型与卡片类别不匹配。")
         if self.target_variant_id and self.character_outfit_label:
@@ -719,6 +757,12 @@ class GenerationParams(ApiModel):
             self.scene_ids,
             field="scene_ref_selection",
             noun="场景",
+        )
+        _check_selection(
+            [entry.prop_id for entry in self.prop_ref_selection or []],
+            self.prop_ids,
+            field="prop_ref_selection",
+            noun="道具",
         )
         return self
 
@@ -1049,6 +1093,7 @@ class GenerationJobResponse(ApiModel):
     # auto-relink without the user re-picking from `ScriptLinkPicker`.
     linked_character_id: str | None = None
     linked_scene_id: str | None = None
+    linked_prop_id: str | None = None
     # How many of this job's images landed on that card as candidates — the
     # slot already held an approved image (P2-1). The studio uses it to
     # point the owner at the library to approve or discard them.

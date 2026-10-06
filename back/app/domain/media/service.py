@@ -278,6 +278,7 @@ def object_keys_for(session: Session, *, asset_ids: Sequence[str]) -> list[str]:
 _EDITOR_LIBRARY_HIDDEN_ASSET_KINDS: tuple[str, ...] = (
     ImageAssetKind.CHARACTER.value,
     ImageAssetKind.SCENE.value,
+    ImageAssetKind.PROP.value,
 )
 
 

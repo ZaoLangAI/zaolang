@@ -3514,6 +3514,7 @@
     "categoryCharacter": "Character images",
     "categorySceneAsset": "Scene images",
     "categoryCoverAsset": "Cover images",
+    "categoryPropAsset": "Props",
     "categoryOther": "Other",
     "byAuthor": "Shared by {name}",
     "usageCount": "Used {count} times",

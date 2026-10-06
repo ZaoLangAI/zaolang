@@ -813,6 +813,10 @@ class CreationSkillCategory(StrEnum):
     # cover has no roster to maintain, just one `cover_asset_id` and this
     # category on an otherwise ordinary `CreationSkill`).
     COVER_ASSET = "cover_asset"
+    # A reusable prop (道具, AC-4, `app.domain.props.service`); its images
+    # live in the variants tables like a scene's — one variant per condition
+    # (全新 / 旧化 / 破损…), a master plate plus turntable views per variant.
+    PROP_ASSET = "prop_asset"
     OTHER = "other"
 
 
@@ -822,6 +826,7 @@ class AssetVariantKind(StrEnum):
 
     LOOK = "look"
     SCENE_VARIANT = "scene_variant"
+    PROP_VARIANT = "prop_variant"
 
 
 class AssetEntryType(StrEnum):
@@ -856,6 +861,11 @@ CHARACTER_ENTRY_TYPES: frozenset[str] = frozenset(
 )
 SCENE_ENTRY_TYPES: frozenset[str] = frozenset(
     {AssetEntryType.MASTER, AssetEntryType.SHOT, AssetEntryType.OTHER}
+)
+# A prop: its hero plate (`master`), turntable views (`view`, one per camera
+# pose), details / in-use shots (`shot`).
+PROP_ENTRY_TYPES: frozenset[str] = frozenset(
+    {AssetEntryType.MASTER, AssetEntryType.VIEW, AssetEntryType.SHOT, AssetEntryType.OTHER}
 )
 
 
@@ -904,6 +914,17 @@ SCENE_RELATIONS: frozenset[str] = frozenset(
     {
         AssetRelation.LIGHTING,
         AssetRelation.WEATHER,
+        AssetRelation.STATE,
+        AssetRelation.PERIOD,
+        AssetRelation.EDIT,
+        AssetRelation.CAMERA,
+        AssetRelation.CUSTOM,
+    }
+)
+
+
+PROP_RELATIONS: frozenset[str] = frozenset(
+    {
         AssetRelation.STATE,
         AssetRelation.PERIOD,
         AssetRelation.EDIT,
@@ -965,6 +986,8 @@ class ImageAssetKind(StrEnum):
     CHARACTER = "character"
     SCENE = "scene"
     COVER = "cover"
+    # A prop's image (道具, AC-4): files into a `PROP_ASSET` card.
+    PROP = "prop"
 
 
 class VideoAssetKind(StrEnum):
@@ -1006,6 +1029,16 @@ IMAGE_ASSET_SKILL_CATEGORIES: frozenset[CreationSkillCategory] = frozenset(
         CreationSkillCategory.CHARACTER,
         CreationSkillCategory.SCENE_ASSET,
         CreationSkillCategory.COVER_ASSET,
+        CreationSkillCategory.PROP_ASSET,
+    }
+)
+# The library cards (roster-like, edited through their own APIs and the
+# variants tables) — every image-asset category but a cover.
+ASSET_CARD_CATEGORIES: frozenset[CreationSkillCategory] = frozenset(
+    {
+        CreationSkillCategory.CHARACTER,
+        CreationSkillCategory.SCENE_ASSET,
+        CreationSkillCategory.PROP_ASSET,
     }
 )
 

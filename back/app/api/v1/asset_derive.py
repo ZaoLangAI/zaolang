@@ -379,3 +379,4 @@ def _register(prefix: str) -> None:
 
 _register("characters")
 _register("scenes")
+_register("props")

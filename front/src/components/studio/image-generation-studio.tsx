@@ -261,8 +261,9 @@ export function ImageGenerationStudio({
   if (!activeJobId && resumedJob.status === 'ready' && resumedJob.data) {
     setActiveJobId(resumedJob.data.id);
     setActiveJobSeed(resumedJob.data);
-    if (resumedJob.data.asset_kind && ASSET_KINDS.includes(resumedJob.data.asset_kind)) {
-      setAssetKind(resumedJob.data.asset_kind);
+    const resumedKind = resumedJob.data.asset_kind;
+    if (resumedKind && resumedKind !== 'prop' && ASSET_KINDS.includes(resumedKind)) {
+      setAssetKind(resumedKind);
     }
     // The card the job filed into, so another version files there too —
     // without it a resumed scene/character draft fell back to 不关联.
