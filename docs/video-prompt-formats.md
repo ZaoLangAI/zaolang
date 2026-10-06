@@ -935,6 +935,11 @@ jittery eyes`；中文版：变形扭曲、形态渐变、面部扭曲、多余�
 · [morphic Seedance 2.5 指南](https://morphic.com/zh/resources/how-to/seedance-2-5-guide)
 · [best.xiaohu.ai 官方指南解读](https://best.xiaohu.ai/article/seedance-25-prompt-guide/)
 
+**开源导演 Skill（只借方法，未复制文字）**：
+[liyue-aigc/seedance-2-5-video-director](https://github.com/liyue-aigc/seedance-2-5-video-director)（MIT）
+——表演反应链、物理因果顺序、视频专有互斥项、视频编辑「A 改成 B + 生效区间 + 保持项」结构、
+参考图借用范围；未使用其中整理自厂商手册的能力与示例文件。
+
 **影视分镜与术语**：
 [Tools for Film · Shot List](https://www.toolsforfilm.com/blog/how-to-write-a-shot-list)
 · [Storyflow · Shot List 2026](https://storyflow.so/blog/how-to-make-a-shot-list-2026)

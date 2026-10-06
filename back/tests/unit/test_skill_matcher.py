@@ -44,7 +44,7 @@ def test_the_shortlist_is_drama_only_and_titles_only(db: Session, seeded: None) 
     pick."""
     candidates = skill_library_service.list_drama_candidates(db)
 
-    assert len(candidates) == 80
+    assert len(candidates) == 85
     titles = [title for _, title in candidates]
     assert _RAIN_FAREWELL in titles
     assert titles == sorted(titles)

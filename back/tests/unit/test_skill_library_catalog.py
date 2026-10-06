@@ -412,7 +412,7 @@ def test_format_prompt_suffixes_are_positive_phrasings(db: Session, author: User
         assert not offenders, f"{item.key} uses negative phrasing: {sorted(offenders)}"
 
 
-_DRAMA_SUB_PREFIX_COUNTS = {"drama-scene-": 50, "drama-emotion-": 30}
+_DRAMA_SUB_PREFIX_COUNTS = {"drama-scene-": 53, "drama-emotion-": 32}
 
 
 def test_the_drama_section_is_split_between_scenes_and_emotions(db: Session, author: User) -> None:
@@ -422,11 +422,11 @@ def test_the_drama_section_is_split_between_scenes_and_emotions(db: Session, aut
     The two-way split is the substance of that: a story names a situation
     and an emotional register, and matching only one of the two would
     silently halve the feature. Pinning both counts stops a later addition
-    from turning this into eighty scene types and no emotional vocabulary."""
+    from turning this into eighty-five scene types and no emotional vocabulary."""
     items = [item for item in skill_catalog.CATALOG if item.key.startswith("drama-")]
 
-    assert len(items) == 80
-    assert sum(_DRAMA_SUB_PREFIX_COUNTS.values()) == 80
+    assert len(items) == 85
+    assert sum(_DRAMA_SUB_PREFIX_COUNTS.values()) == 85
     for prefix, expected in _DRAMA_SUB_PREFIX_COUNTS.items():
         found = [item for item in items if item.key.startswith(prefix)]
         assert len(found) == expected, f"{prefix} has {len(found)}, expected {expected}"

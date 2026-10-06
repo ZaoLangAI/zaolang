@@ -103,7 +103,7 @@ it is not duplicated here. The sources fall into four groups:
 
 ## Sources consulted — 戏码与情绪 "drama" section
 
-The 80 `drama-*` rows (`category=DRAMA`, `_VIDEO_OPERATIONS`) are the mirror
+The 85 `drama-*` rows (`category=DRAMA`, `_VIDEO_OPERATIONS`) are the mirror
 of the section above: a `format` row stays true whatever the clip is about, a
 `drama` row means nothing outside the one situation or emotion it names.
 That flips the sourcing question, because **no video vendor documents any of
@@ -128,13 +128,25 @@ source groups are:
   every `title` / `description` / `prompt_suffix` is original text written
   for this catalogue.
 - **Acting-training tell inventories** — the visible physiological signals
-  behind the 30 `drama-emotion-*` rows (a swallow travelling the throat,
+  behind the 32 `drama-emotion-*` rows (a swallow travelling the throat,
   nails in the palm, shoulders dropping several centimetres). These are
   long-standing performance conventions rather than anyone's proprietary
   method. The open question is a different one and the research document
   states it plainly: whether a given model can actually render a named tell
   is unverified, which is why these rows are fed to the agents as reference
   material rather than stapled onto the outgoing prompt.
+
+- **[liyue-aigc/seedance-2-5-video-director](https://github.com/liyue-aigc/seedance-2-5-video-director)**
+  (MIT License) — its realistic-direction notes informed the 2026-10 additions
+  (`drama-scene-shot-reverse-dialogue`, `-variety-obstacle-live`,
+  `-physical-impact`, `drama-emotion-laugh-breaks-through`,
+  `-torn-two-impulses`): shot/reverse-shot on one side of the line,
+  one-purpose-per-camera live coverage, cause → contact → force → response
+  ordering, built-up laughter, and two impulses in one gesture. The same
+  ideas shaped `copywriter._VIDEO_PERFORMANCE_RULES` and
+  `ENHANCE_SYSTEM_PROMPT_VIDEO_EDIT`. Method only: no text from that
+  repository was copied, and its `capabilities-and-limits.md` /
+  `official-examples.md` (summaries of a vendor handbook) were not used at all.
 
 No character, plot, line of dialogue, or title from any actual short drama
 appears in these rows. A row names a *kind* of scene ("a bedside
