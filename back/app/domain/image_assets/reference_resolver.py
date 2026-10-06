@@ -284,7 +284,11 @@ def _borrow_scene_reference(session: Session, *, user_id: str, params: dict[str,
     cell (P2-5), whose new variant is still empty — starts from that card:
     `target_variant_id`'s own images when given, else the card's anchor, the
     master plate whose structure every variant keeps (`SCENE_VARIANT_PREFIX`
-    locks reference 1). A stale target is left to write-back's fallback."""
+    locks reference 1). A stale target is left to write-back's fallback.
+
+    A panorama (AC-7) borrows only a master plate — the variant's, else the
+    default variant's, else the card's anchor — and goes text-only without
+    one: a shot would pull the panorama toward that one framing."""
     if params.get("asset_kind") != "scene" or params.get("reference_asset_ids"):
         return
     target_id = params.get("target_scene_id")
@@ -296,6 +300,11 @@ def _borrow_scene_reference(session: Session, *, user_id: str, params: dict[str,
         return
     variant_id = params.get("target_variant_id")
     variant = asset_variants_service.find_variant(skill, str(variant_id)) if variant_id else None
+    if params.get("scene_panorama"):
+        still = asset_variants_service.master_or_anchor(skill, variant)
+        if still is not None and still.entry_type == AssetEntryType.MASTER:
+            params["reference_asset_ids"] = [still.asset_id]
+        return
     anchor = asset_variants_service.anchor(skill)
     if variant is not None:
         picked = asset_variants_service.default_subset(skill, variant)

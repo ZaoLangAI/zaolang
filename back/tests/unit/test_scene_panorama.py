@@ -128,3 +128,103 @@ def test_a_panorama_cannot_be_the_anchor(db: Session, author: User) -> None:
 def test_the_legend_calls_it_a_panorama(db: Session, author: User) -> None:
     scene = _scene(db, author)
     assert av.entry_label(scene.skill, _panorama(db, author, scene)) == "场景「客厅」·全景"
+
+
+# ---- the panorama job (GenerationParams, prompt pass, references) ----------
+
+
+def test_a_panorama_job_is_a_single_2_to_1_scene_image() -> None:
+    from pydantic import ValidationError
+
+    from app.api.schemas.jobs import GenerationParams
+
+    params = GenerationParams(
+        prompt="老式客厅",
+        asset_kind="scene",
+        target_scene_id="sk_1",
+        scene_panorama=True,
+        aspect_ratio="16:9",
+    )
+    assert params.aspect_ratio == "2:1"
+    for bad in (
+        {"asset_kind": "character", "target_character_id": "sk_1"},
+        {"asset_kind": "scene"},  # no target
+        {
+            "asset_kind": "scene",
+            "target_scene_id": "sk_1",
+            "scene_variants": [{"lighting": "day"}, {"lighting": "dusk"}],
+        },
+        {
+            "asset_kind": "scene",
+            "target_scene_id": "sk_1",
+            "camera_poses": [{"azimuth": 90}],
+            "reference_asset_ids": ["ast_1"],
+        },
+        {"asset_kind": "scene", "target_scene_id": "sk_1", "source_entry_id": "ske_1"},
+    ):
+        with pytest.raises(ValidationError):
+            GenerationParams(prompt="客厅", scene_panorama=True, **bad)
+    # Presets still apply: a panorama at dusk.
+    dusk = GenerationParams(
+        prompt="客厅",
+        asset_kind="scene",
+        target_scene_id="sk_1",
+        scene_panorama=True,
+        scene_lighting="dusk",
+    )
+    assert dusk.scene_lighting == "dusk"
+
+
+def test_the_panorama_pass_asks_for_a_seamless_equirectangular_plate() -> None:
+    from app.domain.image_assets import prompt_builder
+    from app.domain.image_assets.prompt_builder import AssetPass
+
+    params = {"asset_kind": "scene", "scene_panorama": True}
+    asset_pass = prompt_builder.resolve_pass(params, asset_kind="scene", character_view=None)
+    assert asset_pass is AssetPass.SCENE_PANORAMA
+    prompt, negative = prompt_builder.compose(
+        asset_pass, prompt="老式客厅，木地板", negative=None, params=params
+    )
+    assert prompt.startswith("老式客厅，木地板")
+    for phrase in ("360°", "等距柱状投影", "2:1", "无缝衔接", "地平线", "不出现人物"):
+        assert phrase in prompt
+    assert negative and "人物" in negative and "鱼眼" in negative
+
+    with_master, _ = prompt_builder.compose(
+        asset_pass,
+        prompt="老式客厅",
+        negative=None,
+        params={**params, "scene_lighting": "dusk"},
+        has_reference=True,
+    )
+    assert with_master.startswith(prompt_builder.SCENE_PANORAMA_REFERENCE_PREFIX)
+    assert "黄昏" in with_master or "夕阳" in with_master
+
+    kept = prompt_builder.sanitize_enhancements(
+        asset_pass, ["墙上挂钟", "近景特写桌面", "三视图"], params=params
+    )
+    assert kept == ["墙上挂钟"]
+
+
+def test_a_panorama_borrows_only_the_variant_master(db: Session, author: User) -> None:
+    from app.domain.image_assets import reference_resolver
+
+    scene = _scene(db, author)
+    variant = av.find_default(scene.skill)
+    base = {"prompt": "客厅", "asset_kind": "scene", "target_scene_id": scene.id}
+
+    shot = av.add_entry(db, scene.skill, variant, asset_id=_asset(db, author).id, entry_type="shot")
+    params = {**base, "scene_panorama": True}
+    reference_resolver.resolve(db, user_id=author.id, params=params)
+    assert not params.get("reference_asset_ids")  # a shot is not borrowed
+
+    master = av.add_entry(
+        db, scene.skill, variant, asset_id=_asset(db, author).id, entry_type="master"
+    )
+    params = {**base, "scene_panorama": True}
+    reference_resolver.resolve(db, user_id=author.id, params=params)
+    assert params["reference_asset_ids"] == [master.asset_id]
+
+    ordinary = dict(base)
+    reference_resolver.resolve(db, user_id=author.id, params=ordinary)
+    assert shot.asset_id in ordinary["reference_asset_ids"]

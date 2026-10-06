@@ -7156,7 +7156,7 @@ export interface components {
          * @description What one `SkillAssetEntry` image is for inside its look/variant.
          * @enum {string}
          */
-        AssetEntryType: "identity_portrait" | "character_sheet" | "view" | "expression_sheet" | "pose" | "outfit_detail" | "prop" | "master" | "shot" | "other";
+        AssetEntryType: "identity_portrait" | "character_sheet" | "view" | "expression_sheet" | "pose" | "outfit_detail" | "prop" | "master" | "shot" | "panorama" | "other";
         /**
          * AssetEntryUpdateRequest
          * @description `view: null` is "leave as is"; send `clear_view` to unset it (same
@@ -10494,6 +10494,11 @@ export interface components {
              * @default false
              */
             camera_from_sheet: boolean;
+            /**
+             * Scene Panorama
+             * @default false
+             */
+            scene_panorama: boolean;
             /** Voice Profile Id */
             voice_profile_id?: string | null;
             /** Target Voice Id */

@@ -56,6 +56,7 @@ from app.models import CreationSkill, Draft, GenerationJob, JobEvent, ProviderAt
 from app.models.base import utcnow
 from app.models.enums import (
     IMAGE_ASSET_SKILL_CATEGORIES,
+    AssetEntryType,
     CharacterViewAngle,
     ImageAssetKind,
     JobEventType,
@@ -1227,6 +1228,8 @@ def _derive_filing(params: dict[str, Any]) -> dict[str, Any]:
         filing["copy_from_entry_id"] = params["source_entry_id"]
     elif params.get("asset_output_entry_type"):
         filing["entry_type"] = params["asset_output_entry_type"]
+    elif params.get("scene_panorama"):
+        filing["entry_type"] = AssetEntryType.PANORAMA.value
     return filing
 
 
