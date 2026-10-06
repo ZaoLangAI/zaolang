@@ -27,7 +27,7 @@ final class CharacterDetailViewModel {
 
     func load() async {
         do {
-            state = .loaded(try await apiClient.fetchCharacterGraph(id: characterID))
+            state = .loaded(try await apiClient.fetchAssetGraph(kind: .character, id: characterID))
         } catch let error as ApiError {
             if state.value == nil { state = .failed(error) }
         } catch {
@@ -40,7 +40,7 @@ final class CharacterDetailViewModel {
         approvingID = entry.id
         defer { approvingID = nil }
         do {
-            _ = try await apiClient.approveCharacterEntry(characterID: characterID, entryID: entry.id)
+            _ = try await apiClient.approveAssetEntry(kind: .character, cardID: characterID, entryID: entry.id)
             message = L10n.t("iosCharacters.approved")
             await load()
         } catch let error as ApiError {

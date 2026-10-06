@@ -95,10 +95,66 @@ public struct SceneResponse: Codable, Sendable, Equatable, Identifiable {
     public let name: String
     public let description: String?
     public let referenceAssets: [LibraryReferenceAsset]
+    /// Variants with their images (empty in a `?view=summary` list).
+    public let variants: [AssetVariantView]
+    public let anchorEntryID: String?
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, description
+        case id, name, description, variants
         case referenceAssets = "reference_assets"
+        case anchorEntryID = "anchor_entry_id"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        referenceAssets = try c.decodeIfPresent([LibraryReferenceAsset].self, forKey: .referenceAssets) ?? []
+        variants = try c.decodeIfPresent([AssetVariantView].self, forKey: .variants) ?? []
+        anchorEntryID = try c.decodeIfPresent(String.self, forKey: .anchorEntryID)
+    }
+
+    /// The master plate a row leads with: an explicit establishing tag, else
+    /// the first unlabelled asset, else the first (mirrors web `sceneHeroAsset`).
+    public var heroURL: String? {
+        (referenceAssets.first { $0.view == "establishing" }
+            ?? referenceAssets.first { ($0.label ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
+            ?? referenceAssets.first)?.url
+    }
+}
+
+/// A prop in the creator's library (道具创作, AC-4) — mirrors
+/// `back/app/api/schemas/props.py::PropResponse`.
+public struct PropResponse: Codable, Sendable, Equatable, Identifiable {
+    public let id: String
+    public let name: String
+    public let description: String?
+    public let referenceAssets: [LibraryReferenceAsset]
+    /// Conditions (道具状态) with their images.
+    public let variants: [AssetVariantView]
+    public let anchorEntryID: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, description, variants
+        case referenceAssets = "reference_assets"
+        case anchorEntryID = "anchor_entry_id"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        referenceAssets = try c.decodeIfPresent([LibraryReferenceAsset].self, forKey: .referenceAssets) ?? []
+        variants = try c.decodeIfPresent([AssetVariantView].self, forKey: .variants) ?? []
+        anchorEntryID = try c.decodeIfPresent(String.self, forKey: .anchorEntryID)
+    }
+
+    /// The hero plate (the backend projects a prop's `master` as view
+    /// `hero`), else the first image (mirrors web `propHeroAsset`).
+    public var heroURL: String? {
+        (referenceAssets.first { $0.view == "hero" } ?? referenceAssets.first)?.url
     }
 }
 

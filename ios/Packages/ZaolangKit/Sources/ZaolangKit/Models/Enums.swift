@@ -57,16 +57,18 @@ public enum Operation: String, Codable, Sendable, CaseIterable {
 }
 
 /// What a `text_to_image`/`image_to_image` output is *for* — orthogonal to
-/// `Operation`. Mirrors `back/app/models/enums.py::ImageAssetKind`. `general`
-/// is today's plain, freeform image; `character` covers all three of a
-/// character's turnaround views (see `CharacterViewAngle` for which one(s) a
-/// given job actually produces); `scene`/`cover` double as the `view` tag on
-/// a scene's reference-asset entries.
+/// `Operation`. Mirrors `back/app/models/enums.py::ImageAssetKind`. Since
+/// AC-8 the API only generates the library kinds `character` / `scene` /
+/// `prop` (a `general` or `cover` image job is refused with 422
+/// `IMAGE_ASSET_KIND_REQUIRED`); those two stay so older jobs still decode.
+/// Response fields wrap it in `RawOrUnknown` so a future kind doesn't fail
+/// the decode.
 public enum ImageAssetKind: String, Codable, Sendable, CaseIterable {
     case general
     case character
     case scene
     case cover
+    case prop
 }
 
 /// Which pose/angle one of a character's reference images is for. Mirrors

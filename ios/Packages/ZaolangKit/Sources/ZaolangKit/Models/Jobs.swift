@@ -14,8 +14,10 @@ public struct GenerationParams: Codable, Sendable, Equatable {
     public var characterIDs: [String]
     public var styleGalleryID: String?
     /// What a `text_to_image`/`image_to_image` output is *for* — selects the
-    /// `(operation, asset_kind)` workflow template and, for `character`/
-    /// `scene`, what the backend auto-attaches the succeeded output(s) to.
+    /// `(operation, asset_kind)` workflow template and which card the
+    /// succeeded output(s) file into. An image job must name `character` /
+    /// `scene` / `prop` (AC-8: 422 `IMAGE_ASSET_KIND_REQUIRED` otherwise);
+    /// video jobs leave the `general` default.
     public var assetKind: ImageAssetKind
     /// Only meaningful with `assetKind == .character`: which of front/side/
     /// back this job produces, one at a time. `nil` means `[.front]` — a
@@ -28,6 +30,21 @@ public struct GenerationParams: Codable, Sendable, Equatable {
     /// The scene this output auto-attaches to. Unset with `assetKind: .scene`
     /// leaves the output unattached — scenes have no auto-create path.
     public var targetSceneID: String?
+    /// The prop this output files into (`assetKind: .prop`).
+    public var targetPropID: String?
+    /// The look / variant / condition of the target card the output files into.
+    public var targetVariantID: String?
+    /// The card's name, so the planner keeps the subject's identity.
+    public var subjectNameHint: String?
+    /// A character's identity portrait (定妆照, 3:4 head-and-shoulders).
+    public var characterPortrait: Bool?
+    /// A scene master's preset axes (`remixPage.presets.*` values).
+    public var sceneLighting: String?
+    public var sceneWeather: String?
+    public var sceneState: String?
+    public var scenePeriod: String?
+    /// A prop master's condition: `new` | `worn` | `damaged` | `broken`.
+    public var propState: String?
     /// Opts out of the auto-attach above while a borrowed reference (for
     /// side/back consistency) still shapes the generation itself.
     public var autoAttachAsset: Bool
@@ -47,6 +64,15 @@ public struct GenerationParams: Codable, Sendable, Equatable {
         characterViews: [CharacterViewAngle]? = nil,
         targetCharacterID: String? = nil,
         targetSceneID: String? = nil,
+        targetPropID: String? = nil,
+        targetVariantID: String? = nil,
+        subjectNameHint: String? = nil,
+        characterPortrait: Bool? = nil,
+        sceneLighting: String? = nil,
+        sceneWeather: String? = nil,
+        sceneState: String? = nil,
+        scenePeriod: String? = nil,
+        propState: String? = nil,
         autoAttachAsset: Bool = true
     ) {
         self.prompt = prompt
@@ -63,6 +89,15 @@ public struct GenerationParams: Codable, Sendable, Equatable {
         self.characterViews = characterViews
         self.targetCharacterID = targetCharacterID
         self.targetSceneID = targetSceneID
+        self.targetPropID = targetPropID
+        self.targetVariantID = targetVariantID
+        self.subjectNameHint = subjectNameHint
+        self.characterPortrait = characterPortrait
+        self.sceneLighting = sceneLighting
+        self.sceneWeather = sceneWeather
+        self.sceneState = sceneState
+        self.scenePeriod = scenePeriod
+        self.propState = propState
         self.autoAttachAsset = autoAttachAsset
     }
 
@@ -81,6 +116,15 @@ public struct GenerationParams: Codable, Sendable, Equatable {
         case characterViews = "character_views"
         case targetCharacterID = "target_character_id"
         case targetSceneID = "target_scene_id"
+        case targetPropID = "target_prop_id"
+        case targetVariantID = "target_variant_id"
+        case subjectNameHint = "subject_name_hint"
+        case characterPortrait = "character_portrait"
+        case sceneLighting = "scene_lighting"
+        case sceneWeather = "scene_weather"
+        case sceneState = "scene_state"
+        case scenePeriod = "scene_period"
+        case propState = "prop_state"
         case autoAttachAsset = "auto_attach_asset"
     }
 }
@@ -89,17 +133,21 @@ public struct QuoteRequest: Encodable, Sendable {
     public var operation: Operation
     public var qualityTier: QualityTier
     public var durationSeconds: Int
+    /// Required for an image quote since AC-8 (`character` / `scene` / `prop`).
+    public var assetKind: ImageAssetKind?
 
-    public init(operation: Operation, qualityTier: QualityTier, durationSeconds: Int = 0) {
+    public init(operation: Operation, qualityTier: QualityTier, durationSeconds: Int = 0, assetKind: ImageAssetKind? = nil) {
         self.operation = operation
         self.qualityTier = qualityTier
         self.durationSeconds = durationSeconds
+        self.assetKind = assetKind
     }
 
     private enum CodingKeys: String, CodingKey {
         case operation
         case qualityTier = "quality_tier"
         case durationSeconds = "duration_seconds"
+        case assetKind = "asset_kind"
     }
 }
 
@@ -301,11 +349,16 @@ public struct GenerationJobResponse: Codable, Sendable, Equatable, Identifiable 
     public let route: RouteSummary?
     public let outputAssetID: String?
     public let outputURL: String?
-    /// Populated instead of (well, alongside) the singular fields above for a
-    /// multi-view `character` completion job — one entry per produced view,
-    /// front→side→back order (mirrors `execute_asset_output_advance`).
+    /// Populated alongside the singular fields above for a multi-output job
+    /// (several candidates or camera poses at once) — one entry per output.
     public let outputAssetIDs: [String]?
     public let outputURLs: [String]?
+    /// An image job's kind; `general` / `cover` only on jobs from before AC-8.
+    public let assetKind: RawOrUnknown<ImageAssetKind>?
+    /// The card the output filed into (set at write-back).
+    public let linkedCharacterID: String?
+    public let linkedSceneID: String?
+    public let linkedPropID: String?
     public let draftID: String?
     public let failureCode: String?
     public let failureMessage: String?
@@ -327,6 +380,10 @@ public struct GenerationJobResponse: Codable, Sendable, Equatable, Identifiable 
         case outputURL = "output_url"
         case outputAssetIDs = "output_asset_ids"
         case outputURLs = "output_urls"
+        case assetKind = "asset_kind"
+        case linkedCharacterID = "linked_character_id"
+        case linkedSceneID = "linked_scene_id"
+        case linkedPropID = "linked_prop_id"
         case draftID = "draft_id"
         case failureCode = "failure_code"
         case failureMessage = "failure_message"
@@ -352,6 +409,10 @@ public struct GenerationJobResponse: Codable, Sendable, Equatable, Identifiable 
         outputURL = try c.decodeIfPresent(String.self, forKey: .outputURL)
         outputAssetIDs = try c.decodeIfPresent([String].self, forKey: .outputAssetIDs)
         outputURLs = try c.decodeIfPresent([String].self, forKey: .outputURLs)
+        assetKind = try c.decodeIfPresent(RawOrUnknown<ImageAssetKind>.self, forKey: .assetKind)
+        linkedCharacterID = try c.decodeIfPresent(String.self, forKey: .linkedCharacterID)
+        linkedSceneID = try c.decodeIfPresent(String.self, forKey: .linkedSceneID)
+        linkedPropID = try c.decodeIfPresent(String.self, forKey: .linkedPropID)
         draftID = try c.decodeIfPresent(String.self, forKey: .draftID)
         failureCode = try c.decodeIfPresent(String.self, forKey: .failureCode)
         failureMessage = try c.decodeIfPresent(String.self, forKey: .failureMessage)
@@ -378,6 +439,10 @@ public struct GenerationJobResponse: Codable, Sendable, Equatable, Identifiable 
         outputURL: String?,
         outputAssetIDs: [String]? = nil,
         outputURLs: [String]? = nil,
+        assetKind: RawOrUnknown<ImageAssetKind>? = nil,
+        linkedCharacterID: String? = nil,
+        linkedSceneID: String? = nil,
+        linkedPropID: String? = nil,
         draftID: String?,
         failureCode: String?,
         failureMessage: String?,
@@ -400,6 +465,10 @@ public struct GenerationJobResponse: Codable, Sendable, Equatable, Identifiable 
         self.outputURL = outputURL
         self.outputAssetIDs = outputAssetIDs
         self.outputURLs = outputURLs
+        self.assetKind = assetKind
+        self.linkedCharacterID = linkedCharacterID
+        self.linkedSceneID = linkedSceneID
+        self.linkedPropID = linkedPropID
         self.draftID = draftID
         self.failureCode = failureCode
         self.failureMessage = failureMessage
@@ -428,6 +497,10 @@ public struct GenerationJobResponse: Codable, Sendable, Equatable, Identifiable 
             outputURL: outputURL,
             outputAssetIDs: outputAssetIDs,
             outputURLs: outputURLs,
+            assetKind: assetKind,
+            linkedCharacterID: linkedCharacterID,
+            linkedSceneID: linkedSceneID,
+            linkedPropID: linkedPropID,
             draftID: draftID,
             failureCode: failureCode,
             failureMessage: failureMessage,
