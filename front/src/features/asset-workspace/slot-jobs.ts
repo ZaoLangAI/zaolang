@@ -62,6 +62,16 @@ export function slotJob(
         if (presets.prop_state) params.prop_state = presets.prop_state;
       }
       break;
+    case 'panorama':
+      // One 2:1 equirectangular still (the API forces the ratio too); the
+      // variant's approved master is borrowed as reference 1 when present.
+      params.target_variant_id = variant.id;
+      params.scene_panorama = true;
+      params.aspect_ratio = '2:1';
+      for (const axis of ['lighting', 'weather', 'state', 'period']) {
+        if (presets[axis]) params[`scene_${axis}`] = presets[axis];
+      }
+      break;
   }
   return { operation: 'text_to_image', params };
 }

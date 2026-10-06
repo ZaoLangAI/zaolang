@@ -28,6 +28,7 @@ import type {
   Page,
   Quote,
 } from '@/lib/api/types';
+import { cn } from '@/lib/cn';
 import { isSkillMentionable } from '@/lib/skill-mention';
 import { useResource } from '@/lib/use-resource';
 
@@ -37,6 +38,7 @@ import { poseKey } from './camera';
 import { orbitSource, type SlotState } from './completeness';
 import { cardBase } from './kind-config';
 import { type Coverage, OrbitPicker } from './orbit-picker';
+import { PanoramaDialog } from './panorama-dialog';
 import { slotJob } from './slot-jobs';
 
 const QUOTE_DEBOUNCE_MS = 300;
@@ -59,6 +61,8 @@ interface Priced {
  * - a pose slot — the 角度盘, drawing the chosen camera poses from the look's
  *   front figure / sheet (character) or master (scene, prop) via `…:orbit`;
  * - the in-scene slot — a 派生 `in_scene` from the sheet (`…:derive`);
+ * - the panorama slot (scene, AC-7) — a 2:1 panorama job like the slots
+ *   below, plus the viewer that cuts posed shots out of it;
  * - every other slot — a draftless job filing into the card, 1–4 candidates,
  *   with an optional style skill.
  *
@@ -109,7 +113,10 @@ export function SlotPanel({
   const [priced, setPriced] = useState<Priced | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [viewing, setViewing] = useState(false);
   const idempotencyKey = useRef<string | null>(null);
+  const panorama =
+    slot.kind === 'panorama' ? (state.approved ?? state.candidates[0] ?? null) : null;
 
   const source = orbitSource(kind, variant);
   const sheet = (variant.entries ?? []).find(
@@ -263,8 +270,29 @@ export function SlotPanel({
       <SlotImages
         approved={state.approved}
         candidates={state.candidates}
+        wide={slot.kind === 'panorama'}
         onApprove={(entry) => void actions.approveEntry(entry.id)}
       />
+
+      {slot.kind === 'panorama' ? (
+        <>
+          <p className="text-xs text-muted">{t('panorama.slotHint')}</p>
+          {panorama ? (
+            <Button variant="secondary" onClick={() => setViewing(true)}>
+              {t('panorama.open')}
+            </Button>
+          ) : null}
+          {panorama && viewing ? (
+            <PanoramaDialog
+              open
+              onClose={() => setViewing(false)}
+              panorama={panorama}
+              variant={variant}
+              actions={actions}
+            />
+          ) : null}
+        </>
+      ) : null}
 
       {blocked ? (
         <p className="rounded-[var(--radius-sm)] bg-surface-soft p-3 text-sm text-muted">
@@ -378,10 +406,13 @@ export function SlotPanel({
 function SlotImages({
   approved,
   candidates,
+  wide = false,
   onApprove,
 }: {
   approved: AssetEntry | null;
   candidates: AssetEntry[];
+  /** A 2:1 panorama: shown whole rather than cropped. */
+  wide?: boolean;
   onApprove: (entry: AssetEntry) => void;
 }) {
   const t = useTranslations('assetWorkspace');
@@ -389,7 +420,12 @@ function SlotImages({
   return (
     <div className="flex flex-col gap-2">
       {approved?.url ? (
-        <div className="relative aspect-video overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
+        <div
+          className={cn(
+            'relative overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft',
+            wide ? 'aspect-[2/1]' : 'aspect-video',
+          )}
+        >
           <Image src={approved.url} alt="" fill sizes="360px" className="object-contain" />
         </div>
       ) : null}
@@ -399,9 +435,20 @@ function SlotImages({
           <ul className="grid grid-cols-3 gap-2">
             {candidates.map((entry) => (
               <li key={entry.id} className="flex flex-col gap-1">
-                <div className="relative aspect-square overflow-hidden rounded-[var(--radius-sm)] border border-dashed border-border bg-surface-soft">
+                <div
+                  className={cn(
+                    'relative overflow-hidden rounded-[var(--radius-sm)] border border-dashed border-border bg-surface-soft',
+                    wide ? 'aspect-[2/1]' : 'aspect-square',
+                  )}
+                >
                   {entry.url ? (
-                    <Image src={entry.url} alt="" fill sizes="120px" className="object-cover" />
+                    <Image
+                      src={entry.url}
+                      alt=""
+                      fill
+                      sizes="120px"
+                      className={wide ? 'object-contain' : 'object-cover'}
+                    />
                   ) : null}
                 </div>
                 <Button size="sm" variant="secondary" onClick={() => onApprove(entry)}>

@@ -3,8 +3,10 @@ import type { AssetGraph, AssetVariant, CameraPose } from '@/lib/api/types';
 
 import { pose } from './camera';
 
-/** What a slot holds. `pose` slots are camera angles (多机位, AC-2). */
-export type SlotKind = 'portrait' | 'sheet' | 'pose' | 'expressions' | 'master' | 'in_scene';
+/** What a slot holds. `pose` slots are camera angles (多机位, AC-2);
+ * `panorama` a scene variant's 360° still (AC-7). */
+export type SlotKind =
+  'portrait' | 'sheet' | 'pose' | 'expressions' | 'master' | 'in_scene' | 'panorama';
 
 export interface SlotDef {
   id: string;
@@ -62,6 +64,7 @@ export const KIND_CONFIG: Record<CardKind, KindConfig> = {
       poseSlot('left', pose(270)),
       poseSlot('overhead', pose(0, 60, 'wide')),
       poseSlot('detail', pose(0, 0, 'close'), false),
+      { id: 'panorama', kind: 'panorama', required: false },
     ],
   },
   prop: {

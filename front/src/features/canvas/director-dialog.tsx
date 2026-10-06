@@ -26,9 +26,9 @@ import { describeFraming } from './director-capture';
  * framed view has to leave here as a picture and as prompt text, which is
  * exactly what upstream's own director does.
  *
- * The panorama is uploaded, not generated: `_IMAGE_SIZE_BY_ASPECT` has no 2:1
- * entry and silently returns a square, so text-to-panorama would quietly hand
- * back something that is not a panorama at all.
+ * The panorama is uploaded here, not generated. Generated panoramas belong to
+ * scene cards (the workspace's 全景 slot, AC-7), which route only to a model
+ * with an exact 2:1 size.
  */
 export function DirectorDialog({
   open,

@@ -28,11 +28,18 @@ function snapTo<T extends number>(values: readonly T[], value: number, wrap = fa
   return best;
 }
 
+/** `value` moved onto the grid (mirrors `camera.snap`). */
+export function snapPose(value: CameraPose): CameraPose {
+  return {
+    azimuth: snapTo(AZIMUTHS, ((value.azimuth % 360) + 360) % 360, true),
+    elevation: snapTo(ELEVATIONS, value.elevation ?? 0),
+    distance: DISTANCES.includes(value.distance as Distance) ? value.distance : 'medium',
+  };
+}
+
 /** `azimuth|elevation|distance` on the grid — one slot per key. */
 export function poseKey(value: CameraPose): string {
-  const azimuth = snapTo(AZIMUTHS, ((value.azimuth % 360) + 360) % 360, true);
-  const elevation = snapTo(ELEVATIONS, value.elevation ?? 0);
-  const distance = DISTANCES.includes(value.distance as Distance) ? value.distance : 'medium';
+  const { azimuth, elevation, distance } = snapPose(value);
   return `${azimuth}|${elevation}|${distance}`;
 }
 
