@@ -4318,7 +4318,7 @@
     "analyzing": "AI is breaking the script down…",
     "analyzeFailed": "The breakdown failed. Try again.",
     "retry": "Retry",
-    "degraded": "AI is unavailable: characters and places are listed from the script, and no props were found.",
+    "degraded": "AI is unavailable: characters, places and registered props are listed from the script, and no new props were found.",
     "columnCharacters": "Characters",
     "columnScenes": "Scenes",
     "columnProps": "Props",

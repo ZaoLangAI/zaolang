@@ -4318,7 +4318,7 @@
     "analyzing": "AI 正在拆解剧本…",
     "analyzeFailed": "拆解失败，请重试。",
     "retry": "重试",
-    "degraded": "AI 暂时不可用：已按剧本列出角色和场景，没有识别道具。",
+    "degraded": "AI 暂时不可用：已按剧本列出角色、场景和已登记的道具，没有识别新道具。",
     "columnCharacters": "角色",
     "columnScenes": "场景",
     "columnProps": "道具",

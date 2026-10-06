@@ -43,7 +43,8 @@ BREAKDOWN_MAX_TOKENS = 4096
 BREAKDOWN_TEMPERATURE = 0.3
 
 SYSTEM_PROMPT = f"""你是造浪平台的短剧美术统筹。你会收到一部分场剧本：标题、梗概、\
-角色表（name + traits），以及每一场的 heading 和这场的环境、动作、台词文字。
+角色表（name + traits），每一场的 heading 和这场的环境、动作、台词文字，\
+以及作者已经登记的道具（props，可能为空）。
 
 把剧本拆成需要建卡的三类资产，只写剧本能支撑的内容，不编造剧本里没有的人和物：
 
@@ -66,7 +67,8 @@ contemporary 当代、near_future 近未来），看不出填 null
 
 3. props——推动剧情或被角色拿在手里、需要在多个镜头里保持一致的物件（信物、凶器、合同、\
 手机里的照片……）；家具、墙面这类场景陈设不算道具，最多 {MAX_PROPS} 个：
-- name：物件名，例如「碎玉佩」；20 字以内
+- name：物件名，例如「碎玉佩」；20 字以内。已登记的道具仍在剧本里出现时沿用原名，一字不差，\
+不要改名或拆分
 - description：外观——材质、颜色、尺寸、新旧和损坏状态，用于生成道具主视图；\
 {MAX_DESCRIPTION_LEN} 字以内
 - headings：这个物件出现的场次，必须和收到的 heading 一字不差
@@ -298,6 +300,28 @@ def sanitize(raw: Any, script: dict[str, Any]) -> Breakdown:
                 headings=prop_headings,
             )
         )
+    # The script's registered props stay on the list even when the model
+    # renamed or dropped them — their links are found by name.
+    for item in _list(script.get("props")):
+        if len(props) >= MAX_PROPS:
+            break
+        name = _clean(item.get("name") if isinstance(item, dict) else None, MAX_NAME_LEN)
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        props.append(
+            PropProposal(
+                name=name,
+                description=_clean(item.get("description"), MAX_DESCRIPTION_LEN),
+                headings=tuple(
+                    str(scene.get("heading"))
+                    for scene in _list(script.get("scenes"))
+                    if isinstance(scene, dict)
+                    and str(scene.get("heading")) in heading_set
+                    and name in _scene_text(scene)
+                ),
+            )
+        )
     return Breakdown(characters=characters, scenes=scenes[:MAX_SCENES], props=props)
 
 
@@ -305,8 +329,8 @@ def breakdown(session: Session, *, script: dict[str, Any], user_id: str | None =
     """Proposes the cards `script` (an episode's `script_json`) needs.
 
     Never raises for a bad model run: a degraded run returns the script's
-    own characters and places with `degraded=True` and no props, so the
-    author can still link or create cards by hand.
+    own characters, places and registered props with `degraded=True`, so
+    the author can still link or create cards by hand.
     """
     payload = {
         "asset_breakdown": True,
@@ -322,6 +346,11 @@ def breakdown(session: Session, *, script: dict[str, Any], user_id: str | None =
             for scene in script.get("scenes") or []
             if isinstance(scene, dict)
         ][:MAX_SCENES],
+        "props": [
+            {"name": item.get("name"), "description": item.get("description") or ""}
+            for item in _list(script.get("props"))
+            if isinstance(item, dict)
+        ][:MAX_PROPS],
     }
     outcome = run_agent(
         session,
@@ -337,5 +366,7 @@ def breakdown(session: Session, *, script: dict[str, Any], user_id: str | None =
     )
     if outcome.degraded:
         base = sanitize({}, script)
-        return Breakdown(characters=base.characters, scenes=base.scenes, degraded=True)
+        return Breakdown(
+            characters=base.characters, scenes=base.scenes, props=base.props, degraded=True
+        )
     return sanitize(outcome.data, script)

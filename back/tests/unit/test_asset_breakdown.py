@@ -144,6 +144,10 @@ def test_a_degraded_run_falls_back_to_the_script(
     assert [s.name for s in result.scenes] == ["便利店", "顾家书房"]
     assert result.props == []
 
+    registered = {**_script(), "props": [{"name": "钥匙", "description": "", "prop_ref_id": None}]}
+    again = asset_breakdown.breakdown(db, script=registered)
+    assert [(p.name, p.headings) for p in again.props] == [("钥匙", ("第二场 · 顾家书房 - 日",))]
+
 
 @pytest.mark.parametrize(
     ("heading", "place"),
@@ -156,3 +160,17 @@ def test_a_degraded_run_falls_back_to_the_script(
 )
 def test_place_name_drops_numbers_and_time_marks(heading: str, place: str) -> None:
     assert asset_breakdown.place_name(heading) == place
+
+
+def test_registered_props_stay_on_the_list_under_their_own_name() -> None:
+    script = {
+        **_script(),
+        "props": [{"name": "碎玉佩", "description": "白玉，断成两半", "prop_ref_id": "sk_jade"}],
+    }
+    script["scenes"][2]["blocks"][0]["text"] = "林夏攥着碎玉佩发抖"
+    # The model renamed it: the registered name is kept alongside.
+    result = asset_breakdown.sanitize({"props": [{"name": "玉佩", "headings": []}]}, script)
+    assert [(p.name, p.description, p.headings) for p in result.props] == [
+        ("玉佩", "", ()),
+        ("碎玉佩", "白玉，断成两半", ("第三场 · 便利店 - 夜",)),
+    ]
