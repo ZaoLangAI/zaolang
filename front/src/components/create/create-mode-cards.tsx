@@ -5,17 +5,21 @@ import { useTranslations } from 'next-intl';
 import { useSession } from '@/components/auth/session-provider';
 import {
   AudioGenerationIllustration,
-  ImageCreationIllustration,
+  CharacterLibraryIllustration,
   MusicGenerationIllustration,
+  PropIllustration,
+  SceneLibraryIllustration,
   ScriptIllustration,
   TextToVideoIllustration,
 } from '@/components/create/mode-illustrations';
 import {
   IconArrowRight,
+  IconBox,
+  IconLandscape,
   IconMessage,
   IconMic,
   IconMusic,
-  IconSparkle,
+  IconUser,
   IconVideo,
 } from '@/components/ui/icons';
 import { Button } from '@/components/ui/button';
@@ -25,7 +29,13 @@ import type { Me } from '@/lib/api/types';
 import { prefetchStudio, type StudioPrefetchMode } from '@/lib/prefetch-studio';
 
 type ModeId =
-  'script' | 'image_creation' | 'video_creation' | 'audio_generation' | 'music_generation';
+  | 'character_creation'
+  | 'scene_creation'
+  | 'prop_creation'
+  | 'video_creation'
+  | 'script'
+  | 'audio_generation'
+  | 'music_generation';
 
 const MODES: Array<{
   id: ModeId;
@@ -34,25 +44,37 @@ const MODES: Array<{
   href: string;
   tone: string;
   accent: string;
-  /** `undefined` means always on — `image_creation`/`audio_generation` have
-   * no gating flag at all on the backend (see `back/app/api/v1/jobs.py`'s
+  /** The `/create/new` studio chunk to warm on hover; asset cards and the
+   * script studio open their own routes. */
+  studio?: StudioPrefetchMode;
+  /** `undefined` means always on — the card libraries and `audio_generation`
+   * have no gating flag at all on the backend (see `back/app/api/v1/jobs.py`'s
    * `VIDEO_OPERATIONS` check), so there is nothing in `me.features` to read. */
   flag?: keyof Me['features'];
 }> = [
+  // Image generation lives only in the card workspaces: each library is the
+  // creation start, a card opens `/create/{kind}/[id]`.
   {
-    id: 'script',
-    icon: <IconMessage className="size-5" />,
-    illustration: <ScriptIllustration className="size-full" />,
-    href: '/create/script',
-    tone: 'bg-amber/15 text-amber',
-    accent: 'text-amber',
-    flag: 'script_studio',
+    id: 'character_creation',
+    icon: <IconUser className="size-5" />,
+    illustration: <CharacterLibraryIllustration className="size-full" />,
+    href: '/create/characters',
+    tone: 'bg-primary/15 text-primary',
+    accent: 'text-primary',
   },
   {
-    id: 'image_creation',
-    icon: <IconSparkle className="size-5" />,
-    illustration: <ImageCreationIllustration className="size-full" />,
-    href: '/create/new?mode=image_creation',
+    id: 'scene_creation',
+    icon: <IconLandscape className="size-5" />,
+    illustration: <SceneLibraryIllustration className="size-full" />,
+    href: '/create/scenes',
+    tone: 'bg-primary/15 text-primary',
+    accent: 'text-primary',
+  },
+  {
+    id: 'prop_creation',
+    icon: <IconBox className="size-5" />,
+    illustration: <PropIllustration className="size-full" />,
+    href: '/create/props',
     tone: 'bg-primary/15 text-primary',
     accent: 'text-primary',
   },
@@ -63,7 +85,17 @@ const MODES: Array<{
     href: '/create/new?mode=video_creation',
     tone: 'bg-primary/15 text-primary',
     accent: 'text-primary',
+    studio: 'video_creation',
     flag: 'video_generation',
+  },
+  {
+    id: 'script',
+    icon: <IconMessage className="size-5" />,
+    illustration: <ScriptIllustration className="size-full" />,
+    href: '/create/script',
+    tone: 'bg-amber/15 text-amber',
+    accent: 'text-amber',
+    flag: 'script_studio',
   },
   {
     id: 'audio_generation',
@@ -72,6 +104,7 @@ const MODES: Array<{
     href: '/create/new?mode=audio_generation',
     tone: 'bg-primary/15 text-primary',
     accent: 'text-primary',
+    studio: 'audio_generation',
   },
   {
     id: 'music_generation',
@@ -80,11 +113,22 @@ const MODES: Array<{
     href: '/create/new?mode=music_generation',
     tone: 'bg-primary/15 text-primary',
     accent: 'text-primary',
+    studio: 'music_generation',
   },
 ];
 
+/** Cards whose tag is a plain category/price line rather than a highlight. */
+const PRICED_TAG = new Set<ModeId>([
+  'character_creation',
+  'scene_creation',
+  'prop_creation',
+  'video_creation',
+]);
+
 /**
- * Entry points from the create page: stills, video, voice audio, music/SFX.
+ * Entry points from the create page: the three asset libraries (角色 / 场景 /
+ * 道具创作 — the only place images are generated), video, script, voice
+ * audio, music/SFX.
  * Short-drama management has its own dedicated entry (`ShortformHeroBanner`
  * + the "最近短剧" section), not a card in this grid — see
  * `.cursor/skills/zaolang-editor-drama`.
@@ -104,10 +148,20 @@ export function CreateModeCards({ className }: { className?: string }) {
       desc: t('modeScriptDesc'),
       tag: t('modeScriptTag'),
     },
-    image_creation: {
-      title: t('modeImageCreationTitle'),
-      desc: t('modeImageCreationDesc'),
-      tag: t('modeImageCreationTag'),
+    character_creation: {
+      title: t('modeCharacterCreationTitle'),
+      desc: t('modeCharacterCreationDesc'),
+      tag: t('modeCharacterCreationTag'),
+    },
+    scene_creation: {
+      title: t('modeSceneCreationTitle'),
+      desc: t('modeSceneCreationDesc'),
+      tag: t('modeSceneCreationTag'),
+    },
+    prop_creation: {
+      title: t('modePropCreationTitle'),
+      desc: t('modePropCreationDesc'),
+      tag: t('modePropCreationTag'),
     },
     video_creation: {
       title: t('modeVideoCreationTitle'),
@@ -143,7 +197,7 @@ export function CreateModeCards({ className }: { className?: string }) {
               available ? 'hover:shadow-raised' : 'opacity-60',
             )}
             onMouseEnter={() => {
-              if (available && mode.id !== 'script') prefetchStudio(mode.id as StudioPrefetchMode);
+              if (available && mode.studio) prefetchStudio(mode.studio);
             }}
           >
             <div
@@ -162,12 +216,7 @@ export function CreateModeCards({ className }: { className?: string }) {
 
             <div className="flex flex-1 flex-col p-4">
               <p
-                className={cn(
-                  'text-[11px]',
-                  mode.id === 'video_creation' || mode.id === 'image_creation'
-                    ? 'text-muted'
-                    : 'text-amber',
-                )}
+                className={cn('text-[11px]', PRICED_TAG.has(mode.id) ? 'text-muted' : 'text-amber')}
               >
                 {available ? label.tag : t('modeUnavailable')}
               </p>
@@ -180,8 +229,7 @@ export function CreateModeCards({ className }: { className?: string }) {
                 className="mt-4"
                 disabled={!available}
                 onFocus={() => {
-                  if (available && mode.id !== 'script')
-                    prefetchStudio(mode.id as StudioPrefetchMode);
+                  if (available && mode.studio) prefetchStudio(mode.studio);
                 }}
                 onClick={() =>
                   requireAuth({ label: label.title, run: () => router.push(mode.href) })

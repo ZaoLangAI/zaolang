@@ -31,8 +31,6 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
   const tNav = useTranslations('nav');
   const tShortform = useTranslations('shortform');
   const tScript = useTranslations('scriptStudio');
-  const tCharacters = useTranslations('characters');
-  const tScenes = useTranslations('scenes');
   const locale = useLocale() as Locale;
   const router = useRouter();
   const { requireAuth, user } = useSession();
@@ -129,8 +127,8 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
       { id: 'create', label: tNav('create'), path: '/create' },
       { id: 'create-short', label: tShortform('title'), path: '/create/short' },
       { id: 'create-script', label: tScript('title'), path: '/create/script' },
-      { id: 'create-characters', label: tCharacters('eyebrow'), path: '/create/characters' },
-      { id: 'create-scenes', label: tScenes('eyebrow'), path: '/create/scenes' },
+      { id: 'create-characters', label: tNav('characterLibrary'), path: '/create/characters' },
+      { id: 'create-scenes', label: tNav('sceneLibrary'), path: '/create/scenes' },
       { id: 'create-props', label: tNav('propLibrary'), path: '/create/props' },
       { id: 'learn', label: tNav('learn'), path: '/learn' },
       { id: 'learn-publish', label: tNav('learnPublish'), path: '/learn/publish' },
@@ -204,9 +202,7 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
     requireAuth,
     searchable,
     t,
-    tCharacters,
     tNav,
-    tScenes,
     tScript,
     tShortform,
     trimmed,

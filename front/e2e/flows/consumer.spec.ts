@@ -146,16 +146,30 @@ test.describe('creation', () => {
     await expect(page.getByRole('button', { name: '生成我的版本' })).toBeEnabled();
   });
 
-  test('a signed-in user can open the text-to-image studio', async ({ page }) => {
-    await page.goto('/zh-CN/create/new?mode=image_creation', { waitUntil: 'load' });
-    await expect(page.getByRole('heading', { name: '图片创作' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '生成我的版本' })).toBeVisible();
+  test('/create starts image work from the three asset libraries', async ({ page }) => {
+    await page.goto('/zh-CN/create', { waitUntil: 'load' });
+    // Images are only generated inside a card workspace now: no 图片创作
+    // card, and the old 角色库 / 场景库 tool cards became creation cards.
+    await expect(page.getByRole('heading', { name: '图片创作', level: 3 })).toHaveCount(0);
+    for (const title of ['角色创作', '场景创作', '道具创作']) {
+      await expect(page.getByRole('heading', { name: title, level: 3 })).toHaveCount(1);
+    }
 
-    // Polishing used to be video-only; an image prompt needs the same help.
-    // Not clicked — that would spend a real model call, same discipline as
-    // the submit buttons above.
-    await page.getByLabel('说说你想怎么改').fill('女孩在海边');
-    await expect(page.getByRole('button', { name: 'AI 润色' })).toBeEnabled();
+    const cards = page.getByRole('listitem');
+    for (const [title, path] of [
+      ['角色创作', '/create/characters'],
+      ['场景创作', '/create/scenes'],
+      ['道具创作', '/create/props'],
+    ] as const) {
+      await page.goto('/zh-CN/create', { waitUntil: 'load' });
+      await cards
+        .filter({ has: page.getByRole('heading', { name: title, level: 3 }) })
+        .getByRole('button', { name: '开始创作' })
+        .click();
+      await expect(page).toHaveURL(new RegExp(`${path}$`));
+    }
+    // The library is the creation start.
+    await expect(page.getByRole('button', { name: '新建道具' }).first()).toBeVisible();
   });
 
   test('a new character lands on its own management page and back', async ({ page }) => {
