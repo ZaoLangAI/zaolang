@@ -104,7 +104,13 @@ export function CardInspector({
             value={name}
             maxLength={40}
             disabled={atCap}
-            placeholder={tVariants(character ? 'lookPlaceholder' : 'variantPlaceholder')}
+            placeholder={tVariants(
+              character
+                ? 'lookPlaceholder'
+                : kind === 'prop'
+                  ? 'propVariantPlaceholder'
+                  : 'variantPlaceholder',
+            )}
             onChange={(event) => setName(event.target.value)}
           />
           <TextArea
@@ -131,7 +137,7 @@ export function CardInspector({
             {tVariants('create')}
           </Button>
         </form>
-        {!character ? (
+        {kind === 'scene' ? (
           <Button
             size="sm"
             variant="secondary"
@@ -172,7 +178,7 @@ export function CardInspector({
         </ul>
       </InspectorSection>
 
-      {!character ? (
+      {kind === 'scene' ? (
         <SceneMatrixDialog
           sceneId={graph.card_id}
           open={matrixOpen}

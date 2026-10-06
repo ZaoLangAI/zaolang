@@ -67,6 +67,16 @@ describe('attributeRows', () => {
       'custom',
     ]);
   });
+
+  it("shows a prop variant's condition and period", () => {
+    const variant = look('worn', [], {
+      presets: { prop_state: 'worn', period: 'ancient', lighting: 'dusk' },
+    });
+    expect(attributeRows(variant, 'prop').map((row) => [row.key, row.value])).toEqual([
+      ['prop_state', 'worn'],
+      ['period', 'ancient'],
+    ]);
+  });
 });
 
 describe('lookSize / childPosition', () => {

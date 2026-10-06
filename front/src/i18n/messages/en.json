@@ -3287,6 +3287,45 @@
     "manageEyebrow": "Scene",
     "backToLibrary": "Back to scenes"
   },
+  "props": {
+    "eyebrow": "Prop creation",
+    "title": "Props",
+    "subtitle": "Tokens, weapons, letters… Save a prop's hero view and turntable so it looks the same across episodes.",
+    "newProp": "New prop",
+    "editProp": "Edit prop",
+    "nameLabel": "Name",
+    "namePlaceholder": "e.g. Bronze sword, jade pendant",
+    "descriptionLabel": "Description",
+    "descriptionHint": "Material, colour, size, patterns — used as the prompt when generating.",
+    "heroLabel": "Hero view (optional)",
+    "heroHint": "An existing image becomes the approved hero view and the turntable angles are drawn from it; leave empty to generate it in the workspace.",
+    "referenceUpload": "Upload",
+    "referenceChooseExisting": "Choose existing",
+    "referencePickerTitle": "Choose a generated image",
+    "referencePickerEmpty": "No images to choose yet",
+    "referencePickerError": "Couldn't load images. Try again.",
+    "createAndOpen": "Create and open workspace",
+    "generateHero": "Generate hero view",
+    "generateAgain": "Generate hero view again",
+    "openWorkspace": "Open workspace",
+    "emptyTitle": "No props yet",
+    "emptyHint": "Create a prop, then generate its hero view and turntable to reuse it in your videos.",
+    "priceLabel": "Unlock price",
+    "priceHint": "0 means free. Once shared, others can find and use it on the skill plaza; paid ones are unlocked with credits.",
+    "publishProp": "Share prop",
+    "publishPropHint": "Sharing sends this prop for review. Once approved, other creators can find and use it on the skill plaza (and buy it if you set a credit price).",
+    "deleteConfirmTitle": "Delete this prop?",
+    "deleteConfirmBody": "\"{name}\" and all its images will be removed. This can't be undone.",
+    "manageEyebrow": "Prop workspace",
+    "backToLibrary": "Back to props",
+    "stateLabel": "Condition",
+    "state": {
+      "new": "New",
+      "worn": "Worn",
+      "damaged": "Damaged",
+      "broken": "Broken"
+    }
+  },
   "scriptStudio": {
     "title": "Script writing",
     "subtitle": "Turn one idea into a full scene-by-scene script, then refine scenes, camera moves and lines in conversation.",
@@ -3917,7 +3956,8 @@
     "customAdd": "Add attribute",
     "customRemove": "Remove attribute",
     "customIncomplete": "Each custom attribute needs both a name and a value.",
-    "saveAttributes": "Save attributes"
+    "saveAttributes": "Save attributes",
+    "propVariantPlaceholder": "e.g. Worn, Damaged"
   },
   "assetGraph": {
     "genericError": "Something went wrong. Try again.",
@@ -3930,7 +3970,7 @@
       "period": "Period",
       "lighting": "Lighting",
       "weather": "Weather",
-      "state": "Set state",
+      "state": "State",
       "edit": "Edit",
       "custom": "Custom",
       "params": "Parameters",
@@ -3947,7 +3987,8 @@
       "weather": "Weather",
       "scene_state": "State",
       "voice_use": "Use",
-      "voice_emotion": "Mood"
+      "voice_emotion": "Mood",
+      "prop_state": "Condition"
     },
     "defaultBadge": "Default",
     "imageCount": "{count, plural, one {# image} other {# images}}",
@@ -4033,7 +4074,9 @@
       "expression_sheet": "Expression sheet",
       "in_scene": "Character in scene (needs a linked scene)",
       "master": "Master shot",
-      "shot": "Additional shot"
+      "shot": "Additional shot",
+      "prop_master": "Prop hero view",
+      "prop_shot": "Detail close-up"
     },
     "deriveTarget": "Generate into",
     "deriveTargetNew": "A new look",
@@ -4124,7 +4167,8 @@
       "dialogue": "Dialogue",
       "inner_monologue": "Inner monologue",
       "narration": "Narration"
-    }
+    },
+    "openInCreate": "Generate in Create"
   },
   "iosCharacters": {
     "entryTitle": "Characters",

@@ -3287,6 +3287,45 @@
     "manageEyebrow": "场景管理",
     "backToLibrary": "返回场景库"
   },
+  "props": {
+    "eyebrow": "道具创作",
+    "title": "道具",
+    "subtitle": "信物、兵器、书信……保存道具的主视图与转台，多集短剧里保持样貌一致。",
+    "newProp": "新建道具",
+    "editProp": "编辑道具",
+    "nameLabel": "道具名称",
+    "namePlaceholder": "如：青铜古剑、玉佩",
+    "descriptionLabel": "道具描述",
+    "descriptionHint": "材质、颜色、尺寸、纹样等，生成时会作为提示词。",
+    "heroLabel": "主视图（可选）",
+    "heroHint": "已有图片可直接作为定稿主视图，转台机位会从它画出；留空则在工作区生成。",
+    "referenceUpload": "上传",
+    "referenceChooseExisting": "选择已有",
+    "referencePickerTitle": "选择已生成的图片",
+    "referencePickerEmpty": "暂无可选择的图片",
+    "referencePickerError": "加载失败，请重试",
+    "createAndOpen": "创建并进入工作区",
+    "generateHero": "生成主视图",
+    "generateAgain": "再生成主视图",
+    "openWorkspace": "打开工作区",
+    "emptyTitle": "还没有道具",
+    "emptyHint": "新建一个道具，生成主视图和转台，方便在视频里反复引用。",
+    "priceLabel": "解锁价格",
+    "priceHint": "0 为免费。分享后其他人可在技能广场发现并使用，付费需先用积分解锁。",
+    "publishProp": "分享道具",
+    "publishPropHint": "分享后该道具会提交审核，通过后其他创作者可以在技能广场看到并使用（如设置了积分价格，还可以购买解锁）。",
+    "deleteConfirmTitle": "删除这个道具？",
+    "deleteConfirmBody": "删除「{name}」后无法恢复，它的图片都会一并移除。",
+    "manageEyebrow": "道具工作区",
+    "backToLibrary": "返回道具库",
+    "stateLabel": "成色",
+    "state": {
+      "new": "全新",
+      "worn": "旧化",
+      "damaged": "破损",
+      "broken": "损毁"
+    }
+  },
   "scriptStudio": {
     "title": "文案创作",
     "subtitle": "从一句创意生成完整分场剧本，边对话边打磨场景、运镜与台词。",
@@ -3917,7 +3956,8 @@
     "customAdd": "添加属性",
     "customRemove": "删除属性",
     "customIncomplete": "自定义属性需要同时填写名称和内容。",
-    "saveAttributes": "保存属性"
+    "saveAttributes": "保存属性",
+    "propVariantPlaceholder": "如：旧化、破损"
   },
   "assetGraph": {
     "genericError": "操作失败，请重试",
@@ -3930,7 +3970,7 @@
       "period": "时代",
       "lighting": "光线",
       "weather": "天气",
-      "state": "场景状态",
+      "state": "状态",
       "edit": "调整修改",
       "custom": "自定义",
       "params": "参数调整",
@@ -3947,7 +3987,8 @@
       "weather": "天气",
       "scene_state": "状态",
       "voice_use": "用途",
-      "voice_emotion": "情绪"
+      "voice_emotion": "情绪",
+      "prop_state": "成色"
     },
     "defaultBadge": "默认",
     "imageCount": "{count} 张定稿",
@@ -4033,7 +4074,9 @@
       "expression_sheet": "表情合集",
       "in_scene": "角色入场景（需关联场景）",
       "master": "场景主图",
-      "shot": "场景分镜图"
+      "shot": "场景分镜图",
+      "prop_master": "道具主视图",
+      "prop_shot": "细节特写"
     },
     "deriveTarget": "生成到",
     "deriveTargetNew": "新建造型",
@@ -4124,7 +4167,8 @@
       "dialogue": "对白",
       "inner_monologue": "内心独白",
       "narration": "旁白"
-    }
+    },
+    "openInCreate": "在创作中生成"
   },
   "iosCharacters": {
     "entryTitle": "角色库",

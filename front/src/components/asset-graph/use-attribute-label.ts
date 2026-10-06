@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import {
   AGE_STAGES,
+  PROP_STATES,
   SCENE_LIGHTINGS,
   SCENE_PERIODS,
   SCENE_STATES,
@@ -25,6 +26,7 @@ export function useAttributeLabel(): (row: AttributeRow) => { label: string; val
   const t = useTranslations('assetGraph');
   const tVariants = useTranslations('assetVariants');
   const tPresets = useTranslations('remixPage');
+  const tProps = useTranslations('props');
   return (row) => {
     if (row.key === 'custom') return { label: row.name ?? '', value: row.value };
     if (row.key === 'voice_use') {
@@ -34,6 +36,10 @@ export function useAttributeLabel(): (row: AttributeRow) => { label: string; val
     if (row.key === 'age_stage') {
       const entry = AGE_STAGES[row.value as keyof typeof AGE_STAGES];
       return { label, value: entry ? tVariants(entry.labelKey) : row.value };
+    }
+    if (row.key === 'prop_state') {
+      const entry = PROP_STATES[row.value as keyof typeof PROP_STATES];
+      return { label, value: entry ? tProps(entry.labelKey) : row.value };
     }
     const table = ENUM_TABLES[row.key];
     const entry = table?.[row.value];

@@ -16,8 +16,10 @@ export type SceneState = NonNullable<Combo['state']>;
 export type ScenePeriod = NonNullable<Combo['period']>;
 export type ScenePresetCombo = Combo;
 export type AgeStage = NonNullable<components['schemas']['VariantPresets']['age_stage']>;
+export type PropState = NonNullable<components['schemas']['VariantPresets']['prop_state']>;
 export type CharacterRefSelection = NonNullable<Params['character_ref_selection']>[number];
 export type SceneRefSelection = NonNullable<Params['scene_ref_selection']>[number];
+export type PropRefSelection = NonNullable<Params['prop_ref_selection']>[number];
 
 export const CHARACTER_EXPRESSIONS: Record<CharacterExpression, { labelKey: string }> = {
   neutral: { labelKey: 'expression.neutral' },
@@ -73,6 +75,21 @@ export const SCENE_PERIODS: Record<ScenePeriod, { labelKey: string }> = {
   near_future: { labelKey: 'period.near_future' },
 };
 
+/** A prop variant's condition (AC-4) — `vocabulary.PropState`. Labels are
+ * keys under `props.state`, not `remixPage.presets`. */
+export const PROP_STATES: Record<PropState, { labelKey: string }> = {
+  new: { labelKey: 'state.new' },
+  worn: { labelKey: 'state.worn' },
+  damaged: { labelKey: 'state.damaged' },
+  broken: { labelKey: 'state.broken' },
+};
+
+/** A prop variant's presets: its condition and period. */
+export interface PropPresets {
+  prop_state?: PropState | null;
+  period?: ScenePeriod | null;
+}
+
 /** A character look's age stage (P2-6) — `vocabulary.AgeStage`. */
 export const AGE_STAGES: Record<AgeStage, { labelKey: string }> = {
   child: { labelKey: 'ageStage.child' },
@@ -125,6 +142,7 @@ export type AssetPresetParams = Pick<
   | 'character_outfit_label'
   | 'character_ref_selection'
   | 'scene_ref_selection'
+  | 'prop_ref_selection'
   | 'reference_emotion'
   | 'reference_shot_size'
   | 'reference_camera_side'

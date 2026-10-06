@@ -66,6 +66,7 @@ export function AssetGraphWorkspace({
   tab,
   initialLookId,
   generateHref,
+  onOpenCreate,
   portraitHref,
 }: {
   kind: CardKind;
@@ -77,7 +78,9 @@ export function AssetGraphWorkspace({
   tab: 'looks' | 'voices';
   /** `?look=`: select and expand this look on arrival. */
   initialLookId?: string | null;
-  generateHref: (variant: AssetVariant) => string;
+  generateHref?: (variant: AssetVariant) => string;
+  /** 生成 on a look without a studio jump-out: open it in the 创作 tab. */
+  onOpenCreate?: (variant: AssetVariant) => void;
   portraitHref?: string;
 }) {
   const t = useTranslations('assetGraph');
@@ -174,6 +177,7 @@ export function AssetGraphWorkspace({
       onSelectEdge={(id) => select({ type: 'edge', id })}
       onDeleted={toCard}
       generateHref={generateHref}
+      onOpenCreate={onOpenCreate}
     />
   ) : selectedEntry && entryOwner ? (
     <EntryInspector

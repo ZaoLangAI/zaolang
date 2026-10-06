@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
 import type { CardKind } from '@/components/library/entry-actions';
+import { PropPresetFields, propPresetsOf } from '@/components/library/prop-preset-fields';
 import { ScenePresetFields } from '@/components/library/scene-preset-fields';
 import { LOOK_ATTRIBUTE_LIMITS } from '@/components/library/variant-attributes-form';
 import { Button } from '@/components/ui/button';
@@ -14,9 +15,11 @@ import { useToast } from '@/components/ui/toast';
 import {
   AGE_STAGES,
   keysOf,
+  type PropPresets,
   SCENE_PERIODS,
   type ScenePresets,
 } from '@/features/image-assets/vocabulary';
+import { cardBase } from '@/features/asset-workspace/kind-config';
 import { api, newIdempotencyKey } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type {
@@ -51,6 +54,7 @@ interface LookDraft {
   outfit: string;
   state: string;
   scenePresets: ScenePresets;
+  propPresets: PropPresets;
 }
 
 function draftFrom(look: AssetVariant): LookDraft {
@@ -63,6 +67,7 @@ function draftFrom(look: AssetVariant): LookDraft {
     outfit: look.attributes?.outfit ?? '',
     state: look.attributes?.state ?? '',
     scenePresets: { ...presets },
+    propPresets: propPresetsOf(look.presets),
   };
 }
 
@@ -97,7 +102,7 @@ export function GeneratePanel({
   const tPresets = useTranslations('remixPage');
   const { notify } = useToast();
   const character = kind === 'character';
-  const base = `/v1/${character ? 'characters' : 'scenes'}/${graph.card_id}/entries/${entry.id}`;
+  const base = `${cardBase(kind, graph.card_id)}/entries/${entry.id}`;
   const [mode, setMode] = useState<Mode>('adjust');
   const [instruction, setInstruction] = useState('');
   const [targetMode, setTargetMode] = useState<'new' | 'existing'>('new');
@@ -127,7 +132,9 @@ export function GeneratePanel({
                     description: draft.description.trim() || null,
                     presets: character
                       ? { age_stage: draft.ageStage || null, period: draft.period || null }
-                      : draft.scenePresets,
+                      : kind === 'prop'
+                        ? draft.propPresets
+                        : draft.scenePresets,
                     attributes: character
                       ? { outfit: draft.outfit.trim() || null, state: draft.state.trim() || null }
                       : null,
@@ -236,7 +243,7 @@ export function GeneratePanel({
             onChange={(event) => setOutput(event.target.value)}
             options={(character ? CHARACTER_OUTPUTS : SCENE_OUTPUTS).map((value) => ({
               value,
-              label: t(`output.${value}`),
+              label: t(`output.${kind === 'prop' ? `prop_${value}` : value}`),
             }))}
           />
           <div role="radiogroup" aria-label={t('deriveTarget')} className="flex gap-4 text-sm">
@@ -271,7 +278,13 @@ export function GeneratePanel({
                 label={tVariants('name')}
                 value={draft.name}
                 maxLength={40}
-                placeholder={tVariants(character ? 'lookPlaceholder' : 'variantPlaceholder')}
+                placeholder={tVariants(
+                  character
+                    ? 'lookPlaceholder'
+                    : kind === 'prop'
+                      ? 'propVariantPlaceholder'
+                      : 'variantPlaceholder',
+                )}
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
               />
               {character ? (
@@ -322,6 +335,11 @@ export function GeneratePanel({
                     onChange={(event) => setDraft({ ...draft, description: event.target.value })}
                   />
                 </>
+              ) : kind === 'prop' ? (
+                <PropPresetFields
+                  presets={draft.propPresets}
+                  onChange={(next) => setDraft({ ...draft, propPresets: next })}
+                />
               ) : (
                 <ScenePresetFields
                   presets={draft.scenePresets}
