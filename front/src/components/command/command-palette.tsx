@@ -131,6 +131,7 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
       { id: 'create-script', label: tScript('title'), path: '/create/script' },
       { id: 'create-characters', label: tCharacters('eyebrow'), path: '/create/characters' },
       { id: 'create-scenes', label: tScenes('eyebrow'), path: '/create/scenes' },
+      { id: 'create-props', label: tNav('propLibrary'), path: '/create/props' },
       { id: 'learn', label: tNav('learn'), path: '/learn' },
       { id: 'learn-publish', label: tNav('learnPublish'), path: '/learn/publish' },
       { id: 'skills', label: tNav('skills'), path: '/skills' },
@@ -161,6 +162,7 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
               'create-script',
               'create-characters',
               'create-scenes',
+              'create-props',
             ].includes(id)
           ) {
             close();
