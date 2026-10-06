@@ -5,22 +5,14 @@ import { useTranslations } from 'next-intl';
 import { useSession } from '@/components/auth/session-provider';
 import {
   CanvasIllustration,
-  CharacterLibraryIllustration,
-  SceneLibraryIllustration,
   VideoAnalysisIllustration,
 } from '@/components/create/mode-illustrations';
-import {
-  IconArrowRight,
-  IconBranch,
-  IconLandscape,
-  IconSearch,
-  IconUser,
-} from '@/components/ui/icons';
+import { IconArrowRight, IconBranch, IconSearch } from '@/components/ui/icons';
 import { useRouter } from '@/i18n/navigation';
 import type { Me } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 
-type ToolId = 'canvas' | 'video_analysis' | 'character_library' | 'scene_library';
+type ToolId = 'canvas' | 'video_analysis';
 
 const TOOLS: Array<{
   id: ToolId;
@@ -29,8 +21,7 @@ const TOOLS: Array<{
   href: string;
   tone: string;
   accent: string;
-  /** `undefined` means always on — the character/scene libraries have no
-   * gating flag on the backend, unlike `video_analysis`. */
+  /** `undefined` means always on. */
   flag?: keyof Me['features'];
 }> = [
   {
@@ -50,22 +41,6 @@ const TOOLS: Array<{
     tone: 'bg-primary/15 text-primary',
     accent: 'text-primary',
     flag: 'video_analysis',
-  },
-  {
-    id: 'character_library',
-    icon: <IconUser className="size-5" />,
-    illustration: <CharacterLibraryIllustration className="size-full" />,
-    href: '/create/characters',
-    tone: 'bg-primary/15 text-primary',
-    accent: 'text-primary',
-  },
-  {
-    id: 'scene_library',
-    icon: <IconLandscape className="size-5" />,
-    illustration: <SceneLibraryIllustration className="size-full" />,
-    href: '/create/scenes',
-    tone: 'bg-primary/15 text-primary',
-    accent: 'text-primary',
   },
 ];
 
@@ -98,16 +73,6 @@ export function CreateToolCards({ className }: { className?: string }) {
       title: t('toolVideoAnalysisTitle'),
       desc: t('toolVideoAnalysisDesc'),
       tag: t('toolVideoAnalysisTag'),
-    },
-    character_library: {
-      title: t('toolCharacterLibraryTitle'),
-      desc: t('toolCharacterLibraryDesc'),
-      tag: t('toolCharacterLibraryTag'),
-    },
-    scene_library: {
-      title: t('toolSceneLibraryTitle'),
-      desc: t('toolSceneLibraryDesc'),
-      tag: t('toolSceneLibraryTag'),
     },
   };
 

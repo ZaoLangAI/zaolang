@@ -3,7 +3,6 @@ import { getTranslations } from 'next-intl/server';
 
 import { RemixUnlockGate } from '@/components/marketplace/remix-unlock-gate';
 import { AudioGenerationStudio } from '@/components/studio/audio-generation-studio';
-import { ImageGenerationStudio } from '@/components/studio/image-generation-studio';
 import { VideoGenerationStudio } from '@/components/studio/video-generation-studio';
 import { BackLink } from '@/components/ui/back-link';
 import { getWork } from '@/lib/api/work-loaders';
@@ -49,15 +48,12 @@ export default async function RemixPage({ params }: Params) {
 }
 
 /**
- * Picks the studio that actually matches the source's own medium, rather
- * than always handing every remix to `VideoGenerationStudio` — a photo
- * remixed "into a video" and a voiceover remixed "into a video" were both
- * silently wrong operations, not a real choice the author or the licence
- * ever made. `ImageGenerationStudio`/`AudioGenerationStudio` both already
- * accept `source`/`reference`; only the image branch needs the studio to
- * also pull the source's own asset into its reference upload (see that
- * studio's own `sourceMaterialSeededRef` effect) — a video source gets that
- * for free server-side (`attach_licensed_source_video`).
+ * Picks the studio for the source's own medium. A voiceover stays audio; an
+ * image work becomes a video (`image_to_video`) — general image generation
+ * is retired (AC-8), so animating the image is the remix. The video studio
+ * pulls an image source into its reference / first frame itself (its
+ * `sourceMaterialSeededRef` effect); a video source is attached server-side
+ * (`attach_licensed_source_video`).
  */
 function RemixStudio({
   work,
@@ -70,7 +66,7 @@ function RemixStudio({
   const source = { work, params: reusableParams };
 
   if (mediaType === 'image') {
-    return <ImageGenerationStudio source={source} />;
+    return <VideoGenerationStudio operation="image_to_video" source={source} />;
   }
   if (mediaType === 'audio') {
     return <AudioGenerationStudio source={source} />;

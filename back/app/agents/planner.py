@@ -187,9 +187,6 @@ _ASSET_KIND_BRIEF: dict[str, str] = {
         "年代与地域（虚构场景则是世界观制式）和视觉媒介必须明确且全图一致，"
         "器物不得晚于所写年代，画面不得漂移成插画/3D 渲染/游戏截图。"
     ),
-    ImageAssetKind.COVER.value: (
-        "短剧/系列封面：突出主视觉与氛围，适合竖版封面裁切，避免杂乱前景遮挡标题区。"
-    ),
     ImageAssetKind.PROP.value: (
         "道具资产图：单件物体的产品式主视图或局部特写，物体完整、居中、无人物与手，"
         "背景为浅灰纯色；写清形状、尺度感、材质、颜色、年代工艺与磨损状态，"
@@ -322,7 +319,7 @@ def plan_asset(
     agent_id: str | None = None,
 ) -> AgentOutcome:
     """Plans a `text_to_image`/`image_to_image` job whose output is meant for
-    the character/scene/cover library rather than a one-off image — see
+    the character/scene/prop library rather than a one-off image — see
     `app.workflows.nodes.execute_asset_planning`.
 
     `character_view` only matters when `asset_kind == "character"`: which of

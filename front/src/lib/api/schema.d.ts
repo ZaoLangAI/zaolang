@@ -10534,6 +10534,12 @@ export interface components {
          *     (`reference_assets: [{"asset_id", "view", "label"}]`) the same way
          *     `CharacterView` does for a character's, so a generated image can be
          *     traced back to exactly which pose/shot it was made for.
+         *
+         *     AC-8 retired consumer `GENERAL`/`COVER` generation: the API refuses an
+         *     image job without a library kind (`api.v1.jobs._require_asset_image_kind`)
+         *     and `GenerationParams` refuses `COVER`. `GENERAL` remains what the canvas
+         *     Agent submits through the domain; `COVER` stays only so historic jobs,
+         *     drafts and templates still parse.
          * @enum {string}
          */
         ImageAssetKind: "general" | "character" | "scene" | "cover" | "prop";

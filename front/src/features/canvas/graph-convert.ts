@@ -376,23 +376,3 @@ function bindingIdentity(binding: CanvasNodeBinding | undefined): string | null 
       return null;
   }
 }
-
-/**
- * Asset ids of the picture cards wired *into* a node.
- *
- * This is what makes an edge mean something rather than being decoration: an
- * image card connected to a prompt card is that generation's reference image.
- * Only direct upstream neighbours count — a transitive walk would quietly
- * attach the whole left-hand side of the board to one request.
- */
-export function upstreamAssetIds(nodeId: string, graph: CanvasGraph): string[] {
-  const byId = new Map((graph.nodes ?? []).map((node) => [node.id, node] as const));
-  const ids: string[] = [];
-  for (const edge of graph.edges ?? []) {
-    if (edge.target !== nodeId) continue;
-    const source = byId.get(edge.source);
-    const assetId = source?.binding?.asset_id;
-    if (typeof assetId === 'string' && assetId && !ids.includes(assetId)) ids.push(assetId);
-  }
-  return ids;
-}

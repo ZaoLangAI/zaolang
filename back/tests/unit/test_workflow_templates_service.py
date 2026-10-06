@@ -450,7 +450,8 @@ def test_ensure_default_templates_seeds_one_template_per_non_general_asset_kind_
         for kind in ImageAssetKind:
             active = workflow_templates_service.get_active(db, operation.value, kind.value)
             assert active is not None
-            if kind == ImageAssetKind.GENERAL:
+            # A retired cover image (AC-8) gets no template of its own.
+            if kind in (ImageAssetKind.GENERAL, ImageAssetKind.COVER):
                 assert active.asset_kind is None
                 assert active.graph_json == default_graph(db)
             else:
@@ -566,7 +567,7 @@ def test_list_versions_is_shared_between_text_to_image_and_image_to_image(
 
 
 def test_ensure_default_templates_seeds_the_image_family_exactly_once(db: Session) -> None:
-    """Four rows total (one generic + three asset kinds), not eight — the old
+    """Four rows total (one generic + three library kinds), not eight — the old
     per-operation seeding would have created a duplicate set under
     `image_to_image`."""
     workflow_templates_service.ensure_default_templates(db)
@@ -575,7 +576,8 @@ def test_ensure_default_templates_seeds_the_image_family_exactly_once(db: Sessio
         workflow_templates_service.get_active(db, Operation.TEXT_TO_IMAGE.value, kind.value).id
         for kind in ImageAssetKind
     }
-    assert len(text_to_image_ids) == len(list(ImageAssetKind))
+    # `cover` (retired, AC-8) resolves to the generic row.
+    assert len(text_to_image_ids) == len(list(ImageAssetKind)) - 1
 
     all_active = [
         t
@@ -584,7 +586,7 @@ def test_ensure_default_templates_seeds_the_image_family_exactly_once(db: Sessio
     ] + [
         t
         for kind in ImageAssetKind
-        if kind != ImageAssetKind.GENERAL
+        if kind not in (ImageAssetKind.GENERAL, ImageAssetKind.COVER)
         for t in workflow_templates_service.list_versions(
             db, Operation.TEXT_TO_IMAGE.value, asset_kind=kind.value
         )

@@ -4,7 +4,8 @@ type Params = components['schemas']['GenerationParams'];
 type Combo = components['schemas']['ScenePresetCombo'];
 
 /**
- * The image studio's closed preset vocabulary, keyed exhaustively over the
+ * The image assets' closed preset vocabulary (workspace slots, scene matrix,
+ * graph inspectors), keyed exhaustively over the
  * generated unions (backend source: `back/app/domain/image_assets/
  * vocabulary.py`): a preset the backend adds fails typecheck here until it
  * has a label. Labels are i18n keys under `remixPage.presets`.
@@ -155,7 +156,7 @@ export type AssetPresetParams = Pick<
   | 'target_variant_id'
 > & {
   /** Defaulted (`false`) on the backend, so the generated type marks it
-   * required; only the image studio's character kind ever sends it. */
+   * required; only a character portrait polish ever sends it. */
   character_portrait?: boolean;
 };
 
@@ -166,8 +167,4 @@ export function scenePresetParams(presets: ScenePresets): AssetPresetParams {
     scene_state: presets.state ?? null,
     scene_period: presets.period ?? null,
   };
-}
-
-export function hasScenePreset(presets: ScenePresets): boolean {
-  return Boolean(presets.lighting || presets.weather || presets.state || presets.period);
 }

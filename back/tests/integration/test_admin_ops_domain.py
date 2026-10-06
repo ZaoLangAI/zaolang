@@ -1609,9 +1609,10 @@ def test_copy_enhance_asset_templates_match_the_module_constants(
 
     expected = {
         "copy-enhance-character": ("character", copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER),
-        "copy-enhance-cover": ("cover", copywriter.ENHANCE_SYSTEM_PROMPT_COVER),
         "copy-enhance-scene": ("scene", copywriter.ENHANCE_SYSTEM_PROMPT_SCENE),
     }
+    # Cover images are retired (AC-8): no cover polish template ships.
+    assert "copy-enhance-cover" not in by_key
     for key, (kind, prompt) in expected.items():
         assert key in by_key, f"missing shipped template {key}"
         shipped = by_key[key]

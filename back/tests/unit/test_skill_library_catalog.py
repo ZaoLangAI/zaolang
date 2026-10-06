@@ -164,17 +164,17 @@ def test_ensure_catalog_skills_does_not_overwrite_an_operators_cover(
 
 
 def test_asset_catalog_entries_are_image_only_recipes() -> None:
-    """`asset-*` rows are the dual-form image-asset recipes: one of the
-    three plaza buckets, image operations only, and a shipped cover."""
+    """`asset-*` rows are the dual-form image-asset recipes: a character or
+    scene card, image operations only, and a shipped cover. The eight
+    `cover_asset` rows were dropped with cover image generation (AC-8)."""
     image_ops = {Operation.TEXT_TO_IMAGE, Operation.IMAGE_TO_IMAGE}
     video_ops = {Operation.TEXT_TO_VIDEO, Operation.IMAGE_TO_VIDEO, Operation.VIDEO_TO_VIDEO}
     image_asset_categories = {
         CreationSkillCategory.CHARACTER,
         CreationSkillCategory.SCENE_ASSET,
-        CreationSkillCategory.COVER_ASSET,
     }
     items = [item for item in skill_catalog.CATALOG if item.key.startswith("asset-")]
-    assert len(items) == 24
+    assert len(items) == 16
     for item in items:
         assert item.category in image_asset_categories, item.key
         assert image_ops == set(item.applicable_operations), item.key
@@ -185,11 +185,8 @@ def test_asset_catalog_entries_are_image_only_recipes() -> None:
         assert params["aspect_ratio"] == item.aspect_ratio
         if item.category == CreationSkillCategory.CHARACTER:
             assert "reference_assets" not in params["character"]
-        elif item.category == CreationSkillCategory.SCENE_ASSET:
-            assert "reference_assets" not in params["scene"]
         else:
-            assert "character" not in params
-            assert "scene" not in params
+            assert "reference_assets" not in params["scene"]
 
 
 def test_seeded_character_and_scene_assets_get_a_reference_still(db: Session, author: User) -> None:
@@ -202,7 +199,7 @@ def test_seeded_character_and_scene_assets_get_a_reference_still(db: Session, au
     rows = db.scalars(select(CreationSkill).where(CreationSkill.owner_user_id == author.id)).all()
     asset_titles = {item.title for item in skill_catalog.CATALOG if item.key.startswith("asset-")}
     seeded = [row for row in rows if row.title in asset_titles]
-    assert len(seeded) == 24
+    assert len(seeded) == 16
     for row in seeded:
         assert row.cover_asset_id is not None, row.title
         if row.category == CreationSkillCategory.CHARACTER:
@@ -210,16 +207,12 @@ def test_seeded_character_and_scene_assets_get_a_reference_still(db: Session, au
             assert refs, row.title
             assert refs[0]["asset_id"] == row.cover_asset_id
             assert refs[0]["view"] == "front"
-        elif row.category == CreationSkillCategory.SCENE_ASSET:
+        else:
+            assert row.category == CreationSkillCategory.SCENE_ASSET
             refs = scenes_service.SceneView(row).reference_assets
             assert refs, row.title
             assert refs[0]["asset_id"] == row.cover_asset_id
             assert refs[0]["view"] == "establishing"
-        else:
-            assert row.category == CreationSkillCategory.COVER_ASSET
-            assert "character" not in (row.params_json or {})
-            assert "scene" not in (row.params_json or {})
-            continue
         # The tables are the source; the JSON above is their mirror.
         anchor = asset_variants_service.anchor(row)
         assert anchor is not None and anchor.asset_id == row.cover_asset_id, row.title

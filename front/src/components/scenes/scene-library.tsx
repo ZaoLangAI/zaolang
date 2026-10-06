@@ -39,6 +39,7 @@ import {
 } from '@/lib/creation-skill-status';
 import { cardCompleteness } from '@/features/asset-workspace/completeness';
 import { workspaceHref } from '@/features/asset-workspace/new-card';
+import { withStyleSkill } from '@/features/asset-workspace/style-skill';
 import { sceneHeroAsset, sceneManageHref } from '@/lib/scenes';
 import { useMinWidth } from '@/lib/use-media-query';
 import { uploadFile } from '@/lib/upload';
@@ -99,7 +100,14 @@ function referenceIdsForSave(scene: Scene | null, heroId: string | null): string
  * historical stills stay on a read-only strip — so a future generation
  * call (or a linked script scene heading) can be pointed at it.
  */
-export function SceneLibrary({ initial }: { initial: Scene[] }) {
+export function SceneLibrary({
+  initial,
+  styleSkillId = null,
+}: {
+  initial: Scene[];
+  /** A plaza style skill (`?skillId=`) every card link carries on. */
+  styleSkillId?: string | null;
+}) {
   const t = useTranslations('scenes');
   const tActions = useTranslations('actions');
   const tStates = useTranslations('states');
@@ -108,6 +116,7 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
   const tWorkspace = useTranslations('assetWorkspace');
   const { notify } = useToast();
   const router = useRouter();
+  const go = (href: string) => router.push(withStyleSkill(href, styleSkillId));
 
   const [scenes, setScenes] = useState(initial);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -216,9 +225,7 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
       // A new card opens on its 创作 board — on the master plate, or with
       // one already filed, on the reverse angle drawn from it.
       if (!editing || intent === 'saveAndGenerate') {
-        router.push(
-          workspaceHref(sceneManageHref(saved.id), form.reference ? 'reverse' : 'master'),
-        );
+        go(workspaceHref(sceneManageHref(saved.id), form.reference ? 'reverse' : 'master'));
       }
     } catch (caught) {
       setFormError(caught instanceof ApiError ? caught.message : tStates('errorHint'));
@@ -450,7 +457,7 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => router.push(heroHref(scene))}
+                        onClick={() => go(heroHref(scene))}
                         className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted transition-colors hover:text-text"
                       >
                         <IconSparkle className="size-4" />
@@ -518,7 +525,7 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
                     <IconButton
                       size="sm"
                       label={hero ? t('generateAgain') : t('generateSheet')}
-                      onClick={() => router.push(heroHref(scene))}
+                      onClick={() => go(heroHref(scene))}
                     >
                       <IconSparkle className="size-4" />
                     </IconButton>
@@ -528,7 +535,7 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
                     <IconButton
                       size="sm"
                       label={t('manageVariants')}
-                      onClick={() => router.push(sceneManageHref(scene.id))}
+                      onClick={() => go(sceneManageHref(scene.id))}
                     >
                       <IconGrid className="size-4" />
                     </IconButton>

@@ -3,14 +3,16 @@ import { describe, expect, it } from 'vitest';
 import type { CreationSkillSummary } from '@/lib/api/types';
 
 import {
-  creationStudioHref,
+  assetCreationHref,
   detectMentionTrigger,
   filterMentionSkills,
-  firstSkillReferenceAssetId,
+  isImageOnlyTemplate,
   isSkillApplicableToOperation,
   isSkillMentionable,
   isSkillUsableForMention,
+  skillCardKind,
   stripMentionToken,
+  videoCreationHref,
 } from './skill-mention';
 
 function skill(overrides: Partial<CreationSkillSummary>): CreationSkillSummary {
@@ -91,30 +93,51 @@ describe('skill mention filters', () => {
     });
     expect(isSkillMentionable(recipe, 'text_to_image')).toBe(true);
     expect(isSkillMentionable(recipe, 'text_to_video')).toBe(false);
-    expect(creationStudioHref(recipe)).toBe(
-      '/create/new?mode=image_creation&skillId=skl_a&assetKind=character',
-    );
+    // An asset card is never an image-only template, whatever it declares.
+    expect(isImageOnlyTemplate(recipe)).toBe(false);
   });
 
-  it('sends an image-only template to the image studio', () => {
+  it('offers an image-only template to the three asset libraries as a style skill', () => {
     const poster = skill({
       category: 'style',
       applicable_operations: ['text_to_image', 'image_to_image'],
     });
-    expect(creationStudioHref(poster)).toBe('/create/new?mode=image_creation&skillId=skl_a');
-  });
-
-  it('carries the character asset kind into the video studio for a roster skill with no declared operations', () => {
-    const character = skill({ category: 'character', applicable_operations: [] });
-    expect(creationStudioHref(character)).toBe(
-      '/create/new?mode=video_creation&skillId=skl_a&assetKind=character&videoAssetKind=character_action',
+    expect(isImageOnlyTemplate(poster)).toBe(true);
+    expect(assetCreationHref('character', poster.id)).toBe('/create/characters?skillId=skl_a');
+    expect(assetCreationHref('scene', poster.id)).toBe('/create/scenes?skillId=skl_a');
+    expect(assetCreationHref('prop', poster.id)).toBe('/create/props?skillId=skl_a');
+    expect(isImageOnlyTemplate(skill({ category: 'style', applicable_operations: [] }))).toBe(
+      false,
     );
+    expect(
+      isImageOnlyTemplate(
+        skill({ category: 'lens', applicable_operations: ['text_to_image', 'text_to_video'] }),
+      ),
+    ).toBe(false);
   });
 
-  it('uses the card anchor from the skill detail, else the cover', () => {
-    expect(firstSkillReferenceAssetId('ast_cover', 'ast_anchor')).toBe('ast_anchor');
-    expect(firstSkillReferenceAssetId('ast_cover')).toBe('ast_cover');
-    expect(firstSkillReferenceAssetId(null, null)).toBeUndefined();
+  it('sends an asset card to video creation, preselected only when it is the viewer’s own', () => {
+    const owner = { user_id: 'usr_me', display_name: '我', handle: 'me' };
+    const character = skill({ category: 'character', applicable_operations: [], author: owner });
+    expect(videoCreationHref(character, 'usr_me')).toBe(
+      '/create/new?mode=video_creation&skillId=skl_a&videoAssetKind=character_action&referenceCharacterIds=skl_a',
+    );
+    expect(videoCreationHref(character, 'usr_other')).toBe(
+      '/create/new?mode=video_creation&skillId=skl_a&videoAssetKind=character_action',
+    );
+    const scene = skill({ category: 'scene_asset', author: owner });
+    expect(videoCreationHref(scene, 'usr_me')).toBe(
+      '/create/new?mode=video_creation&skillId=skl_a&referenceSceneIds=skl_a',
+    );
+    const prop = skill({ category: 'prop_asset', author: owner });
+    expect(videoCreationHref(prop, 'usr_me')).toBe(
+      '/create/new?mode=video_creation&skillId=skl_a&referencePropIds=skl_a',
+    );
+    expect(skillCardKind(prop)).toBe('prop');
+    const template = skill({ category: 'lens', applicable_operations: ['text_to_video'] });
+    expect(videoCreationHref(template, 'usr_me')).toBe(
+      '/create/new?mode=video_creation&skillId=skl_a',
+    );
   });
 
   it('filters the open menu by title query', () => {

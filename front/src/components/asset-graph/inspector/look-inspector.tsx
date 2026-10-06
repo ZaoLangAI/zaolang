@@ -14,7 +14,6 @@ import { Select, TextArea, TextInput } from '@/components/ui/field';
 import { IconSparkle } from '@/components/ui/icons';
 import { Badge } from '@/components/ui/primitives';
 import type { ScenePresets } from '@/features/image-assets/vocabulary';
-import { useRouter } from '@/i18n/navigation';
 import type { AssetGraph, AssetVariant } from '@/lib/api/types';
 
 import type { AssetGraphActions } from '../use-asset-graph';
@@ -33,7 +32,6 @@ export function LookInspector({
   onToggle,
   onSelectEdge,
   onDeleted,
-  generateHref,
   onOpenCreate,
 }: {
   graph: AssetGraph;
@@ -45,14 +43,12 @@ export function LookInspector({
   onToggle: () => void;
   onSelectEdge: (edgeId: string) => void;
   onDeleted: () => void;
-  /** The image studio jump-out; without it (props) 生成 opens the 创作 tab. */
-  generateHref?: (variant: AssetVariant) => string;
+  /** 生成: open this look / variant on the workspace's 创作 tab. */
   onOpenCreate?: (variant: AssetVariant) => void;
 }) {
   const t = useTranslations('assetGraph');
   const tVariants = useTranslations('assetVariants');
   const tActions = useTranslations('actions');
-  const router = useRouter();
   const [name, setName] = useState(variant.name);
   const [description, setDescription] = useState(variant.description ?? '');
   const [fillOpen, setFillOpen] = useState(false);
@@ -158,11 +154,7 @@ export function LookInspector({
               {tVariants('fillOpen')}
             </Button>
           ) : null}
-          {generateHref ? (
-            <Button size="sm" variant="ghost" onClick={() => router.push(generateHref(variant))}>
-              {t('openInStudio')}
-            </Button>
-          ) : onOpenCreate ? (
+          {onOpenCreate ? (
             <Button size="sm" variant="ghost" onClick={() => onOpenCreate(variant)}>
               {t('openInCreate')}
             </Button>

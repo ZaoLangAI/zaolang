@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CanvasGraph, CanvasSnapshot, CanvasSnapshotEpisode } from './api';
-import {
-  flowToGraph,
-  graphToFlow,
-  missingDomainNodes,
-  shotKeysOf,
-  upstreamAssetIds,
-} from './graph-convert';
+import { flowToGraph, graphToFlow, missingDomainNodes, shotKeysOf } from './graph-convert';
 
 const emptySnapshot: CanvasSnapshot = {
   series: null,
@@ -302,58 +296,6 @@ describe('missingDomainNodes', () => {
     expect(added[0]!.binding).toEqual({ kind: 'episode', episode_id: 'dep_2' });
   });
 });
-
-describe('upstreamAssetIds', () => {
-  const graph: CanvasGraph = {
-    nodes: [
-      {
-        id: 'cnd_img1',
-        kind: 'image',
-        position: { x: 0, y: 0 },
-        binding: { kind: 'image', asset_id: 'ast_1' },
-      },
-      {
-        id: 'cnd_img2',
-        kind: 'image',
-        position: { x: 0, y: 100 },
-        binding: { kind: 'image', asset_id: 'ast_2' },
-      },
-      { id: 'cnd_empty', kind: 'image', position: { x: 0, y: 200 } },
-      { id: 'cnd_prompt', kind: 'prompt', position: { x: 300, y: 0 } },
-      { id: 'cnd_other', kind: 'prompt', position: { x: 300, y: 300 } },
-    ],
-    edges: [
-      { id: 'e1', source: 'cnd_img1', target: 'cnd_prompt' },
-      { id: 'e2', source: 'cnd_img2', target: 'cnd_prompt' },
-      { id: 'e3', source: 'cnd_empty', target: 'cnd_prompt' },
-      { id: 'e4', source: 'cnd_img1', target: 'cnd_other' },
-    ],
-  };
-
-  it('collects the assets of picture cards wired into the node', () => {
-    expect(upstreamAssetIds('cnd_prompt', graph)).toEqual(['ast_1', 'ast_2']);
-  });
-
-  it('ignores a picture card that has no asset yet', () => {
-    expect(upstreamAssetIds('cnd_prompt', graph)).not.toContain(undefined);
-  });
-
-  it('only counts direct upstream neighbours, and only incoming edges', () => {
-    // `cnd_other` is fed by img1 alone; the edge into `cnd_prompt` must not
-    // leak across, and a downstream node contributes nothing.
-    expect(upstreamAssetIds('cnd_other', graph)).toEqual(['ast_1']);
-    expect(upstreamAssetIds('cnd_img1', graph)).toEqual([]);
-  });
-
-  it('does not repeat an asset wired in twice', () => {
-    const doubled: CanvasGraph = {
-      nodes: graph.nodes,
-      edges: [...graph.edges, { id: 'e5', source: 'cnd_img1', target: 'cnd_prompt' }],
-    };
-    expect(upstreamAssetIds('cnd_prompt', doubled)).toEqual(['ast_1', 'ast_2']);
-  });
-});
-
 describe('image node hydration', () => {
   it('renders an uploaded picture from the resolved asset url', () => {
     const graph: CanvasGraph = {

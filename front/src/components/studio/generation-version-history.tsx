@@ -21,16 +21,15 @@ import { formatRelative } from '@/lib/format';
 const DEAD_JOB_STATUSES = new Set(['failed', 'cancelled', 'expired']);
 
 /**
- * The image and video studios' shared version history — every generation
+ * The video studio's version history — every generation
  * job filed under the same `Draft`, in the order they were made. Flat and
  * chronological, not a tree: branching from an older version just means
  * picking it back up as the next iteration's reference
- * (`InlineImageResult`'s "基于此图继续微调" / `InlineVideoResult`'s "基于此
- * 视频继续创作"), so there is nothing to render as a graph — the lineage
+ * (`InlineVideoResult`'s "基于此视频继续创作"), so there is nothing to render as a graph — the lineage
  * graph (`zaolang-lineage-graph`) is a different, published-`Work` concept.
  *
  * Takes the draft's full job list as a prop rather than fetching it itself —
- * `ImageGenerationStudio`/`VideoGenerationStudio` own that (`knownJobsById`),
+ * `VideoGenerationStudio` owns that (`knownJobsById`),
  * seeded once from `GET /v1/generation-jobs?draft_id=` and additively kept
  * up to date with every job it has seen since (submitted, streamed, or
  * selected from this very list), so a job never disappears here just
@@ -39,9 +38,8 @@ const DEAD_JOB_STATUSES = new Set(['failed', 'cancelled', 'expired']);
  * A "补全侧面/背面" completion job (`isCharacterCompletionJob`) is filtered
  * out entirely, never counted or rendered as a version of its own — it
  * supplements whichever front-view version it was submitted for instead
- * (merged into that version's own gallery by `InlineImageResult`, see
- * `lib/characters.ts#findCompletionJobFor`). Never true for a video job
- * (video has no character-completion concept), so this is a no-op there.
+ * (`lib/characters.ts#findCompletionJobFor`) — only an old image draft
+ * could hold one, so this is a no-op for video.
  *
  * A video version's thumbnail has no backend-generated cover frame to show —
  * a `<video>` element with a `#t=0.1` media-fragment `src` and no controls
@@ -50,7 +48,7 @@ const DEAD_JOB_STATUSES = new Set(['failed', 'cancelled', 'expired']);
  *
  * A failed/cancelled/expired attempt leaves no trace here at all — it is
  * filtered out entirely, not just excluded from the version count. Its
- * failure is already visible where it happened (`InlineImageResult`'s error
+ * failure is already visible where it happened (`InlineVideoResult`'s error
  * notice and retry button); this strip only ever shows a *record* worth
  * picking back up, which a dead attempt never is.
  *

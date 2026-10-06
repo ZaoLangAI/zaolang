@@ -42,24 +42,6 @@ export function TextToVideoIllustration(props: IllustrationProps) {
   );
 }
 
-/** A character bust portrait beside a small landscape frame, standing in for
- * the three asset purposes this card fans out to (character views, scene
- * stills, covers) once inside the studio. */
-export function ImageCreationIllustration(props: IllustrationProps) {
-  return (
-    <Scene {...props}>
-      <rect x="16" y="12" width="62" height="76" rx="8" fillOpacity="0.06" fill="currentColor" />
-      <circle cx="47" cy="38" r="12" />
-      <path d="M27 80c2-17 10-25 20-25s18 8 20 25" />
-      <rect x="92" y="24" width="54" height="40" rx="6" fillOpacity="0.06" fill="currentColor" />
-      <circle cx="112" cy="36" r="4" />
-      <path d="M98 56 112 42l8 8 10-10 14 12" />
-      <path d="M132 10 135.4 17.5 143 20.8 135.4 24.1 132 31.5 128.6 24.1 121 20.8 128.6 17.5Z" />
-    </Scene>
-  );
-}
-
-/** A waveform with a microphone capsule beside it. */
 export function AudioGenerationIllustration(props: IllustrationProps) {
   const bars = [10, 22, 34, 20, 40, 26, 16, 30, 14];
   return (
@@ -161,9 +143,8 @@ export function VideoAnalysisIllustration(props: IllustrationProps) {
   );
 }
 
-/** A bust portrait beside two smaller ones, standing in for a saved roster
- * rather than a single generated still (`ImageCreationIllustration` uses the
- * same bust shape for the "character" asset kind, singular). */
+/** A bust portrait beside two smaller ones: the character roster that
+ * 角色创作 starts from. */
 export function CharacterLibraryIllustration(props: IllustrationProps) {
   return (
     <Scene {...props}>
@@ -180,8 +161,8 @@ export function CharacterLibraryIllustration(props: IllustrationProps) {
   );
 }
 
-/** Two landscape frames stacked behind a third, standing in for a saved
- * library rather than a single scene reference. */
+/** Two landscape frames stacked behind a third: the scene library that
+ * 场景创作 starts from. */
 export function SceneLibraryIllustration(props: IllustrationProps) {
   return (
     <Scene {...props}>
@@ -213,6 +194,22 @@ export function SceneLibraryIllustration(props: IllustrationProps) {
         d="M132 26h-6M140 18v-6M148 26h6M140 34v6M135 21l-4-4M145 21l4-4M135 31l-4 4M145 31l4 4"
         strokeOpacity="0.5"
       />
+    </Scene>
+  );
+}
+
+/** An isometric crate turning on a dashed orbit beside a detail swatch:
+ * 道具创作 — one object, seen from every side. */
+export function PropIllustration(props: IllustrationProps) {
+  return (
+    <Scene {...props}>
+      <ellipse cx="62" cy="80" rx="44" ry="10" strokeOpacity="0.35" strokeDasharray="4 5" />
+      <path d="M62 18 92 34v32L62 82 32 66V34Z" fillOpacity="0.06" fill="currentColor" />
+      <path d="M32 34 62 50l30-16M62 50v32" />
+      <path d="M47 26 77 42" strokeOpacity="0.45" />
+      <rect x="112" y="22" width="34" height="34" rx="6" fillOpacity="0.06" fill="currentColor" />
+      <path d="M119 46 129 34l6 7 4-4 4 9" strokeOpacity="0.6" />
+      <path d="M108 72h38M108 82h24" strokeOpacity="0.45" />
     </Scene>
   );
 }

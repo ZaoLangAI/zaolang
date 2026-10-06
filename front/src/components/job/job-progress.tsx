@@ -18,7 +18,6 @@ import { jobStageState } from '@/components/job/job-stage-state';
 import { DevicePreview } from '@/components/media/device-preview';
 import { DownloadAssetButton } from '@/components/media/download-asset-button';
 import { OutputGallery } from '@/components/media/output-gallery';
-import { SaveCoverAsSkillDialog } from '@/components/studio/save-cover-as-skill-dialog';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { IconCheck, IconClock, IconCopy, IconSparkle } from '@/components/ui/icons';
@@ -29,6 +28,7 @@ import { useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import { api, newIdempotencyKey } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
+import { isRetiredImageJob } from '@/lib/asset-job-href';
 import type { Draft, GenerationJob } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { formatCount, formatDateTime } from '@/lib/format';
@@ -58,7 +58,6 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [openingEditor, setOpeningEditor] = useState(false);
-  const [savingCoverSkillOpen, setSavingCoverSkillOpen] = useState(false);
   const [promoteOpen, setPromoteOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
   /**
@@ -239,19 +238,14 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
   // a transient error" stance.
   const showEnterEditor = canEnterEditor && (user?.features.web_editor ?? true);
 
-  // A cover-kind job's output is a single, standalone image with no roster
-  // to maintain (unlike a character/scene) — see `CreationSkillCategory.
-  // COVER_ASSET`'s own note on why it has no dedicated CRUD surface, just
-  // this `POST /v1/skills` call with the job's own output as the thumbnail.
-  const canSaveCoverSkill =
-    current.status === 'succeeded' &&
-    current.asset_kind === 'cover' &&
-    Boolean(current.output_asset_id);
-
   // A preview-tier success is a cheap, fast sample — this is the only route
   // from it to a full-priced standard/cinematic render (`POST .../promote`
   // reserves that as its own new job, see the dialog's own doc comment).
-  const canPromote = current.status === 'succeeded' && current.quality_tier === 'preview';
+  // A general / cover image (the retired image studio, the canvas Agent) is
+  // read-only here: the API refuses to retry or promote it, only 去发布 stays.
+  const readOnlyImage = isRetiredImageJob(current);
+  const canPromote =
+    !readOnlyImage && current.status === 'succeeded' && current.quality_tier === 'preview';
   const canDownload =
     current.status === 'succeeded' &&
     current.output_media_type === 'video' &&
@@ -479,14 +473,16 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
               title={current.failure_message ?? t('failedTitle')}
               detail={`${t('failedHint')}${current.failure_code ? ` · ${tJob('errorCode', { code: current.failure_code })}` : ''}`}
               action={
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  loading={retrying}
-                  onClick={() => void retry()}
-                >
-                  {tJob('retry')}
-                </Button>
+                readOnlyImage ? undefined : (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={retrying}
+                    onClick={() => void retry()}
+                  >
+                    {tJob('retry')}
+                  </Button>
+                )
               }
             />
           ) : null}
@@ -496,14 +492,16 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
               title={t('cancelledTitle')}
               detail={t('failedHint')}
               action={
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  loading={retrying}
-                  onClick={() => void retry()}
-                >
-                  {tJob('retry')}
-                </Button>
+                readOnlyImage ? undefined : (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={retrying}
+                    onClick={() => void retry()}
+                  >
+                    {tJob('retry')}
+                  </Button>
+                )
               }
             />
           ) : null}
@@ -556,11 +554,6 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
                   {tJob('publish')}
                 </Button>
               )
-            ) : null}
-            {canSaveCoverSkill ? (
-              <Button variant="secondary" onClick={() => setSavingCoverSkillOpen(true)}>
-                {t('saveCoverSkill')}
-              </Button>
             ) : null}
             {canPromote ? (
               <Button variant="secondary" onClick={() => setPromoteOpen(true)}>
@@ -669,12 +662,6 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
       >
         <p className="text-sm text-muted">{t('failedHint')}</p>
       </ConfirmDialog>
-
-      <SaveCoverAsSkillDialog
-        open={savingCoverSkillOpen}
-        onClose={() => setSavingCoverSkillOpen(false)}
-        outputAssetId={current.output_asset_id}
-      />
 
       <PromoteJobDialog
         open={promoteOpen}

@@ -36,7 +36,7 @@ from app.api.schemas.jobs import (
     VideoAnalysisResult,
 )
 from app.domain.credits import service as credits_service
-from app.domain.errors import NotFound, ValidationFailed
+from app.domain.errors import ImageAssetKindRequired, NotFound, ValidationFailed
 from app.domain.jobs import dispatch as job_dispatch
 from app.domain.jobs import input_requests
 from app.domain.jobs import service as jobs_service
@@ -84,6 +84,30 @@ _FORCED_MODEL_OPERATIONS = (
 )
 
 
+# The only image kinds a consumer can still generate (AC-8): library assets.
+_ASSET_IMAGE_KINDS = frozenset(
+    {ImageAssetKind.CHARACTER, ImageAssetKind.SCENE, ImageAssetKind.PROP}
+)
+
+
+def _require_asset_image_kind(
+    operation: Operation | str, asset_kind: object, *, field: str = "params.asset_kind"
+) -> None:
+    """Refuses a general or cover image job at every consumer entry point.
+
+    Quote, batch quote, submit, retry and promote all go through here; retry
+    and promote read the kind off the original `request_json`. Deliberately
+    not in `jobs_service.submit`: the canvas Agent submits general images
+    through the domain and must keep working.
+    """
+    if Operation(operation) not in IMAGE_OPERATIONS:
+        return
+    raw = asset_kind.value if isinstance(asset_kind, ImageAssetKind) else asset_kind
+    if raw in {kind.value for kind in _ASSET_IMAGE_KINDS}:
+        return
+    raise ImageAssetKindRequired(fields={field: "仅支持角色、场景或道具"})
+
+
 def _merged_studio_resolutions(
     capabilities: list[ProviderCapability], *, video: bool
 ) -> list[str] | None:
@@ -123,6 +147,7 @@ def _merged_default_resolution(
 @router.post("/generation-jobs/quote", response_model=QuoteResponse)
 def quote(payload: QuoteRequest, user: CurrentUser, session: DbSession) -> QuoteResponse:
     """Price preview. Must be shown before any credits are committed."""
+    _require_asset_image_kind(payload.operation, payload.asset_kind, field="asset_kind")
     priced = jobs_service.quote_for(
         session,
         operation=payload.operation,
@@ -152,6 +177,10 @@ def quote_batch(
     """A whole batch priced before anything is committed: each line through
     the same `quote_for` a submit uses, summed — plus what the balance and
     the user's own monthly cap still allow."""
+    for index, item in enumerate(payload.items):
+        _require_asset_image_kind(
+            item.operation, item.asset_kind, field=f"items.{index}.asset_kind"
+        )
     lines: list[BatchQuoteLine] = []
     for item in payload.items:
         priced = jobs_service.quote_for(
@@ -271,6 +300,7 @@ def create_job(
     Credits are reserved inside this transaction so the user cannot queue more
     work than they can pay for, even by submitting in parallel.
     """
+    _require_asset_image_kind(payload.operation, payload.params.asset_kind)
     if payload.operation in VIDEO_OPERATIONS:
         from app.platform_config import service as config_service
 
@@ -394,6 +424,7 @@ def retry_job(
     original = jobs_service.get_owned_job(session, job_id, user.id)
     if original.status not in (JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.EXPIRED):
         raise ValidationFailed("只有失败或已取消的任务可以重试。")
+    _require_asset_image_kind(original.operation, (original.request_json or {}).get("asset_kind"))
 
     result = jobs_service.submit(
         session,
@@ -436,6 +467,7 @@ def promote_job(
         QualityTier.PREVIEW
     ):
         raise ValidationFailed("只有成功的预览任务可以升级为正式生成。")
+    _require_asset_image_kind(original.operation, (original.request_json or {}).get("asset_kind"))
 
     result = jobs_service.submit(
         session,

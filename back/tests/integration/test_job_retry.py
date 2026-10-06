@@ -43,7 +43,8 @@ def _failed_image_job(db: Session, author: User, *, draft_id: str) -> Generation
         user_id=author.id,
         operation=Operation.TEXT_TO_IMAGE,
         quality_tier=QualityTier.STANDARD,
-        params={"prompt": "雨后的东京街头", "aspect_ratio": "16:9"},
+        # A general image can no longer be retried at the API (AC-8).
+        params={"prompt": "雨后的东京街头", "aspect_ratio": "16:9", "asset_kind": "scene"},
         idempotency_key=new_id("idk"),
         draft_id=draft_id,
     )
@@ -140,6 +141,27 @@ def _event_types(db: Session, job_id: str) -> list[str]:
     return list(rows)
 
 
+def _retry_as_the_route_does(db: Session, author: User, original: GenerationJob) -> str:
+    """`POST …/retry`'s own resubmit (`api.v1.jobs.retry_job`), minus the
+    route's general-image guard. Fast retry needs a job with no asset axis,
+    and the API now refuses those images (AC-8) — the canvas Agent's general
+    images are what still reach this path, so it is exercised here directly.
+    """
+    result = jobs_service.submit(
+        db,
+        user_id=author.id,
+        operation=original.operation,
+        quality_tier=original.quality_tier,
+        params=dict(original.request_json),
+        idempotency_key=new_id("idk"),
+        draft_id=original.draft_id,
+        max_credits=original.max_credits,
+    )
+    result.job.retry_of_job_id = original.id
+    db.commit()
+    return result.job.id
+
+
 def test_retry_after_a_real_provider_failure_skips_pre_checks_and_excludes_it(
     client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -184,9 +206,7 @@ def test_retry_after_a_real_provider_failure_skips_pre_checks_and_excludes_it(
     # must now be hard-excluded rather than picked again.
     monkeypatch.setattr(router_module, "build_catalog", lambda session: full_catalog)
 
-    response = client.post(f"/v1/generation-jobs/{original.id}/retry", headers=auth_header(author))
-    assert response.status_code == 202, response.text
-    retried_id = response.json()["id"]
+    retried_id = _retry_as_the_route_does(db, author, original)
 
     pipeline.run_generation_pipeline(db, retried_id)
     retried = db.get(GenerationJob, retried_id)
@@ -249,9 +269,7 @@ def test_retry_with_forced_model_stays_failed_once_its_only_candidate_is_exclude
     # eligible candidate now, but it doesn't carry the forced model.
     monkeypatch.setattr(router_module, "build_catalog", lambda session: full_catalog)
 
-    response = client.post(f"/v1/generation-jobs/{original.id}/retry", headers=auth_header(author))
-    assert response.status_code == 202, response.text
-    retried_id = response.json()["id"]
+    retried_id = _retry_as_the_route_does(db, author, original)
 
     pipeline.run_generation_pipeline(db, retried_id)
     retried = db.get(GenerationJob, retried_id)

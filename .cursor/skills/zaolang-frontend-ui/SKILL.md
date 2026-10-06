@@ -1,6 +1,6 @@
 ---
 name: zaolang-frontend-ui
-description: Consumer Next.js shell — (site)/(studio) routes, component families, generation studios (image/video/audio/music), API client + token refresh, login wall, Cmd+K, notification center, overflow/a11y rules. Use when adding a consumer route, shared component, studio control, or front/src/lib helper.
+description: Consumer Next.js shell — (site)/(studio) routes, component families, generation studios (video/audio/music; images live in the card workspaces), API client + token refresh, login wall, Cmd+K, notification center, overflow/a11y rules. Use when adding a consumer route, shared component, studio control, or front/src/lib helper.
 ---
 
 # Consumer Frontend
@@ -15,7 +15,7 @@ Not here → `zaolang-theming` (tokens, motion), `zaolang-i18n-region` (copy, lo
 | `front/src/app/[locale]/(site)/` | top-bar routes (discover, work, create/*, remix, jobs, publish, skills, collection, profile, billing, notifications, learn) |
 | `front/src/app/[locale]/(site)/layout.tsx` | `SessionProvider` › `NotificationCenterProvider` › TopBar, `LoginDialogHost`, `CommandPaletteHost`, toast stack |
 | `front/src/app/[locale]/(studio)/` | chrome-less full-screen group; `studio-auth-gate.tsx` sends anonymous users to `/`. Hosts cut editor + canvas |
-| `front/src/app/[locale]/(site)/create/new/page.tsx` | studio entry: `?mode=`, `?draftId=`/`?jobId=` resume, jump-out params → `CreateStudio` keyed by `studioSessionKey` |
+| `front/src/app/[locale]/(site)/create/new/page.tsx` | studio entry: `?mode=` (video / audio / music; a leftover `image_creation` redirects via `imageDraftHref`), `?draftId=`/`?jobId=` resume, jump-out params → `CreateStudio` keyed by `studioSessionKey` |
 | `front/src/components/studio/` | generation studios + shared shell, prompt composer, version history — `reference-studios.md` |
 | `front/src/components/job/` | `/jobs/[jobId]` page, `job-stages.ts` stage table, `job-stage-state.ts` / `job-outputs.ts` readers |
 | `front/src/components/ui/` | in-house primitives (field, dialog, sheet, dropdown-menu, toast, lightbox, back links…) — no UI library; focus regression test `dialog.test.tsx` |
@@ -23,7 +23,7 @@ Not here → `zaolang-theming` (tokens, motion), `zaolang-i18n-region` (copy, lo
 | `front/src/components/auth/` | `session-provider` (`useSession`, `requireAuth`), lazy `login-dialog-host` |
 | `front/src/components/notifications/` | single-stream notification center, bell, toast stack, `notification-format.ts` |
 | `front/src/components/command/` | Cmd+K `command-palette.tsx` (idle-loaded by `command-palette-host.tsx`) |
-| `front/src/components/create/` | `/create`: `create-mode-cards.tsx`, flag-aware `create-tool-cards.tsx`, recent drafts/series |
+| `front/src/components/create/` | `/create`: `create-mode-cards.tsx` (角色 / 场景 / 道具创作 → `/create/{characters,scenes,props}`, 视频, 文案, 语音, 音乐), flag-aware `create-tool-cards.tsx` (canvas, video analysis), recent drafts/series |
 | `front/src/components/asset-graph/` | card management graph (`/create/{characters,scenes,props}/[id]`): `asset-graph-workspace.tsx` (state, docked inspector, narrow-screen outline + Sheet) loads `asset-graph-canvas.tsx` (React Flow + dagre `layout.ts`) via `next/dynamic`; `graph-model.ts` is the pure payload → nodes/edges mapping; listed in `heavyDependencyBoundaries`. Positions are never saved — a dragged node snaps back on reload; layout is recomputed each load |
 | `front/src/features/` | big surfaces: `script`, `editor`, `drama-dashboard` (editor-drama), `canvas`, `blocking`, `video-analysis` (generation-jobs) |
 | `front/src/lib/api/client.ts` | browser fetch: in-memory token, coalesced refresh, `Idempotency-Key`, `ApiError` |
@@ -52,8 +52,8 @@ Not here → `zaolang-theming` (tokens, motion), `zaolang-i18n-region` (copy, lo
 13. Flag-gated cards declare `flag?: keyof Me['features']` (`create-mode-cards.tsx`, `create-tool-cards.tsx`) and fail open while the session loads (`user?.features[flag] ?? true`); the backend enforces the real gate.
 14. POST-initiated SSE (`streamPost`: `thinking` / `delta` / `complete` / `error`) has no `Last-Event-ID` / reconnect; a failed response is parsed into `ApiError`. Don't reuse `use-job-stream.ts` for it. GET job-stream semantics: zaolang-generation-jobs.
 15. `NotificationCenterProvider` is the only opener of `use-notification-stream.ts`. Creation toasts are keyed by `target_id` and limited to `CREATION_TARGET_TYPES` (`notification-format.ts`), which must match the backend upsert targets. They are deliberately independent of `components/ui/toast.tsx`.
-16. Image/video creation never navigates to `/jobs/[jobId]`: studios pass `onSubmitted` to `useGenerationSubmit` and render inline; audio/music still push `/jobs/{id}`. `jobs/[jobId]/page.tsx` and `targetHref` redirect an image/video job with a `draft_id` to `imageCreationStudioHref` / `videoCreationStudioHref`.
-17. `/create/new` keys `CreateStudio` with `studioSessionKey` (`front/src/lib/studio-session.ts`) because a query-only navigation doesn't remount it. Never `router.replace` a `draftId` onto the URL after submit — it changes the key and tears down the live job. `returnTo` only via `sanitizeReturnTo`.
+16. There is no general image studio (AC-8): images are generated only in the card workspaces (`/create/{characters,scenes,props}/[id]`, `features/asset-workspace/`), and the API 422s `IMAGE_ASSET_KIND_REQUIRED` for an image job without a library kind. An image job / draft / notification resumes through `front/src/lib/asset-job-href.ts` — its card's workspace (`linked_*`, else `target_*`; `?look=` the targeted look), else the read-only `/jobs/{id}` (`JobProgress`: no retry / promote for `isRetiredImageJob`, 去发布 kept). Video creation never navigates to `/jobs/[jobId]`: the studio passes `onSubmitted` to `useGenerationSubmit` and renders inline; audio/music still push `/jobs/{id}`. `jobs/[jobId]/page.tsx` and `targetHref` redirect a video job with a `draft_id` to `videoCreationStudioHref`.
+17. `/create/new` keys `CreateStudio` with `studioSessionKey` (`front/src/lib/studio-session.ts`) because a query-only navigation doesn't remount it. Never `router.replace` a `draftId` onto the URL after submit — it changes the key and tears down the live job.
 18. Stage dots derive only from `jobStageState` (`job-stage-state.ts`); a new event type goes into `STAGE_FOR_EVENT` in `job-stages.ts`, never a consumer. Single/multi outputs go through `jobOutputs`.
 19. Heavy code is lazy: studios (`create-studio.tsx` `dynamic`), login dialog, palette, animejs (`loadAnime`), MDX editor. `prefetch-studio.ts` import paths must equal `create-studio.tsx`'s. `check:bundle-size` enforces `front/scripts/bundle-budget.json`; `heavyDependencyBoundaries` in `front/eslint.config.mjs` restrict heavy imports (caveat: the per-package entries all set `no-restricted-imports`, so the last one — animejs — overrides the rest; only it is enforced today).
 20. Downloads use `downloadAsset` (`front/src/lib/download-asset.ts`): mint an attachment signed URL via `GET /v1/assets/{id}?download=true`, open in a new tab — never `<a download>` (ignored cross-origin) or a blob fetch.

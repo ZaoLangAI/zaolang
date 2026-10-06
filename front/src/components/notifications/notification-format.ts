@@ -19,7 +19,7 @@ import {
   IconWand,
 } from '@/components/ui/icons';
 import type { Notification } from '@/lib/api/types';
-import { imageCreationStudioHref, isImageCreationOperation } from '@/lib/image-draft';
+import { assetJobHref, isImageOperation } from '@/lib/asset-job-href';
 import { isVideoCreationOperation, videoCreationStudioHref } from '@/lib/video-draft';
 
 /**
@@ -340,21 +340,20 @@ function creationIcon(item: Notification, payload: Record<string, unknown>): Ico
 export function targetHref(item: Notification): string | null {
   const payload = item.payload ?? {};
   if (item.target_type === 'generation_job' && item.target_id) {
-    // Image- and video-creation jobs no longer have a standalone progress
-    // page to land on (see `ImageGenerationStudio`/`VideoGenerationStudio`);
-    // route back into the studio's inline flow instead of `/jobs/[jobId]`
-    // when we know which draft it belongs to. Audio/shortform and either
-    // media type's jobs without a draft (e.g. sandbox runs) fall back to
-    // the job page.
+    // An image job lands in its card's workspace (the payload carries the
+    // card ids and look), else on its read-only job page — a general image
+    // from the retired image studio can still be published from there.
+    if (isImageOperation(payload.operation)) return assetJobHref(item.target_id, payload);
+    // Video-creation jobs have no standalone progress page to land on (see
+    // `VideoGenerationStudio`); route back into the studio's inline flow
+    // when we know which draft it belongs to. Audio/shortform and video
+    // jobs without a draft (e.g. sandbox runs) fall back to the job page.
     const draftId = payload.draft_id;
     if (typeof draftId === 'string' && draftId) {
       // `draftId` lands in the studio; `jobId` is which attempt this
       // notification is about (a retry is a new job). Without it the
       // studio would resume `Draft.latest_job_id`, which used to stay
       // pointed at the first failed attempt.
-      if (isImageCreationOperation(payload.operation)) {
-        return imageCreationStudioHref(draftId, item.target_id);
-      }
       if (isVideoCreationOperation(payload.operation)) {
         return videoCreationStudioHref(draftId, item.target_id);
       }

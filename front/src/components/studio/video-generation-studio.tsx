@@ -79,11 +79,11 @@ type Operation = 'text_to_video' | 'image_to_video' | 'video_to_video';
 type ReferenceMode = 'input_references' | 'frame_images';
 type Orientation = 'landscape' | 'portrait' | 'adaptive';
 /** What a video job's output is *for* — mirrors the backend's `VideoAssetKind`
- * (`back/app/models/enums.py`), the video-side equivalent of
- * `ImageGenerationStudio`'s `AssetKind`. `character_action` auto-attaches
+ * (`back/app/models/enums.py`), the video-side equivalent of the image
+ * `asset_kind`. `character_action` auto-attaches
  * the succeeded output to a character's clip list
  * (`execute_asset_output_link`); `transition_video`/`cover_video` are
- * tagged but not attached to any library, same as image's `cover` today. */
+ * tagged but not attached to any library. */
 type VideoAssetKind = 'general' | 'character_action' | 'transition_video' | 'cover_video';
 const VIDEO_ASSET_KINDS = [
   'general',
@@ -115,20 +115,18 @@ const MAX_REFERENCE_SELECTION = 4;
 /**
  * `/create/new` (`text_to_video` / `image_to_video` modes) and
  * `/remix/[workId]` (`video_to_video` when the source work is a video,
- * otherwise `image_to_video` — remix has no image/audio path). Keeps the
+ * `image_to_video` when it is an image — the source image is seeded as the
+ * reference and preset as the first frame). Keeps the
  * style preset / system style ("画风库") half of `useStyleAndSkillPicker`;
- * template skills apply from the prompt `@` menu (`useAppliedSkills`),
- * same as `ImageGenerationStudio`. `AudioGenerationStudio` is the shell
+ * template skills apply from the prompt `@` menu (`useAppliedSkills`).
+ * `AudioGenerationStudio` is the shell
  * that still shows the creation-skill Select.
  *
  * Generation never navigates away to `/jobs/[jobId]` any more: a submit's
  * progress and result render inline in the preview slot
  * (`InlineVideoResult`), and every job filed under the same `Draft` shows up
- * in `GenerationVersionHistory` beneath it — the same architecture
- * `ImageGenerationStudio` already uses, extended here now that video
- * creation has its own per-draft version history too (see
- * `use-generation-submit.ts`'s `draftId`, generic across every operation on
- * the backend already).
+ * in `GenerationVersionHistory` beneath it (see `use-generation-submit.ts`'s
+ * `draftId`, generic across every operation on the backend).
  */
 export function VideoGenerationStudio({
   operation: initialOperation,
@@ -144,6 +142,7 @@ export function VideoGenerationStudio({
   subjectNameHint,
   initialReferenceCharacterIds,
   initialReferenceSceneIds,
+  initialReferencePropIds,
   linkEpisodeId,
   linkBreakpointKey,
   initialSkillId,
@@ -159,7 +158,7 @@ export function VideoGenerationStudio({
    * `/create/new`, or the "最近草稿"/"草稿" tab's edit entry — so its full
    * version history and latest output (`GenerationVersionHistory`) reappear
    * instead of starting blank. Every later submit in this session reuses
-   * the same draft id, exactly like `ImageGenerationStudio`.
+   * the same draft id.
    */
   initialDraft?: Draft;
   /** Notification click-through (`?jobId=`). Preferred over
@@ -172,10 +171,7 @@ export function VideoGenerationStudio({
   initialStyleGalleryId?: string;
   /**
    * Pre-fills the asset-kind picker below — the character library's
-   * "生成动作视频" button deep-links here the same way the script studio's
-   * image jump-out pre-fills `ImageGenerationStudio`'s `initialAssetKind`
-   * (see the `zaolang-frontend-ui` skill's studios reference on the jump-out
-   * convention).
+   * "生成动作视频" button deep-links here.
    */
   initialVideoAssetKind?: VideoAssetKind;
   initialTargetCharacterId?: string;
@@ -193,6 +189,8 @@ export function VideoGenerationStudio({
    */
   initialReferenceCharacterIds?: string[];
   initialReferenceSceneIds?: string[];
+  /** A plaza prop card the viewer owns (`?referencePropIds=`). */
+  initialReferencePropIds?: string[];
   /** The short-drama workspace's "去视频创作" jump-out (`?linkEpisodeId=`) —
    * see `GenerationSubmitInput.linkEpisodeId`. */
   linkEpisodeId?: string;
@@ -224,8 +222,7 @@ export function VideoGenerationStudio({
   );
   // `Draft.params.aspect_ratio`/`duration_seconds` are written once, at the
   // draft's first submit — a session-level setting, not necessarily what
-  // the *latest* job under it actually used, same trade-off
-  // `ImageGenerationStudio` already accepts for its own `aspect` seed.
+  // the *latest* job under it actually used.
   const [aspect, setAspect] = useState<string>(() => {
     const draftAspect = initialDraft?.params?.aspect_ratio;
     return typeof draftAspect === 'string' && (ASPECTS as readonly string[]).includes(draftAspect)
@@ -253,8 +250,7 @@ export function VideoGenerationStudio({
   const [uploads, setUploads] = useState<Asset[]>([]);
   const [presetExtra, setPresetExtra] = useState<Record<string, unknown>>({});
   // "视频创作" — what this output is for, and which existing character/scene
-  // (if any) it should write back to. Mirrors `ImageGenerationStudio`'s own
-  // asset-kind state one-for-one.
+  // (if any) it should write back to.
   const [videoAssetKind, setVideoAssetKind] = useState<VideoAssetKind>(
     initialVideoAssetKind ?? 'general',
   );
@@ -270,15 +266,17 @@ export function VideoGenerationStudio({
   // 婚礼 outfit) — unset means the backend's default subset.
   const characterRefPicks = useReferencePicks();
   const sceneRefPicks = useReferencePicks();
-  const [selectedReferencePropIds, setSelectedReferencePropIds] = useState<string[]>([]);
+  const [selectedReferencePropIds, setSelectedReferencePropIds] = useState<string[]>(
+    initialReferencePropIds ?? [],
+  );
   const propRefPicks = useReferencePicks();
   // Ranks the picked characters' *default* references (P2-7): an expression
   // sheet showing this emotion goes in first. The shot size comes from the
   // prompt's 「镜头：」 line on the backend.
   const [referenceEmotion, setReferenceEmotion] = useState<CharacterExpression | ''>('');
 
-  // Inline progress/result + version history state — the same shape
-  // `ImageGenerationStudio` uses. `draftId` is created on the first submit
+  // Inline progress/result + version history state. `draftId` is created on
+  // the first submit
   // and reused by every later "continue refining" submit, so the whole
   // session's iterations file under one draft.
   const [draftId, setDraftId] = useState<string | null>(initialDraft?.id ?? null);
@@ -314,16 +312,14 @@ export function VideoGenerationStudio({
   ) {
     setResumeFallbackJobId(resumeDefaultJobId);
   }
-  // Adjusted during render rather than in an effect (same pattern as
-  // `ImageGenerationStudio`), guarded by `!activeJobId` so it only ever
+  // Adjusted during render rather than in an effect, guarded by `!activeJobId` so it only ever
   // fires once, the moment the resumed job's data arrives. `video_asset_kind`
-  // rides along here (not on `Draft.params`, only on the job response), same
-  // as image's `asset_kind`. `prompt` is re-seeded from the resumed *job*
+  // rides along here (not on `Draft.params`, only on the job response).
+  // `prompt` is re-seeded from the resumed *job*
   // (not `initialDraft.params.prompt`, frozen at the draft's first submit)
   // so a several-versions-deep resume shows the actual last-edited prompt —
   // deliberately does *not* also re-attach that job's own output as a
-  // reference upload the way `ImageGenerationStudio` does for its
-  // image-to-image chaining: silently turning a plain "tweak the prompt and
+  // reference upload: silently turning a plain "tweak the prompt and
   // regenerate" resume into a `video_to_video` job would be a surprising
   // default. `InlineVideoResult`'s "基于此视频继续创作" does that instead,
   // deliberately, on click.
@@ -457,6 +453,31 @@ export function VideoGenerationStudio({
     },
     [notify, tStates],
   );
+
+  // `/remix/[workId]` hands an image work here as `image_to_video`. Unlike a
+  // video source (prepended server-side by `attach_licensed_source_video`),
+  // an image source is the caller's to attach, so pull it into the uploads
+  // (the reference in 图片/视频参考 mode) and preset it as the first frame
+  // (首尾帧 mode); without this the remix would submit with no image at all
+  // and fail 图生视频必须提供参考图. Once per mount.
+  const sourceMaterialSeededRef = useRef(false);
+  useEffect(() => {
+    if (sourceMaterialSeededRef.current || !source) return;
+    const mediaType = source.work.media_type ?? source.work.current_version?.media_type;
+    const assetId = source.work.current_version?.output_asset_id;
+    if (mediaType !== 'image' || !assetId) return;
+    sourceMaterialSeededRef.current = true;
+    void api
+      .get<Asset>(`/v1/assets/${assetId}`)
+      .then((asset) => {
+        setUploads((current) =>
+          current.some((existing) => existing.id === asset.id) ? current : [asset, ...current],
+        );
+        setFirstFrameAssetId((current) => current || asset.id);
+      })
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleReferenceCharacter = (id: string) =>
     setSelectedReferenceCharacterIds((current) =>

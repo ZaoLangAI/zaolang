@@ -32,7 +32,7 @@ import type {
 } from '@/lib/api/types';
 import { cn, controlPress } from '@/lib/cn';
 import { draftDisplayTitle } from '@/lib/draft-title';
-import { imageCreationStudioHref, isImageCreationOperation } from '@/lib/image-draft';
+import { imageDraftHref, isImageOperation } from '@/lib/asset-job-href';
 import { isVideoCreationOperation, videoCreationStudioHref } from '@/lib/video-draft';
 import { useResource } from '@/lib/use-resource';
 
@@ -49,10 +49,10 @@ const TABS = [
 type Tab = (typeof TABS)[number];
 
 /**
- * An image- or video-creation draft reopens straight into the studio's
- * inline flow (full version history, continue refining — see
- * `ImageGenerationStudio`/`VideoGenerationStudio`) instead of the publish
- * form; a video draft only once it has an `output_asset_id` (a still-
+ * An image draft reopens its card's workspace, else its latest job's
+ * read-only page (`imageDraftHref`); a video-creation draft reopens the
+ * studio's inline flow (full version history, continue refining — see
+ * `VideoGenerationStudio`) once it has an `output_asset_id` (a still-
  * generating/failed one has nothing to show yet, same gate
  * `recent-draft-card.tsx` uses). Every other draft (audio/shortform) still
  * has no "resume the studio" concept, so it keeps going to `/publish/{id}`
@@ -60,8 +60,8 @@ type Tab = (typeof TABS)[number];
  */
 function draftResumeHref(draft: Draft): string {
   const operation = draft.params?.operation;
-  if (isImageCreationOperation(operation)) {
-    return imageCreationStudioHref(draft.id);
+  if (isImageOperation(operation)) {
+    return imageDraftHref(draft);
   }
   if (isVideoCreationOperation(operation) && draft.output_asset_id) {
     return videoCreationStudioHref(draft.id);

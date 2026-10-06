@@ -8,9 +8,9 @@ import { STAGES, STAGE_FOR_EVENT, type Stage } from './job-stages';
  * so "furthest reached" and "currently displayed" are different questions and
  * neither is a field on the job.
  *
- * This was copied verbatim in three places — `job-progress.tsx`,
- * `inline-image-result.tsx` and `inline-video-result.tsx` — before the canvas
- * workbench needed a fourth. The subtleties below are exactly the kind that
+ * This was copied verbatim in three places — `job-progress.tsx`, the
+ * (since retired) image studio's inline result and `inline-video-result.tsx`
+ * — before the canvas workbench needed a fourth. The subtleties below are exactly the kind that
  * drift apart across copies.
  */
 

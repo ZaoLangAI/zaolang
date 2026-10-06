@@ -4,7 +4,7 @@
 
 | Axis | Enum (`back/app/models/enums.py`) | Valid for | Values |
 | --- | --- | --- | --- |
-| image | `ImageAssetKind` → `GenerationParams.asset_kind` | `text_to_image`, `image_to_image` | `general`, `character`, `scene`, `cover`, `prop` (AC-4: `target_prop_id`, `prop_state`, write-back `_link_prop_output`) |
+| image | `ImageAssetKind` → `GenerationParams.asset_kind` | `text_to_image`, `image_to_image` | `general` (canvas Agent only), `character`, `scene`, `prop` (AC-4: `target_prop_id`, `prop_state`, write-back `_link_prop_output`); `cover` is read-only history (AC-8: `GenerationParams` refuses it, `ensure_default_templates` seeds no cover template, the planner/copy coaches dropped it). Consumer image jobs need a library kind: `api/v1/jobs.py:_require_asset_image_kind` 422s `IMAGE_ASSET_KIND_REQUIRED` in quote, quote:batch, submit, retry, promote — never in `jobs_service.submit` |
 | video | `VideoAssetKind` → `GenerationParams.video_asset_kind` | the three video operations | `general`, `scene_video`, `character_action`, `transition_video`, `cover_video` |
 
 1. At most one axis is non-`general` (`validate_generation_params` in `back/app/api/schemas/jobs.py`); `nodes._asset_axis(ctx)` returns `("image", kind)` / `("video", kind)` / `None`.

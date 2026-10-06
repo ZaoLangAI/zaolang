@@ -14,9 +14,8 @@ import type { AssetPresetParams } from '@/features/image-assets/vocabulary';
 /** The inputs the price depends on.
  *
  * `assetKind`/`characterViews` are optional because most callers price a
- * single, ordinary output — but a multi-view character completion (see
- * `character-library.tsx` and `ImageGenerationStudio`'s own completion
- * submit) costs one image per view (`character_output_count` on the
+ * single, ordinary output — but a multi-view character completion costs
+ * one image per view (`character_output_count` on the
  * backend), and omitting them here would quote 1× while `submit()` reserves
  * N×, exactly the estimate/charge mismatch this pair of fields closes.
  */
@@ -188,9 +187,9 @@ const QUOTE_DEBOUNCE_MS = 250;
 /**
  * Quoting and submitting a generation, shared by every studio shell.
  *
- * `ImageGenerationStudio`, `VideoGenerationStudio` and `AudioGenerationStudio`
+ * `VideoGenerationStudio`, `AudioGenerationStudio` and `MusicGenerationStudio`
  * are independent top-level components — their params panels differ enough
- * (asset kind vs. duration/frames vs. voice) that forcing them into one
+ * (duration/frames vs. voice vs. style) that forcing them into one
  * component meant branching on operation type everywhere. But `/create/new`
  * and `/remix/[workId]` still submit the same job with the same pricing
  * rules, so all three shells call this one hook rather than each growing
@@ -293,8 +292,8 @@ export function useGenerationSubmit(
         setError(null);
         setFieldErrors({});
         try {
-          // An explicit `draftId` (the image studio reusing its own earlier
-          // draft across iterations) always wins over a draft left over from
+          // An explicit `draftId` (a studio reusing its own earlier draft
+          // across iterations) always wins over a draft left over from
           // a previous failed attempt.
           if (input.draftId) pendingDraft.current = input.draftId;
 

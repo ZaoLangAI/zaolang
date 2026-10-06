@@ -197,7 +197,11 @@ def test_a_broker_outage_after_commit_releases_the_reservation(
         json={
             "operation": "text_to_image",
             "quality_tier": "standard",
-            "params": {"prompt": "海边的黄昏，长镜头", "aspect_ratio": "16:9"},
+            "params": {
+                "prompt": "海边的黄昏，长镜头",
+                "aspect_ratio": "16:9",
+                "asset_kind": "scene",
+            },
         },
         headers=auth_header(funded),
     )

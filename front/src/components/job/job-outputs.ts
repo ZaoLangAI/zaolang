@@ -7,9 +7,9 @@
  * silently shows nothing for almost every job, which is exactly the bug the
  * canvas workbench shipped with before this was shared.
  *
- * Written out three times already (`inline-image-result.tsx`,
- * `existing-asset-picker-dialog.tsx`, and the workbench) before being pulled
- * here.
+ * Written out three times already (the retired image studio's inline
+ * result, `existing-asset-picker-dialog.tsx`, and the workbench) before
+ * being pulled here.
  */
 export interface JobOutputs {
   urls: string[];
@@ -62,20 +62,4 @@ export function partialDelivery(job: {
       ? Math.max(0, job.reserved_credits - job.actual_credits)
       : null;
   return { delivered, requested, refunded };
-}
-
-/**
- * Where 去定稿 goes for a job whose images were filed as candidates (P2-1):
- * its card's management page (`/create/{characters|scenes}/[id]`), else
- * just the library.
- */
-export function reviewCandidatesHref(job: {
-  asset_kind?: string | null;
-  linked_character_id?: string | null;
-  linked_scene_id?: string | null;
-}): string {
-  const scene = job.asset_kind === 'scene';
-  const cardId = scene ? job.linked_scene_id : job.linked_character_id;
-  const base = scene ? '/create/scenes' : '/create/characters';
-  return cardId ? `${base}/${encodeURIComponent(cardId)}` : base;
 }

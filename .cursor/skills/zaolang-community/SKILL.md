@@ -23,7 +23,7 @@ Not here → `zaolang-discovery-search` (style presets in `community.py`), `zaol
 | `back/app/models/platform.py` | `Notification` (`uq_notifications_user_creation_target`), `Device`, `ReportCase`; also `learning.py` `LearnPost`, `identity.py` `Profile`/`Follow`, `works.py` `Collection*`/`Bookmark` |
 | `front/src/app/[locale]/(site)/learn/` | list, `[postId]`, `publish` (`?edit=`) |
 | `front/src/components/learn/` | publish form (MDXEditor, dynamic `ssr:false`), `learn-body-view.tsx` |
-| `front/src/components/notifications/notification-format.ts` | `GROUPS`, `TITLE_KEYS`, `CREATION_TARGET_TYPES`, `targetHref` |
+| `front/src/components/notifications/notification-format.ts` | `GROUPS`, `TITLE_KEYS`, `CREATION_TARGET_TYPES`, `targetHref` (an image job → `asset-job-href.ts`: `job_payload` carries `asset_kind`, `linked_*` / `target_*` card ids and `target_variant_id`) |
 | `front/src/components/collection/` | `/collection` tabs (`TABS` in `library-tabs.tsx`), collection dialogs |
 | `front/src/components/profile/` | `profile-header.tsx` (follow toggle), `activity-feed.tsx` |
 

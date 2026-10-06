@@ -3,10 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { AssetEntry, AssetVariant, GenerationJob } from '@/lib/api/types';
 
 import {
-  borrowedCharacterReferences,
   CHARACTER_SHEET_PROMPT_HINT,
   characterHeroUrl,
-  characterImageStudioHref,
   characterManageHref,
   characterSheetAsset,
   characterSheetPrompt,
@@ -50,37 +48,6 @@ describe('characterSheetPrompt', () => {
     expect(characterSheetPrompt({ name: '林野', appearance: '银发风衣。' })).toBe(
       `林野。银发风衣。${CHARACTER_SHEET_PROMPT_HINT}`,
     );
-  });
-});
-
-describe('characterImageStudioHref', () => {
-  it('opens on the identity portrait with identity text and no sheet layout', () => {
-    const href = characterImageStudioHref({
-      characterId: 'skl_char',
-      name: '林深',
-      appearance: '银发风衣',
-      portrait: true,
-    });
-    const url = new URL(href, 'https://example.test');
-    expect(url.searchParams.get('characterPortrait')).toBe('1');
-    expect(url.searchParams.get('prompt')).toBe('林深。银发风衣');
-  });
-
-  it('targets the image studio with the character sheet query', () => {
-    const href = characterImageStudioHref({
-      characterId: 'skl_char',
-      name: '林深',
-      appearance: '银发风衣',
-    });
-    const url = new URL(href, 'https://example.test');
-    expect(url.pathname).toBe('/create/new');
-    expect(url.searchParams.get('mode')).toBe('image_creation');
-    expect(url.searchParams.get('assetKind')).toBe('character');
-    expect(url.searchParams.get('targetCharacterId')).toBe('skl_char');
-    expect(url.searchParams.get('subjectNameHint')).toBe('林深');
-    expect(url.searchParams.get('returnTo')).toBe('/create/characters');
-    expect(url.searchParams.get('prompt')).toContain('银发风衣');
-    expect(url.searchParams.get('prompt')).toContain('设定图');
   });
 });
 
@@ -253,45 +220,6 @@ function entry(id: string, entry_type: AssetEntry['entry_type'], status = 'appro
 function look(id: string, is_default: boolean, entries: AssetEntry[]): AssetVariant {
   return { id, name: id, is_default, sort_order: 0, entries } as AssetVariant;
 }
-
-describe('borrowedCharacterReferences', () => {
-  const portrait = entry('portrait', 'identity_portrait');
-  const sheet = entry('sheet', 'character_sheet');
-  const outfit = entry('outfit', 'outfit_detail');
-
-  it('is the approved portrait for the default look, nothing without one', () => {
-    const withPortrait = { looks: [look('default', true, [portrait, sheet])] } as Character;
-    expect(borrowedCharacterReferences(withPortrait).map((e) => e.id)).toEqual(['portrait']);
-    const candidateOnly = {
-      looks: [look('default', true, [entry('p2', 'identity_portrait', 'candidate'), sheet])],
-    } as Character;
-    expect(borrowedCharacterReferences(candidateOnly)).toEqual([]);
-  });
-
-  it('adds the look’s own sheet and outfit references for a 换装', () => {
-    const character = {
-      looks: [
-        look('default', true, [portrait, sheet]),
-        look('wedding', false, [entry('wedding_sheet', 'character_sheet'), outfit]),
-      ],
-    } as Character;
-    expect(borrowedCharacterReferences(character, 'wedding').map((e) => e.id)).toEqual([
-      'portrait',
-      'wedding_sheet',
-      'outfit',
-    ]);
-  });
-
-  it('falls back to the default sheet for the face when there is no portrait', () => {
-    const character = {
-      looks: [look('default', true, [sheet]), look('wedding', false, [outfit])],
-    } as Character;
-    expect(borrowedCharacterReferences(character, 'wedding').map((e) => e.id)).toEqual([
-      'sheet',
-      'outfit',
-    ]);
-  });
-});
 
 describe('characterManageHref', () => {
   it('links the card page, optionally focused on one look', () => {

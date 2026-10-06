@@ -17,7 +17,7 @@
 | `front/src/features/script/script-breakpoint.ts` | breakpoint keys, locations, hrefs, video index (`orderedBreakpointKeys`, `resolveBreakpointHref`…) |
 | `front/src/features/script/script-prompts.ts` | every prompt helper (`composeClipPrompt`, `breakpointSegmentPrompt`, `characterImagePrompt`…) |
 | `front/src/features/script/script-clip-studio.tsx` | one-cut video studio at `/create/script/{episodeId}/clip?key=` |
-| `front/src/features/script/script-link-picker.tsx` | 关联角色卡/场景卡 picker → `PATCH /v1/scripts/{id}/links` |
+| `front/src/features/script/script-link-picker.tsx` | 关联角色卡/场景卡 picker → `PATCH /v1/scripts/{id}/links`; 新建…卡 / 去创作 footer |
 | `front/src/features/script/batch-plan.ts` | pure pending/bound computations (`pendingCharacters`, `pendingVideos`, `pendingDialogueLines`…) |
 | `front/src/features/script/use-script-batch.ts` | batch runner, `BatchKind` characters/scenes/videos/audio, `quoteForBatch`, `submitJob`/`pollJob` (reused by 白膜) |
 | `front/src/features/script/script-batch-dialog.tsx` | batch params + live quote before submit |
@@ -50,7 +50,7 @@
 14. Breakpoint chip → `/create/script/{episodeId}/clip?key=` (id only, never `?prompt=`); bound drafts add `draftId` to resume history. Batch generation submits in memory and does not open the page.
 15. Clip studio polish sends `script_segment` (heading + ≤60 blocks) to `POST /v1/generation/prompts/enhance`; the block union rejects `breakpoint` (a new cut would shift keys and orphan bound drafts). Two rounds: response `questions`, next request `question_answers` (≤8). Accept patches only that cut's block texts.
 16. Submit composes `composeClipPrompt` into `params.prompt` and stores `link_episode_id`, `link_breakpoint_key`, `clip_user_prompt` on the draft.
-17. Link picker writes `character_ref_id`/`ref_id` against the existing `/v1/characters`/`/v1/scenes` library; its 生成角色图/场景图 entry deep-links to `/create/new?mode=image_creation` with `returnTo`/`returnLinkKind`/`returnLinkLabel` (`buildCreateHref`).
+17. Link picker writes `character_ref_id`/`ref_id` against the existing `/v1/characters`/`/v1/scenes` library. With nothing linked its 新建角色卡 / 新建场景卡 (`onCreate` in `script-document-view.tsx`) creates a text-only card from the script's character traits / scene heading + `scene` blocks and links it via `PATCH /v1/scripts/{id}/links`; once linked the footer offers 去创作 (the card's workspace). There is no image-studio jump-out or 返回文案创作 link-back any more (AC-8).
 
 ## Batch generation
 

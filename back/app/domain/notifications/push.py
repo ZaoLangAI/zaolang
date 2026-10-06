@@ -383,10 +383,29 @@ def job_payload(session: Session, job: GenerationJob) -> dict[str, Any]:
         "is_remix": bool(job.source_work_version_id),
     }
     if job.draft_id:
-        # Lets the frontend route image-creation jobs back into the studio
+        # Lets the frontend route video-creation jobs back into the studio
         # (inline progress/version history) instead of `/jobs/[jobId]` — see
         # `notification-format.ts#targetHref`.
         payload["draft_id"] = job.draft_id
+    # Image jobs open their card's workspace (`front/src/lib/asset-job-href.ts`):
+    # the card the output filed into (`linked_*`, set at write-back — the
+    # list overlay re-reads it), else the one the request named (`target_*`),
+    # and the look / variant / condition it targeted. A general or cover
+    # image names none and lands on its read-only job page.
+    asset_kind = params.get("asset_kind")
+    if isinstance(asset_kind, str) and asset_kind:
+        payload["asset_kind"] = asset_kind
+    for key, value in (
+        ("linked_character_id", job.linked_character_id),
+        ("linked_scene_id", job.linked_scene_id),
+        ("linked_prop_id", job.linked_prop_id),
+        ("target_character_id", params.get("target_character_id")),
+        ("target_scene_id", params.get("target_scene_id")),
+        ("target_prop_id", params.get("target_prop_id")),
+        ("target_variant_id", params.get("target_variant_id")),
+    ):
+        if isinstance(value, str) and value:
+            payload[key] = value
     profile = params.get("shortform_profile")
     if isinstance(profile, str) and profile:
         payload["shortform_profile"] = profile

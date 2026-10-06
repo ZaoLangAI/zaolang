@@ -58,7 +58,6 @@ ASSET_KIND_BUCKETS: frozenset[str] = frozenset(
     {
         ImageAssetKind.CHARACTER.value,
         ImageAssetKind.SCENE.value,
-        ImageAssetKind.COVER.value,
         VideoAssetKind.CHARACTER_ACTION.value,
         VideoAssetKind.TRANSITION.value,
         VideoAssetKind.COVER.value,

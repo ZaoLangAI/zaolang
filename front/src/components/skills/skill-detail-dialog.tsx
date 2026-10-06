@@ -20,7 +20,14 @@ import type {
 } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { formatCount } from '@/lib/format';
-import { creationStudioHref } from '@/lib/skill-mention';
+import {
+  ASSET_CREATION_KINDS,
+  assetCreationHref,
+  isImageOnlyTemplate,
+  skillCardKind,
+  videoCreationHref,
+  type AssetCreationKind,
+} from '@/lib/skill-mention';
 import { useResource } from '@/lib/use-resource';
 
 import { UnlockedVoicesSection } from './unlocked-voices';
@@ -50,11 +57,12 @@ const CATEGORY_LABEL_KEY: Record<
   other: 'categoryOther',
 };
 
-const IMAGE_ASSET_CATEGORIES = new Set<CreationSkillCategory>([
-  'character',
-  'scene_asset',
-  'cover_asset',
-]);
+const USE_FOR_KEY: Record<AssetCreationKind, 'useForCharacters' | 'useForScenes' | 'useForProps'> =
+  {
+    character: 'useForCharacters',
+    scene: 'useForScenes',
+    prop: 'useForProps',
+  };
 
 const PARAM_LABEL_KEY: Record<
   string,
@@ -92,7 +100,7 @@ export function SkillDetailDialog({
   const t = useTranslations('skillLibrary');
   const locale = useLocale() as Locale;
   const router = useRouter();
-  const { requireAuth } = useSession();
+  const { requireAuth, user } = useSession();
 
   const [pendingUnlock, setPendingUnlock] = useState(false);
   const [forceUnlocked, setForceUnlocked] = useState(false);
@@ -108,12 +116,12 @@ export function SkillDetailDialog({
     setForceUnlocked(false);
   };
 
-  const applyAndEnterStudio = () => {
-    if (!skill) return;
+  // Usage is counted once where the skill lands (the video studio's
+  // `?skillId=` seed, the asset library's carried style skill) — do not
+  // POST `/apply` here or a plaza click double-counts.
+  const enter = (href: string) => {
     close();
-    // Usage is counted once by the studio's `?skillId=` seed apply — do
-    // not POST `/apply` here or a plaza click double-counts.
-    router.push(creationStudioHref(skill));
+    router.push(href);
   };
 
   return (
@@ -176,7 +184,17 @@ export function SkillDetailDialog({
                 onUnlock={() =>
                   requireAuth({ label: skill.title, run: () => setPendingUnlock(true) })
                 }
-                onApply={() => requireAuth({ label: skill.title, run: applyAndEnterStudio })}
+                onApply={(kind) =>
+                  requireAuth({
+                    label: skill.title,
+                    run: () =>
+                      enter(
+                        kind
+                          ? assetCreationHref(kind, skill.id)
+                          : videoCreationHref(skill, user?.id),
+                      ),
+                  })
+                }
               />
             </div>
           </div>
@@ -297,14 +315,32 @@ function DetailActions({
   skill: CreationSkillSummary;
   locked: boolean;
   onUnlock: () => void;
-  onApply: () => void;
+  /** `kind`: 用于{角色|场景|道具}创作; none = the video studio. */
+  onApply: (kind?: AssetCreationKind) => void;
 }) {
   const t = useTranslations('skillLibrary');
 
   if (locked) return <Button onClick={onUnlock}>{t('unlock')}</Button>;
+  // An image-only recipe is a style skill for the asset workspaces.
+  if (isImageOnlyTemplate(skill)) {
+    return (
+      <div className="flex flex-wrap justify-end gap-2">
+        {ASSET_CREATION_KINDS.map((kind, index) => (
+          <Button
+            key={kind}
+            variant={index === 0 ? 'primary' : 'secondary'}
+            onClick={() => onApply(kind)}
+          >
+            {t(USE_FOR_KEY[kind])}
+          </Button>
+        ))}
+      </div>
+    );
+  }
+  // An asset card goes to video creation as a reference.
   return (
-    <Button onClick={onApply}>
-      {IMAGE_ASSET_CATEGORIES.has(skill.category) ? t('goCreateWithSetup') : t('goCreate')}
+    <Button onClick={() => onApply()}>
+      {skillCardKind(skill) ? t('goCreateWithSetup') : t('goCreate')}
     </Button>
   );
 }

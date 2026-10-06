@@ -8,23 +8,12 @@ import { useToast } from '@/components/ui/toast';
 import { EmptyState, ErrorNotice, Skeleton } from '@/components/ui/primitives';
 import { useMinWidth } from '@/lib/use-media-query';
 
-import { useRouter } from '@/i18n/navigation';
-
 import { getCanvasProject, type CanvasGraph, type CanvasProject } from './api';
 import { CanvasView } from './canvas-view';
-import { readCameraControl } from './camera-control';
-import { applyCameraPrompt } from './canvas-camera';
-import { missingDomainNodes, upstreamAssetIds, type CanvasFlowNode } from './graph-convert';
+import { missingDomainNodes } from './graph-convert';
 import { restoreCanvasTaskCard, type CanvasAgentTask } from './agent-api';
-import { SendToSeriesDialog } from './send-to-series';
 import { WorkbenchPanel } from './workbench-panel';
 import { useCanvasSync } from './use-canvas-sync';
-
-/** A drama canvas generates into its own first episode; there is exactly one
- * series behind it, so asking which would be noise. */
-function firstEpisodeId(project: CanvasProject): string | null {
-  return project.snapshot.episodes[0]?.id ?? null;
-}
 
 function SaveIndicator({
   status,
@@ -75,9 +64,7 @@ function LiveIndicator({ live }: { live: boolean }) {
 
 function CanvasBody({ initial }: { initial: CanvasProject }) {
   const t = useTranslations('canvas');
-  const router = useRouter();
   const { notify } = useToast();
-  const [sendingNode, setSendingNode] = useState<CanvasFlowNode | null>(null);
   const {
     project,
     graph: serverGraph,
@@ -111,34 +98,6 @@ function CanvasBody({ initial }: { initial: CanvasProject }) {
   // (timeline editor, publish, trash, deleting the canvas), gated on
   // `viewer_role` where those are added — not about the canvas surface.
   const onCommit = useCallback((next: CanvasGraph) => save(next), [save]);
-
-  /** Hand a prompt node off to the generation studio.
-   *
-   * A deep link rather than an in-canvas generation pipeline: the studio
-   * already owns quoting, the model picker, SSE progress and version history,
-   * and this is the same jump-out convention the script studio uses for a
-   * breakpoint (`buildBreakpointVideoHref`). On a drama canvas the episode id
-   * rides along, so `POST /v1/drafts` records `params.link_episode_id` and the
-   * result comes back attached to that episode with no extra step.
-   */
-  const goGenerate = useCallback(
-    (node: CanvasFlowNode, episodeId: string | null) => {
-      const text = typeof node.data.payload?.text === 'string' ? node.data.payload.text : '';
-      // Lens direction can only reach a generation as prompt text: no model
-      // this platform routes to accepts a focal length or an aperture as a
-      // parameter. `applyCameraPrompt` is a no-op unless the card's camera
-      // panel was switched on.
-      const prompt = applyCameraPrompt(text, readCameraControl(node.data.payload));
-      const params = new URLSearchParams({ mode: 'image_creation', prompt });
-      if (episodeId) params.set('linkEpisodeId', episodeId);
-      // Wiring a picture card into a prompt card is what makes it a reference
-      // image for that request — otherwise an edge would be decoration.
-      const references = upstreamAssetIds(node.id, graph);
-      if (references.length > 0) params.set('referenceAssetIds', references.join(','));
-      router.push(`/create/new?${params.toString()}`);
-    },
-    [graph, router],
-  );
 
   const reloadSnapshot = useCallback(() => {
     // Re-read the hydration snapshot after a card starts binding something it
@@ -175,21 +134,6 @@ function CanvasBody({ initial }: { initial: CanvasProject }) {
       }
     },
     [flush, notify],
-  );
-
-  const onGenerate = useCallback(
-    (node: CanvasFlowNode) => {
-      const episodeId = firstEpisodeId(project);
-      // A drama canvas already knows where the result belongs. A free canvas
-      // asks, so its output does not become an orphan the user has to
-      // reconcile by hand later.
-      if (episodeId) {
-        goGenerate(node, episodeId);
-        return;
-      }
-      setSendingNode(node);
-    },
-    [goGenerate, project],
   );
 
   return (
@@ -234,21 +178,11 @@ function CanvasBody({ initial }: { initial: CanvasProject }) {
           graph={graph}
           snapshot={project.snapshot}
           onCommit={onCommit}
-          onGenerate={onGenerate}
           onSnapshotStale={reloadSnapshot}
           exportName={project.title}
           onImportFailed={() => notify(t('importFailed'), 'error')}
         />
       </div>
-      <SendToSeriesDialog
-        open={sendingNode !== null}
-        onClose={() => setSendingNode(null)}
-        onConfirm={(episodeId) => {
-          const node = sendingNode;
-          setSendingNode(null);
-          if (node) goGenerate(node, episodeId);
-        }}
-      />
     </div>
   );
 }

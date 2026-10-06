@@ -4,7 +4,9 @@ content, a 「戏码与情绪 drama」section carrying the opposite (one kind of
 scene, played and cut), a "图片风格 image style" section for the image studio,
 a canvas section (framing / lighting / staging / method) for composing a
 still before it is animated, and a dual-shape 「图片资产」section
-(`character` / `scene_asset` / `cover_asset`).
+(`character` / `scene_asset`). The eight `cover_asset` rows were dropped
+with cover image generation (AC-8); rows already planted stay in the DB,
+hidden from the plaza (`service.HIDDEN_PUBLIC_CATEGORIES`).
 
 Genre/shot/scene *naming conventions* here are informed by patterns common to
 several open-source "AI short-drama" Agent Skill suites (Claude/Codex
@@ -85,8 +87,8 @@ _COVERS_DIR = Path(__file__).parent / "seed_covers"
 # section are the deliberate exceptions: those rows use `_IMAGE_OPERATIONS`
 # instead so they surface in the image studio's `@` menu
 # (`text_to_image`/`image_to_image`) and stay out of the video one. Image
-# styles stay on `STYLE`; image-asset rows use `CHARACTER` / `SCENE_ASSET` /
-# `COVER_ASSET` so the marketplace 「图片资产」tab can list them.
+# styles stay on `STYLE`; image-asset rows use `CHARACTER` / `SCENE_ASSET`
+# so the marketplace 「图片资产」tab can list them.
 _VIDEO_OPERATIONS: tuple[Operation, ...] = (
     Operation.TEXT_TO_VIDEO,
     Operation.IMAGE_TO_VIDEO,
@@ -4858,110 +4860,6 @@ CATALOG: tuple[CatalogSkill, ...] = (
             "faces, festive space that feels too quiet"
         ),
         aspect_ratio="16:9",
-        applicable_operations=_IMAGE_OPERATIONS,
-    ),
-    CatalogSkill(
-        key="asset-cover-title-safe",
-        title="竖屏标题安全区封面",
-        description=("竖版封面的基础版式：上三分之一留白给标题，主体压在中下，画面里不写任何字。"),
-        category=CreationSkillCategory.COVER_ASSET,
-        prompt_suffix=(
-            "vertical nine-sixteen key art, top third empty negative space "
-            "reserved for a title, subject placed in the lower two-thirds, "
-            "cinematic lighting, no logos, no legible text rendered"
-        ),
-        aspect_ratio="9:16",
-        applicable_operations=_IMAGE_OPERATIONS,
-    ),
-    CatalogSkill(
-        key="asset-cover-reversal",
-        title="打脸反转封面",
-        description="冷暖对切的竖屏封面：人物回眸停在反转落地的那一拍，上方留出标题带。",
-        category=CreationSkillCategory.COVER_ASSET,
-        prompt_suffix=(
-            "vertical short-drama cover, cold-to-warm split lighting, one "
-            "figure looking back over the shoulder at the turning point, top "
-            "third title-safe blank band, no legible text rendered"
-        ),
-        aspect_ratio="9:16",
-        applicable_operations=_IMAGE_OPERATIONS,
-    ),
-    CatalogSkill(
-        key="asset-cover-sweet-romance",
-        title="甜宠暖金封面",
-        description="暖金柔光的竖屏封面，两人关系用距离和光说完，标题区留白，不写字。",
-        category=CreationSkillCategory.COVER_ASSET,
-        prompt_suffix=(
-            "vertical warm golden romance cover, soft highlight bloom, two "
-            "figures in a quiet close distance, top third title-safe blank, "
-            "flattering backlight, no legible text rendered"
-        ),
-        aspect_ratio="9:16",
-        applicable_operations=_IMAGE_OPERATIONS,
-    ),
-    CatalogSkill(
-        key="asset-cover-suspense",
-        title="悬疑青冷封面",
-        description="低饱和青绿色调的竖屏封面，人物缩小在阴影里，上方留给标题。",
-        category=CreationSkillCategory.COVER_ASSET,
-        prompt_suffix=(
-            "vertical teal noir cover, desaturated crushed shadows, one small "
-            "figure in a large dark space, top third title-safe blank, visible "
-            "film grain, no legible text rendered"
-        ),
-        aspect_ratio="9:16",
-        applicable_operations=_IMAGE_OPERATIONS,
-    ),
-    CatalogSkill(
-        key="asset-cover-period-intrigue",
-        title="古装权谋封面",
-        description="戏曲式侧光的竖屏宫斗封面，单人礼服剪影，标题安全区留白。",
-        category=CreationSkillCategory.COVER_ASSET,
-        prompt_suffix=(
-            "vertical period palace cover, strong opera sidelight, one "
-            "costumed figure, rich textile texture, top third title-safe "
-            "blank, no logos, no legible text rendered"
-        ),
-        aspect_ratio="9:16",
-        applicable_operations=_IMAGE_OPERATIONS,
-    ),
-    CatalogSkill(
-        key="asset-cover-rebirth",
-        title="重生闪回封面",
-        description="同一人被一分为二：一侧暗的残片、一侧尚未发生的清晨，上方留白给标题。",
-        category=CreationSkillCategory.COVER_ASSET,
-        prompt_suffix=(
-            "vertical rebirth-cover still, a brief dark flash of a future "
-            "crisis split against a bright ordinary morning of the same "
-            "person, top third title-safe blank, no legible text rendered"
-        ),
-        aspect_ratio="9:16",
-        applicable_operations=_IMAGE_OPERATIONS,
-    ),
-    CatalogSkill(
-        key="asset-cover-identity-freeze",
-        title="身份揭示定格封面",
-        description="证据抛出后的表情定格封面，脸部占中下，上方留白，不写对白或标题字。",
-        category=CreationSkillCategory.COVER_ASSET,
-        prompt_suffix=(
-            "vertical cover freeze on a reveal-beat close-up, collapsing "
-            "expression held, top third title-safe blank, dramatic key light, "
-            "no legible text rendered"
-        ),
-        aspect_ratio="9:16",
-        applicable_operations=_IMAGE_OPERATIONS,
-    ),
-    CatalogSkill(
-        key="asset-cover-series-key-art",
-        title="系列主视觉海报封面",
-        description="系列级竖屏主视觉：电影感构图、大面积页眉留白，不放 logo 也不写片名。",
-        category=CreationSkillCategory.COVER_ASSET,
-        prompt_suffix=(
-            "vertical series key art, cinematic hero composition, large empty "
-            "header band reserved for a title, no logos, no legible text "
-            "rendered"
-        ),
-        aspect_ratio="9:16",
         applicable_operations=_IMAGE_OPERATIONS,
     ),
 )

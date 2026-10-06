@@ -30,8 +30,6 @@ export const CHARACTER_COMPLETION_PROMPT = '参考本图生成侧面图和背面
 export const CHARACTER_SHEET_PROMPT_HINT =
   '生成一张角色设定图：左侧全身三视图（正面、侧面、背面），右侧面部特写、服装配饰细节与色板；纯白背景，同一人物，单张输出。';
 
-const CHARACTER_LIBRARY_RETURN_TO = '/create/characters';
-
 /** Identity + sheet-layout sentence for a library or script jump-out. */
 export function characterSheetPrompt(input: { name: string; appearance?: string | null }): string {
   const name = input.name.trim();
@@ -41,33 +39,6 @@ export function characterSheetPrompt(input: { name: string; appearance?: string 
     ? `${identity}。${CHARACTER_SHEET_PROMPT_HINT}`
     : CHARACTER_SHEET_PROMPT_HINT;
   return prompt.slice(0, STUDIO_PROMPT_MAX_LENGTH);
-}
-
-/** Deep link into `ImageGenerationStudio` for a character-sheet job. */
-export function characterImageStudioHref(input: {
-  characterId: string;
-  name: string;
-  appearance?: string | null;
-  returnTo?: string;
-  /** File the sheet under this look (`target_variant_id`). */
-  variantId?: string;
-  /** Open on the identity portrait (定妆照) — identity text, no sheet layout. */
-  portrait?: boolean;
-}): string {
-  const sheetPrompt = characterSheetPrompt({ name: input.name, appearance: input.appearance });
-  const params = new URLSearchParams({
-    mode: 'image_creation',
-    assetKind: 'character',
-    targetCharacterId: input.characterId,
-    prompt: input.portrait
-      ? sheetPrompt.replace(CHARACTER_SHEET_PROMPT_HINT, '').replace(/。$/, '')
-      : sheetPrompt,
-    subjectNameHint: input.name.trim().slice(0, 60),
-    returnTo: input.returnTo ?? CHARACTER_LIBRARY_RETURN_TO,
-  });
-  if (input.variantId) params.set('targetVariantId', input.variantId);
-  if (input.portrait) params.set('characterPortrait', '1');
-  return `/create/new?${params.toString()}`;
 }
 
 /** The card's own management page (looks, voices, graph). */
@@ -175,7 +146,7 @@ const TERMINAL_FAILURE_STATUSES = new Set(['failed', 'cancelled', 'expired']);
  * latest one doesn't mis-attribute that completion to an older front job).
  *
  * `jobs` is expected to be every job known under the same draft (see
- * `ImageGenerationStudio`'s `knownJobsById`) — this is a pure lookup over
+ * `GenerationVersionHistory`) — this is a pure lookup over
  * that list, not a fetch of its own.
  */
 export function findCompletionJobFor(
@@ -262,45 +233,4 @@ function legacyDefaultReferenceIds(character: Character): string[] {
   const unlabelled = entries.filter((asset) => !asset.label?.trim());
   const pool = sheet.length ? sheet : unlabelled.length ? unlabelled : entries;
   return pool.slice(0, 3).map((asset) => asset.asset_id);
-}
-
-/** Most images the backend borrows for a sheet/portrait job (`MAX_BORROWED_REFERENCES`). */
-const MAX_BORROWED_REFERENCES = 3;
-
-const approved = (entries: AssetEntry[] | undefined, type: AssetEntry['entry_type']) =>
-  (entries ?? []).filter((entry) => entry.entry_type === type && entry.status !== 'candidate');
-
-/**
- * What a character sheet / identity portrait job borrows on the backend when
- * it is submitted with no reference image — mirrors
- * `reference_resolver._borrow_identity_reference` (P2-2, P2-3): the card's
- * approved identity portrait (定妆照); for a 换装 (`lookId` is a non-default
- * look) also that look's approved sheet and its `outfit_detail` uploads,
- * with the default look's sheet standing in for the face when there is no
- * portrait. Empty when the backend would borrow nothing, so the studio
- * keeps attaching the card's sheet itself.
- */
-export function borrowedCharacterReferences(
-  character: Character,
-  lookId?: string | null,
-): AssetEntry[] {
-  const looks = character.looks ?? [];
-  const defaultLook = looks.find((look) => look.is_default);
-  const look =
-    (lookId ? looks.find((candidate) => candidate.id === lookId) : undefined) ?? defaultLook;
-  const portrait = approved(defaultLook?.entries, 'identity_portrait')[0];
-  const outfitChange = Boolean(look && !look.is_default);
-  const picked: AssetEntry[] = portrait ? [portrait] : [];
-  if (outfitChange) {
-    const own = approved(look?.entries, 'character_sheet');
-    picked.push(...own);
-    if (!portrait && own.length === 0) {
-      picked.push(...approved(defaultLook?.entries, 'character_sheet').slice(0, 1));
-    }
-    picked.push(...approved(look?.entries, 'outfit_detail'));
-  }
-  const seen = new Set<string>();
-  return picked
-    .filter((entry) => !seen.has(entry.asset_id) && Boolean(seen.add(entry.asset_id)))
-    .slice(0, MAX_BORROWED_REFERENCES);
 }

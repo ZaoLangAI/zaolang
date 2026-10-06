@@ -12,7 +12,6 @@ import { jobStageState, stoppedTitleKey } from '@/components/job/job-stage-state
 import { DevicePreview } from '@/components/media/device-preview';
 import { DownloadAssetButton } from '@/components/media/download-asset-button';
 import { LinkEpisodeDialog } from '@/components/studio/link-episode-dialog';
-import { SaveCoverAsSkillDialog } from '@/components/studio/save-cover-as-skill-dialog';
 import { Button } from '@/components/ui/button';
 import { IconBranch, IconCheck, IconSparkle } from '@/components/ui/icons';
 import { ErrorNotice } from '@/components/ui/primitives';
@@ -34,12 +33,11 @@ const STAGE_POP_DURATION = 420;
 /**
  * The video studio's preview-area result — replaces the standalone
  * `/jobs/[jobId]` page for `text_to_video`/`image_to_video`/`video_to_video`
- * so a generation never navigates the user away from the studio, extending
- * `inline-image-result.tsx`'s architecture to video creation (see the
- * `zaolang-frontend-ui` skill on image/video creation never navigating to
+ * so a generation never navigates the user away from the studio (see the
+ * `zaolang-frontend-ui` skill on video creation never navigating to
  * `/jobs/[jobId]`).
  *
- * A smaller sibling of `job-progress.tsx`/`inline-image-result.tsx`: no
+ * A smaller sibling of `job-progress.tsx`: no
  * event-log sidebar (that stays `job-progress.tsx`-only), no character-
  * completion surface (video has none), no multi-output gallery (a video job
  * only ever produces one output — see the `zaolang-generation-jobs` skill's
@@ -92,7 +90,6 @@ export function InlineVideoResult({
   const { user } = useSession();
 
   const [retrying, setRetrying] = useState(false);
-  const [savingCoverSkillOpen, setSavingCoverSkillOpen] = useState(false);
   const [promoteOpen, setPromoteOpen] = useState(false);
   const [linkEpisodeOpen, setLinkEpisodeOpen] = useState(false);
   const [openingEditor, setOpeningEditor] = useState(false);
@@ -136,10 +133,6 @@ export function InlineVideoResult({
 
   const canUseAsReference = job.status === 'succeeded' && Boolean(job.output_asset_id);
   const canDownload = canUseAsReference;
-  const canSaveCoverSkill =
-    job.status === 'succeeded' &&
-    job.video_asset_kind === 'cover_video' &&
-    Boolean(job.output_asset_id);
   const canPromote = job.status === 'succeeded' && job.quality_tier === 'preview';
   const canEnterEditor =
     job.status === 'succeeded' &&
@@ -352,11 +345,6 @@ export function InlineVideoResult({
             {linkedEpisodeId ? tStudio('linkEpisodeChange') : tStudio('linkEpisode')}
           </Button>
         ) : null}
-        {canSaveCoverSkill ? (
-          <Button variant="secondary" size="sm" onClick={() => setSavingCoverSkillOpen(true)}>
-            {t('saveCoverSkill')}
-          </Button>
-        ) : null}
         {canPromote ? (
           <Button variant="secondary" size="sm" onClick={() => setPromoteOpen(true)}>
             {t('promote')}
@@ -368,12 +356,6 @@ export function InlineVideoResult({
           </Button>
         ) : null}
       </div>
-
-      <SaveCoverAsSkillDialog
-        open={savingCoverSkillOpen}
-        onClose={() => setSavingCoverSkillOpen(false)}
-        outputAssetId={job.output_asset_id}
-      />
 
       {draftId ? (
         <LinkEpisodeDialog

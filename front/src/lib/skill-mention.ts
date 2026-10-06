@@ -10,10 +10,29 @@ const IMAGE_ASSET_CATEGORIES = new Set<CreationSkillCategory>([
   'character',
   'scene_asset',
   'cover_asset',
+  'prop_asset',
 ]);
 
+/** The library card kinds a skill can be, and the creation entries (AC-8). */
+export type AssetCreationKind = 'character' | 'scene' | 'prop';
+export const ASSET_CREATION_KINDS: AssetCreationKind[] = ['character', 'scene', 'prop'];
+const CARD_KIND_BY_CATEGORY: Partial<Record<CreationSkillCategory, AssetCreationKind>> = {
+  character: 'character',
+  scene_asset: 'scene',
+  prop_asset: 'prop',
+};
+const LIBRARY_PATH: Record<AssetCreationKind, string> = {
+  character: '/create/characters',
+  scene: '/create/scenes',
+  prop: '/create/props',
+};
+const REFERENCE_PARAM: Record<AssetCreationKind, string> = {
+  character: 'referenceCharacterIds',
+  scene: 'referenceSceneIds',
+  prop: 'referencePropIds',
+};
+
 const IMAGE_OPERATIONS = new Set<Operation>(['text_to_image', 'image_to_image']);
-const VIDEO_OPERATIONS = new Set<Operation>(['text_to_video', 'image_to_video', 'video_to_video']);
 
 export function escapeForRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -101,38 +120,52 @@ export function isSkillMentionable(skill: CreationSkillSummary, operation: Opera
   return isSkillApplicableToOperation(skill, operation) && isSkillUsableForMention(skill);
 }
 
-/** Plaza / `@` apply lands in the image studio when the skill is image-only. */
-export function creationStudioHref(
-  skill: Pick<CreationSkillSummary, 'id' | 'category' | 'applicable_operations'>,
-): string {
-  const ops = skill.applicable_operations ?? [];
-  const hasImage = ops.some((op) => IMAGE_OPERATIONS.has(op));
-  const hasVideo = ops.some((op) => VIDEO_OPERATIONS.has(op));
-  const mode = hasImage && !hasVideo ? 'image_creation' : 'video_creation';
-  const params = new URLSearchParams({ mode, skillId: skill.id });
-  if (skill.category === 'character') {
-    params.set('assetKind', 'character');
-    // Video has no `scene`/`cover` asset-kind equivalent, but a character
-    // recipe maps onto `character_action` so the video studio still gets
-    // the right context when `mode` resolves to `video_creation`.
-    if (mode === 'video_creation') params.set('videoAssetKind', 'character_action');
-  } else if (skill.category === 'scene_asset') {
-    params.set('assetKind', 'scene');
-  } else if (skill.category === 'cover_asset') {
-    params.set('assetKind', 'cover');
-  }
-  return `/create/new?${params.toString()}`;
+/** The library card kind of an asset-card skill (character / scene / prop). */
+export function skillCardKind(
+  skill: Pick<CreationSkillSummary, 'category'>,
+): AssetCreationKind | null {
+  return CARD_KIND_BY_CATEGORY[skill.category] ?? null;
 }
 
-/** The still an image-asset recipe should hang on the image studio's
- * reference rail: the card's anchor (`anchor_asset_id` on the skill
- * detail), else the cover. The skill detail's `params` no longer carries a
- * `reference_assets` copy (P2-8 dropped the JSON mirror). */
-export function firstSkillReferenceAssetId(
-  coverAssetId?: string | null,
-  anchorAssetId?: string | null,
-): string | undefined {
-  return anchorAssetId || coverAssetId || undefined;
+/**
+ * A template whose declared operations are all image ones. There is no
+ * image studio any more (AC-8): the plaza offers it as a style skill for
+ * 角色 / 场景 / 道具创作 (`assetCreationHref`) instead.
+ */
+export function isImageOnlyTemplate(
+  skill: Pick<CreationSkillSummary, 'category' | 'applicable_operations'>,
+): boolean {
+  if (skillCardKind(skill)) return false;
+  const ops = skill.applicable_operations ?? [];
+  return ops.length > 0 && ops.every((op) => IMAGE_OPERATIONS.has(op));
+}
+
+/** 用于{角色|场景|道具}创作: the library (the creation start) carries
+ * `?skillId=` into a card's workspace, where the 创作 slot panel
+ * preselects it as the style skill. */
+export function assetCreationHref(kind: AssetCreationKind, skillId: string): string {
+  return `${LIBRARY_PATH[kind]}?${new URLSearchParams({ skillId }).toString()}`;
+}
+
+/**
+ * Every other plaza CTA lands in the video studio (`?skillId=` applies it
+ * once there). An asset card the viewer owns rides along preselected as a
+ * reference card — `character_ids` / `scene_ids` / `prop_ids` must be the
+ * caller's own, so someone else's card is applied as a skill only.
+ */
+export function videoCreationHref(
+  skill: Pick<CreationSkillSummary, 'id' | 'category' | 'author'>,
+  viewerId?: string | null,
+): string {
+  const params = new URLSearchParams({ mode: 'video_creation', skillId: skill.id });
+  const kind = skillCardKind(skill);
+  // A character recipe maps onto `character_action` so the video studio
+  // gets the right context.
+  if (kind === 'character') params.set('videoAssetKind', 'character_action');
+  if (kind && viewerId && skill.author?.user_id === viewerId) {
+    params.set(REFERENCE_PARAM[kind], skill.id);
+  }
+  return `/create/new?${params.toString()}`;
 }
 
 export function filterMentionSkills(

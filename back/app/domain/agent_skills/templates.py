@@ -137,7 +137,7 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
     SkillTemplate(
         key="copy-enhance",
         label="文案生成 · 提示词润色",
-        description="通用画面描述的诊断式润色，未指定角色设定图、场景空镜或封面海报时使用。",
+        description="通用画面描述的诊断式润色，未指定角色设定图或场景空镜时使用。",
         category=ASSIST,
         prompt_template=copywriter.ENHANCE_SYSTEM_PROMPT,
         role="copy",
@@ -152,16 +152,6 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
         role="copy",
         slot=copywriter.ENHANCE_SLOT,
         asset_kind="character",
-    ),
-    SkillTemplate(
-        key="copy-enhance-cover",
-        label="文案润色 · 封面",
-        description="封面海报教练：单一主视觉、缩略图可读，并预留标题安全区。",
-        category=ASSIST,
-        prompt_template=copywriter.ENHANCE_SYSTEM_PROMPT_COVER,
-        role="copy",
-        slot=copywriter.ENHANCE_SLOT,
-        asset_kind="cover",
     ),
     SkillTemplate(
         key="copy-enhance-scene",

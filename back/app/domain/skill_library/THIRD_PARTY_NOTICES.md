@@ -218,11 +218,10 @@ copied prompt text" rule applies: every `title`, `description`, and
   the image-asset titles add 「空镜」and the suffixes forbid people.
 - **[black-forest-labs/skills typography-text](https://github.com/black-forest-labs/skills/blob/master/skills/flux-image-best-practices/rules/typography-text.md)**
   and **[haoyiyin/mflux-cover](https://github.com/haoyiyin/mflux-cover)**
-  — informed the title-safe / overlay-later habit named by
-  `asset-cover-title-safe` and the other seven vertical cover rows. This
-  catalogue still forbids rendered lettering on the still itself (same
-  rule as the image-style posters), leaving a blank header band instead of
-  asking the image model to spell a title.
+  — informed the title-safe / overlay-later habit of the eight vertical
+  cover rows (`asset-cover-*`, removed with cover image generation in
+  AC-8). The catalogue still forbids rendered lettering on a still (same
+  rule as the image-style posters).
 
 ## What was and wasn't taken
 

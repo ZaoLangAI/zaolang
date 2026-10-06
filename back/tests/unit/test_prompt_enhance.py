@@ -342,9 +342,9 @@ def test_an_explicit_agent_id_wins_over_asset_kind_routing(db: Session, author: 
     specific = agent_skills_service.create_profile(
         db,
         role="copy",
-        key="enhance-cover",
-        display_name="封面润色",
-        default_for_asset_kind="cover",
+        key="enhance-scene",
+        display_name="场景润色",
+        default_for_asset_kind="scene",
     )
     other = agent_skills_service.create_profile(
         db, role="copy", key="explicit-choice", display_name="显式指定"
@@ -354,7 +354,7 @@ def test_an_explicit_agent_id_wins_over_asset_kind_routing(db: Session, author: 
         db,
         prompt="女孩在海边",
         max_length=600,
-        asset_kind="cover",
+        asset_kind="scene",
         agent_id=other.id,
         user_id=author.id,
     )
@@ -644,11 +644,11 @@ def test_kind_enhance_prompts_are_purpose_built_not_generic_suffixes() -> None:
     generic = copywriter.ENHANCE_SYSTEM_PROMPT
     character = copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER
     scene = copywriter.ENHANCE_SYSTEM_PROMPT_SCENE
-    cover = copywriter.ENHANCE_SYSTEM_PROMPT_COVER
 
     assert not character.startswith(generic)
     assert not scene.startswith(generic)
-    assert not cover.startswith(generic)
+    # Cover images are retired (AC-8): no cover coach any more.
+    assert not hasattr(copywriter, "ENHANCE_SYSTEM_PROMPT_COVER")
     assert "角色设定图" in character
     assert "三视图" in character and "色板" in character
     assert "禁止改回单视角" in character
@@ -671,8 +671,6 @@ def test_kind_enhance_prompts_are_purpose_built_not_generic_suffixes() -> None:
     assert "era_region" in scene and "worldbuilding" in scene
     assert "真人写实影视短剧实拍质感" in scene
     assert "questions" in scene and "space_type_options" in scene
-    assert "封面海报" in cover
-    assert "安全区" in cover
     assert "作品发布文案" in copywriter.SYSTEM_PROMPT
     assert "lineage" in copywriter.SYSTEM_PROMPT
     action = copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION
@@ -686,7 +684,6 @@ def test_kind_enhance_prompts_are_purpose_built_not_generic_suffixes() -> None:
         generic,
         character,
         scene,
-        cover,
         action,
         transition,
         cover_video,
@@ -702,7 +699,7 @@ def test_every_enhance_coach_carries_the_shared_rewrite_self_checks() -> None:
 
     They live in the shared contract rather than in each coach precisely
     because they hold for a character sheet and a transition plate alike, so
-    this asserts all seven coaches actually inherited them. The positive-only
+    this asserts all six coaches actually inherited them. The positive-only
     rule is the load-bearing one: `restore_character_sheet_prompt`'s collapse
     markers (「不拼接侧面背面」and friends) are exactly what a coach produces
     when it writes negations into the prompt it hands downstream."""
@@ -710,7 +707,6 @@ def test_every_enhance_coach_carries_the_shared_rewrite_self_checks() -> None:
         copywriter.ENHANCE_SYSTEM_PROMPT,
         copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER,
         copywriter.ENHANCE_SYSTEM_PROMPT_SCENE,
-        copywriter.ENHANCE_SYSTEM_PROMPT_COVER,
         copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION,
         copywriter.ENHANCE_SYSTEM_PROMPT_TRANSITION_VIDEO,
         copywriter.ENHANCE_SYSTEM_PROMPT_COVER_VIDEO,

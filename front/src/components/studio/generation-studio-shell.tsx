@@ -22,8 +22,8 @@ export interface StudioSource {
 }
 
 /**
- * The layout shared by `ImageGenerationStudio`, `VideoGenerationStudio` and
- * `AudioGenerationStudio` — what used to be the bottom half of the single
+ * The layout shared by `VideoGenerationStudio`, `AudioGenerationStudio` and
+ * `MusicGenerationStudio` — what used to be the bottom half of the single
  * `GenerationStudio` component (source rail | preview | params aside, the
  * mobile bottom bar, and the params `Sheet`).
  *
@@ -39,13 +39,9 @@ export function GenerationStudioShell({
   uploads,
   onUploaded,
   onRemove,
-  onSelectUpload,
   isAudio = false,
   isPortraitPreview = false,
   previewSlot,
-  previewOverrideUrl,
-  previewPlaceholder,
-  hideDirectHint = false,
   promptSlot,
   canSubmit,
   submitting,
@@ -62,37 +58,19 @@ export function GenerationStudioShell({
   uploads: Asset[];
   onUploaded: (asset: Asset) => void;
   onRemove: (assetId: string) => void;
-  /** Clicking an uploaded thumbnail in `SourceMaterialRail` — shows it
-   * enlarged in the preview area via `previewOverrideUrl` below. Omitted by
-   * video/audio, which don't wire this up. */
-  onSelectUpload?: (asset: Asset) => void;
   /** Swaps the preview for a "no picture" hint instead of a poster/device frame. */
   isAudio?: boolean;
   /** Whether the chosen aspect ratio is vertical — decides `DevicePreview` vs a plain `Poster`. */
   isPortraitPreview?: boolean;
   /**
    * Replaces the default cover/poster preview block entirely — used by
-   * `ImageGenerationStudio` once a generation exists, so its inline progress
-   * and result (`InlineImageResult`) render where the placeholder cover used
+   * `VideoGenerationStudio` once a generation exists, so its inline progress
+   * and result (`InlineVideoResult`) render where the placeholder cover used
    * to be, instead of navigating to `/jobs/[jobId]`. The attribution strip,
    * writing-tip box and submit chrome below are unaffected. `undefined`
-   * (video/audio, and the image studio before its first submit) keeps the
-   * original `isAudio`/`isPortraitPreview` preview untouched.
+   * keeps the original `isAudio`/`isPortraitPreview` preview untouched.
    */
   previewSlot?: React.ReactNode;
-  /** A source-material thumbnail the user clicked, shown enlarged in place
-   * of the default cover/placeholder — only consulted when `previewSlot` is
-   * absent (i.e. before the first submit). */
-  previewOverrideUrl?: string | null;
-  /** Overrides the empty-preview placeholder text (`t('promptLabel')`'s
-   * default) — `ImageGenerationStudio` passes a dedicated "图片预览区域"
-   * string here instead of reusing the prompt field's own label. */
-  previewPlaceholder?: string;
-  /** Hides the "写得更像导演" writing-tip box below the preview — the image
-   * studio alone opts into this. Has no effect once `promptSlot` is set (see
-   * below), since that box would just duplicate what the slot already
-   * shows. */
-  hideDirectHint?: boolean;
   /**
    * Renders directly beneath the preview/attribution block, in the main
    * column rather than the params aside/`Sheet` — all three studios pass
@@ -100,7 +78,7 @@ export function GenerationStudioShell({
    * the preview on every breakpoint instead of only inside "调整参数".
    * Replaces the standalone `directHint` box entirely when set (video and
    * audio fold that same copy into the composer's own header instead of
-   * stacking two boxes) — `hideDirectHint` above is then moot.
+   * stacking two boxes).
    */
   promptSlot?: React.ReactNode;
   canSubmit: boolean;
@@ -132,13 +110,11 @@ export function GenerationStudioShell({
   // renders the panel in the aside.
   const panelInAside = !paramsOpen;
 
-  const cover =
-    previewOverrideUrl ?? source?.work.current_version?.cover_url ?? source?.work.cover_url;
-  const previewTitle = source?.work.title ?? previewPlaceholder ?? t('promptLabel');
+  const cover = source?.work.current_version?.cover_url ?? source?.work.cover_url;
+  const previewTitle = source?.work.title ?? t('promptLabel');
   const sourceMediaType = source?.work.media_type ?? source?.work.current_version?.media_type;
   const sourceVideoUrl = source?.work.current_version?.media_url;
-  const playSourceVideo =
-    sourceMediaType === 'video' && Boolean(sourceVideoUrl) && !previewOverrideUrl;
+  const playSourceVideo = sourceMediaType === 'video' && Boolean(sourceVideoUrl);
   const refreshSourceVideo = useCallback(
     () => (source ? refreshWorkMediaUrl(source.work.id) : Promise.resolve(null)),
     [source],
@@ -153,7 +129,6 @@ export function GenerationStudioShell({
           uploads={uploads}
           onUploaded={onUploaded}
           onRemove={onRemove}
-          onSelectUpload={onSelectUpload}
           hideUpload={isAudio}
         />
       </div>
@@ -206,7 +181,7 @@ export function GenerationStudioShell({
 
         {promptSlot ? (
           promptSlot
-        ) : !hideDirectHint ? (
+        ) : (
           <div className="flex gap-3 rounded-[var(--radius-md)] border border-border bg-surface-soft p-4">
             <IconSparkle className="size-5 shrink-0 text-amber" />
             <div>
@@ -214,7 +189,7 @@ export function GenerationStudioShell({
               <p className="mt-1 text-xs leading-relaxed text-muted">{t('directHintBody')}</p>
             </div>
           </div>
-        ) : null}
+        )}
       </div>
 
       <aside

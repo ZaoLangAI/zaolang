@@ -12,12 +12,12 @@ type ContentType = 'template' | 'image_asset';
 // Two-tier filter: a "content type" (template vs. image asset) picks the
 // side of the marketplace, then `CATEGORIES_BY_CONTENT_TYPE` narrows within
 // it — see `skill_library.list_public`'s own `IMAGE_ASSET_SKILL_CATEGORIES`
-// split. Image-asset cards (character/scene/cover recipes) CTA into
-// image creation; the author's own roster still lives on
-// `/create/characters` / `/create/scenes`.
+// split (`cover_asset` is hidden there, AC-8). Asset cards CTA into video
+// creation as a reference; image-only templates into 角色 / 场景 / 道具创作
+// as a style skill. The author's own roster lives on `/create/{kind}`.
 const CATEGORIES_BY_CONTENT_TYPE: Record<ContentType, CreationSkillCategory[]> = {
   template: ['scene', 'lens', 'style', 'format', 'drama', 'other'],
-  image_asset: ['character', 'scene_asset', 'cover_asset'],
+  image_asset: ['character', 'scene_asset', 'prop_asset'],
 };
 
 const CATEGORY_LABEL_KEY: Record<

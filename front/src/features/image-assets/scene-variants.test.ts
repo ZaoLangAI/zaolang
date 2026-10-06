@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { sceneVariantCombos } from './asset-preset-fields';
+import { sceneVariantCombos } from './scene-variants';
 
 describe('sceneVariantCombos', () => {
   it('varies one axis and keeps the others fixed', () => {

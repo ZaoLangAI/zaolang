@@ -5,6 +5,7 @@ import { SignInPrompt } from '@/components/auth/sign-in-prompt';
 import { PropManagePage } from '@/components/props/prop-manage-page';
 import { BackLink } from '@/components/ui/back-link';
 import { PageHeading } from '@/components/ui/primitives';
+import { parseStyleSkillId } from '@/features/asset-workspace/style-skill';
 import { parseWorkspaceTab } from '@/features/asset-workspace/tabs';
 import { isSignedIn, serverFetchOrNull } from '@/lib/api/server';
 import type { AssetGraph } from '@/lib/api/types';
@@ -12,7 +13,7 @@ import type { AssetGraph } from '@/lib/api/types';
 interface Params {
   params: Promise<{ id: string }>;
   /** `look`: the condition to open on; `tab` / `slot`: `tabs.ts`. */
-  searchParams: Promise<{ look?: string; tab?: string; slot?: string }>;
+  searchParams: Promise<{ look?: string; tab?: string; slot?: string; skillId?: string }>;
 }
 
 export async function generateMetadata() {
@@ -42,6 +43,7 @@ export default async function PropManageRoute({ params, searchParams }: Params) 
         initialVariantId={query.look}
         initialTab={parseWorkspaceTab(query.tab)}
         initialSlotId={query.slot}
+        initialSkillId={parseStyleSkillId(query.skillId)}
       />
     </div>
   );

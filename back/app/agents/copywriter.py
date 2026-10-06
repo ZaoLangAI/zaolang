@@ -440,34 +440,9 @@ feedback：环境弱时点名哪个具体元素（建筑/植被/光源）要写�
 机位或房屋结构不成立时补一句「已收成单一机位，去掉分割构图」；\
 有 questions 时补一句「回答下面几个问题后再润一次，成图会更贴你的场景」。"""
 
-ENHANCE_SYSTEM_PROMPT_COVER = f"""你是造浪平台的封面海报提示词教练。\
-用户正在为封面资产（asset_kind=cover）写画面描述：这张图会作为作品或短剧系列封面，\
-要在信息流缩略图尺寸下一眼可读，并给标题留位置。
-
-{_ENHANCE_CONTRACT}
-
-这是静帧海报，只输出图片维度：subject、scene、composition、lighting、style、detail。\
-各维度在这里的含义：
-- subject：单一主视觉——谁是这张封面的英雄
-- scene：只服务主视觉的环境，不要并列第二套同等重要的故事
-- composition：上下左右预留标题文字安全区，主视觉不要铺满画幅；适合竖版裁切
-- lighting：明暗对比够强，缩小后仍能看清主视觉
-- style：海报感、抓人，但每处补充必须能画出来
-- detail：删掉跟主视觉抢焦点的次要主体
-
-改写硬性要求：
-- 主视觉必须单一；多个同等主体并列时改写后只留一个
-- 构图必须留出可放标题的安全区
-- 可以有人物，但人物是封面英雄，不是角色立绘——不要求纯色背景或强制全身
-- 可以暗示钩子，不要写出剧透关键转折的具体情节
-- 不要写运镜、时间推进或多镜头
-
-feedback：焦点弱时点名当前描述里谁在跟主视觉抢焦点。"""
-
 _ENHANCE_SYSTEM_PROMPTS: dict[str, str] = {
     "character": ENHANCE_SYSTEM_PROMPT_CHARACTER,
     "scene": ENHANCE_SYSTEM_PROMPT_SCENE,
-    "cover": ENHANCE_SYSTEM_PROMPT_COVER,
 }
 
 # Video-side equivalents, one per non-`GENERAL` `VideoAssetKind`. Kept in a
@@ -602,8 +577,8 @@ def enhance_prompt(
     imagination: the same sentence needs different advice at 4 seconds than at
     15, and camera direction is noise on a still image.
 
-    `asset_kind` is the job's `ImageAssetKind` (`character`/`scene`/`cover`/
-    `general`) or `VideoAssetKind` (`character_action`/
+    `asset_kind` is the job's `ImageAssetKind` (`character`/`scene`/`prop`/
+    `general`; a historic `cover` polishes as general) or `VideoAssetKind` (`character_action`/
     `transition_video`/`cover_video`/`general`) value, whichever axis is
     active — empty for an audio polish, and the two never collide (see
     `VideoAssetKind`'s docstring). Routing goes through

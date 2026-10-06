@@ -18,7 +18,7 @@ type PromoteTier = (typeof PROMOTE_TIERS)[number];
 
 /**
  * "升级为标准/电影档" — offered on a succeeded `preview`-tier job (job page
- * and the image studio's inline result alike). `POST .../promote` always
+ * and the video studio's inline result alike). `POST .../promote` always
  * reserves a *new* job's credits rather than topping up the preview's own
  * reservation (see the route's own doc comment), so this dialog quotes the
  * chosen tier first and sends that quote back as `max_credits` — the same
@@ -66,8 +66,7 @@ export function PromoteJobDialog({
     let cancelled = false;
     void (async () => {
       // Yield first so the loading-state flip is not a synchronous setState
-      // inside the effect body — same deferral `image-generation-studio.tsx`
-      // uses before its own post-mount resets.
+      // inside the effect body.
       await Promise.resolve();
       if (cancelled) return;
       setQuoting(true);

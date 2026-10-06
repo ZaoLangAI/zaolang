@@ -65,9 +65,8 @@ export function AssetGraphWorkspace({
   store,
   tab,
   initialLookId,
-  generateHref,
   onOpenCreate,
-  portraitHref,
+  onOpenPortrait,
 }: {
   kind: CardKind;
   /** The card's graph and writes, shared with the 创作 tab
@@ -78,10 +77,10 @@ export function AssetGraphWorkspace({
   tab: 'looks' | 'voices';
   /** `?look=`: select and expand this look on arrival. */
   initialLookId?: string | null;
-  generateHref?: (variant: AssetVariant) => string;
-  /** 生成 on a look without a studio jump-out: open it in the 创作 tab. */
+  /** 生成 on a look: open it in the 创作 tab. */
   onOpenCreate?: (variant: AssetVariant) => void;
-  portraitHref?: string;
+  /** 生成定妆照 (characters): the 创作 tab's portrait slot. */
+  onOpenPortrait?: () => void;
 }) {
   const t = useTranslations('assetGraph');
   const { notify } = useToast();
@@ -176,7 +175,6 @@ export function AssetGraphWorkspace({
       onToggle={() => toggle(selectedVariant.id)}
       onSelectEdge={(id) => select({ type: 'edge', id })}
       onDeleted={toCard}
-      generateHref={generateHref}
       onOpenCreate={onOpenCreate}
     />
   ) : selectedEntry && entryOwner ? (
@@ -225,7 +223,7 @@ export function AssetGraphWorkspace({
       kind={kind}
       busy={busy}
       actions={actions}
-      portraitHref={portraitHref}
+      onOpenPortrait={onOpenPortrait}
       onCreated={(id) => {
         setExpanded((current) => new Set(current).add(id));
         select({ type: 'variant', id });

@@ -24,6 +24,14 @@ def _request(operation: str, **param_overrides: object) -> GenerationJobCreateRe
     )
 
 
+def test_a_new_cover_image_is_refused_but_the_kind_still_parses() -> None:
+    """Cover images are retired (AC-8): `GenerationParams` refuses a new one,
+    while `ImageAssetKind.COVER` stays so historic jobs still read."""
+    with pytest.raises(ValidationError, match="封面图片生成已下线"):
+        GenerationParams(prompt="短剧封面", asset_kind=ImageAssetKind.COVER)
+    assert ImageAssetKind("cover") is ImageAssetKind.COVER
+
+
 def test_image_to_image_does_not_require_a_reference_image() -> None:
     """The prompt is mandatory either way; a reference image is only optional
     extra context that rides along with it — see
