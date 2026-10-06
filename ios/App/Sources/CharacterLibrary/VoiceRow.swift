@@ -25,7 +25,7 @@ struct VoiceRow: View {
                             .font(.title2)
                             .frame(minWidth: 44, minHeight: 44)
                     }
-                    .accessibilityLabel(L10n.t(player.playingURL == url ? "assetGraph.stopPreview" : "assetGraph.playPreview"))
+                    .accessibilityLabel(L10n.t(player.playingURL == url ? "assetGraph.stop" : "assetGraph.play"))
                 }
             }
             Text(summary).font(.caption).foregroundStyle(Color.zl.textMuted)
