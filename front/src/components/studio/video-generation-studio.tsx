@@ -115,20 +115,18 @@ const MAX_REFERENCE_SELECTION = 4;
 /**
  * `/create/new` (`text_to_video` / `image_to_video` modes) and
  * `/remix/[workId]` (`video_to_video` when the source work is a video,
- * otherwise `image_to_video` — remix has no image/audio path). Keeps the
+ * `image_to_video` when it is an image — the source image is seeded as the
+ * reference and preset as the first frame). Keeps the
  * style preset / system style ("画风库") half of `useStyleAndSkillPicker`;
- * template skills apply from the prompt `@` menu (`useAppliedSkills`),
- * same as `ImageGenerationStudio`. `AudioGenerationStudio` is the shell
+ * template skills apply from the prompt `@` menu (`useAppliedSkills`).
+ * `AudioGenerationStudio` is the shell
  * that still shows the creation-skill Select.
  *
  * Generation never navigates away to `/jobs/[jobId]` any more: a submit's
  * progress and result render inline in the preview slot
  * (`InlineVideoResult`), and every job filed under the same `Draft` shows up
- * in `GenerationVersionHistory` beneath it — the same architecture
- * `ImageGenerationStudio` already uses, extended here now that video
- * creation has its own per-draft version history too (see
- * `use-generation-submit.ts`'s `draftId`, generic across every operation on
- * the backend already).
+ * in `GenerationVersionHistory` beneath it (see `use-generation-submit.ts`'s
+ * `draftId`, generic across every operation on the backend).
  */
 export function VideoGenerationStudio({
   operation: initialOperation,
@@ -457,6 +455,31 @@ export function VideoGenerationStudio({
     },
     [notify, tStates],
   );
+
+  // `/remix/[workId]` hands an image work here as `image_to_video`. Unlike a
+  // video source (prepended server-side by `attach_licensed_source_video`),
+  // an image source is the caller's to attach, so pull it into the uploads
+  // (the reference in 图片/视频参考 mode) and preset it as the first frame
+  // (首尾帧 mode); without this the remix would submit with no image at all
+  // and fail 图生视频必须提供参考图. Once per mount.
+  const sourceMaterialSeededRef = useRef(false);
+  useEffect(() => {
+    if (sourceMaterialSeededRef.current || !source) return;
+    const mediaType = source.work.media_type ?? source.work.current_version?.media_type;
+    const assetId = source.work.current_version?.output_asset_id;
+    if (mediaType !== 'image' || !assetId) return;
+    sourceMaterialSeededRef.current = true;
+    void api
+      .get<Asset>(`/v1/assets/${assetId}`)
+      .then((asset) => {
+        setUploads((current) =>
+          current.some((existing) => existing.id === asset.id) ? current : [asset, ...current],
+        );
+        setFirstFrameAssetId((current) => current || asset.id);
+      })
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleReferenceCharacter = (id: string) =>
     setSelectedReferenceCharacterIds((current) =>
