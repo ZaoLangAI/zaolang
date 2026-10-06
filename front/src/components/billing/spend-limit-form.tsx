@@ -3,6 +3,7 @@
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
+import { useSession } from '@/components/auth/session-provider';
 import { Button } from '@/components/ui/button';
 import { TextInput } from '@/components/ui/field';
 import { ErrorNotice, SectionHeading } from '@/components/ui/primitives';
@@ -28,12 +29,16 @@ export function SpendLimitForm() {
   const t = useTranslations('billingPage');
   const locale = useLocale() as Locale;
   const { notify } = useToast();
+  const { status } = useSession();
   const [balance, setBalance] = useState<SpendBalance | null>(null);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // A hard load mounts this before `SessionProvider` has redeemed the
+  // refresh cookie; fetching then would go out without a token and 401.
   useEffect(() => {
+    if (status !== 'authenticated') return;
     let cancelled = false;
     void api
       .get<SpendBalance>('/v1/credits/balance')
@@ -46,7 +51,7 @@ export function SpendLimitForm() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [status]);
 
   const save = async (limit: number | null) => {
     setBusy(true);
