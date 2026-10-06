@@ -7,12 +7,17 @@ import { PageHeading } from '@/components/ui/primitives';
 import { redirect } from '@/i18n/navigation';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { Draft } from '@/lib/api/types';
-import { imageCreationStudioHref, isImageCreationOperation } from '@/lib/image-draft';
+import { assetWorkspaceHref, isImageOperation } from '@/lib/asset-job-href';
 import { isVideoCreationOperation, videoCreationStudioHref } from '@/lib/video-draft';
 
 function publishBackHref(draft: Draft): string {
   const operation = draft.params?.operation;
-  if (isImageCreationOperation(operation)) return imageCreationStudioHref(draft.id);
+  // An image draft goes back to its card's workspace; a general one (the
+  // retired image studio) to its read-only job page below.
+  if (isImageOperation(operation)) {
+    const workspace = assetWorkspaceHref(draft.params ?? {});
+    if (workspace) return workspace;
+  }
   if (isVideoCreationOperation(operation)) return videoCreationStudioHref(draft.id);
   if (draft.latest_job_id) return `/jobs/${draft.latest_job_id}`;
   return '/create';

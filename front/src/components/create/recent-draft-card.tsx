@@ -6,13 +6,14 @@ import { IconPencil, IconUpload } from '@/components/ui/icons';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { Draft } from '@/lib/api/types';
 import { draftDisplayTitle } from '@/lib/draft-title';
-import { imageCreationStudioHref, isImageCreationOperation } from '@/lib/image-draft';
+import { assetWorkspaceHref, isImageOperation } from '@/lib/asset-job-href';
 import { isVideoCreationOperation, videoCreationStudioHref } from '@/lib/video-draft';
 
 /**
  * One "最近草稿" card. Split out from `RecentDrafts` (a server component)
- * because an image- or video-type draft needs client-side hover state for
- * its 编辑/发布 shortcut icons — every other draft renders exactly as before.
+ * because an asset-image or video draft needs client-side hover state for
+ * its 编辑/发布 shortcut icons (编辑 = the card's workspace / the video
+ * studio) — every other draft renders exactly as before.
  */
 export function RecentDraftCard({
   draft,
@@ -26,12 +27,15 @@ export function RecentDraftCard({
   publishLabel: string;
 }) {
   const operation = draft.params?.operation;
-  const isImageDraft = isImageCreationOperation(operation);
+  // A general image draft (the retired image studio) has nowhere to edit.
+  const imageWorkspace = isImageOperation(operation)
+    ? assetWorkspaceHref(draft.params ?? {})
+    : null;
   // Only meaningful once there is an output to build the next edit on — a
   // still-generating or failed video draft has nothing to hand the studio.
   const isVideoDraft = isVideoCreationOperation(operation) && Boolean(draft.output_asset_id);
-  const editHref = isImageDraft
-    ? imageCreationStudioHref(draft.id)
+  const editHref = imageWorkspace
+    ? imageWorkspace
     : isVideoDraft
       ? videoCreationStudioHref(draft.id)
       : null;

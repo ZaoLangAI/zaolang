@@ -6,7 +6,7 @@ import { BackLink } from '@/components/ui/back-link';
 import { redirect } from '@/i18n/navigation';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { GenerationJob } from '@/lib/api/types';
-import { imageCreationStudioHref, isImageCreationOperation } from '@/lib/image-draft';
+import { assetWorkspaceHref, isImageOperation } from '@/lib/asset-job-href';
 import { isVideoCreationOperation, videoCreationStudioHref } from '@/lib/video-draft';
 
 interface Params {
@@ -18,12 +18,11 @@ export async function generateMetadata() {
   return { title: t('title') };
 }
 
-function studioHrefForJob(job: GenerationJob): string | null {
-  if (!job.draft_id) return null;
-  if (isImageCreationOperation(job.operation)) {
-    return imageCreationStudioHref(job.draft_id, job.id);
-  }
-  if (isVideoCreationOperation(job.operation)) {
+function resumeHrefForJob(job: GenerationJob): string | null {
+  // An asset image lives in its card's workspace. A general / cover image
+  // (the retired image studio, the canvas Agent) stays here, read-only.
+  if (isImageOperation(job.operation)) return assetWorkspaceHref(job);
+  if (job.draft_id && isVideoCreationOperation(job.operation)) {
     return videoCreationStudioHref(job.draft_id, job.id);
   }
   return null;
@@ -40,10 +39,10 @@ export default async function JobPage({ params }: Params) {
   });
   if (!job) notFound();
 
-  // Image/video creation no longer has a standalone progress page — old
-  // bookmarks and leftover links land back in the studio instead.
-  const studioHref = studioHrefForJob(job);
-  if (studioHref) redirect({ href: studioHref, locale });
+  // Video creation and asset images have no standalone progress page — old
+  // bookmarks and leftover links land back in the studio / workspace.
+  const resumeHref = resumeHrefForJob(job);
+  if (resumeHref) redirect({ href: resumeHref, locale });
 
   return (
     <div className="mx-auto flex w-full max-w-[1160px] flex-col gap-6 px-4 py-6 sm:px-6">

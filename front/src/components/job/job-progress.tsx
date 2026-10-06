@@ -29,6 +29,7 @@ import { useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import { api, newIdempotencyKey } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
+import { isRetiredImageJob } from '@/lib/asset-job-href';
 import type { Draft, GenerationJob } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { formatCount, formatDateTime } from '@/lib/format';
@@ -251,7 +252,11 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
   // A preview-tier success is a cheap, fast sample — this is the only route
   // from it to a full-priced standard/cinematic render (`POST .../promote`
   // reserves that as its own new job, see the dialog's own doc comment).
-  const canPromote = current.status === 'succeeded' && current.quality_tier === 'preview';
+  // A general / cover image (the retired image studio, the canvas Agent) is
+  // read-only here: the API refuses to retry or promote it, only 去发布 stays.
+  const readOnlyImage = isRetiredImageJob(current);
+  const canPromote =
+    !readOnlyImage && current.status === 'succeeded' && current.quality_tier === 'preview';
   const canDownload =
     current.status === 'succeeded' &&
     current.output_media_type === 'video' &&
@@ -479,14 +484,16 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
               title={current.failure_message ?? t('failedTitle')}
               detail={`${t('failedHint')}${current.failure_code ? ` · ${tJob('errorCode', { code: current.failure_code })}` : ''}`}
               action={
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  loading={retrying}
-                  onClick={() => void retry()}
-                >
-                  {tJob('retry')}
-                </Button>
+                readOnlyImage ? undefined : (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={retrying}
+                    onClick={() => void retry()}
+                  >
+                    {tJob('retry')}
+                  </Button>
+                )
               }
             />
           ) : null}
@@ -496,14 +503,16 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
               title={t('cancelledTitle')}
               detail={t('failedHint')}
               action={
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  loading={retrying}
-                  onClick={() => void retry()}
-                >
-                  {tJob('retry')}
-                </Button>
+                readOnlyImage ? undefined : (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={retrying}
+                    onClick={() => void retry()}
+                  >
+                    {tJob('retry')}
+                  </Button>
+                )
               }
             />
           ) : null}

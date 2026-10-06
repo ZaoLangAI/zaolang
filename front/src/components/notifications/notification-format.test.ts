@@ -27,20 +27,46 @@ function jobNotification(
 }
 
 describe('targetHref', () => {
-  it('sends an image-creation job notification into the studio with that job id', () => {
-    expect(targetHref(jobNotification())).toBe(
-      '/create/new?mode=image_creation&draftId=drf_1&jobId=job_new',
-    );
-  });
-
-  it('falls back to the job page when the image job has no draft', () => {
+  it('sends a general image job notification to its read-only job page', () => {
+    // The image studio is gone: an old general / cover draft's job is
+    // shown (and publishable) on /jobs/{id}.
+    expect(targetHref(jobNotification())).toBe('/jobs/job_new');
     expect(
       targetHref(
         jobNotification({
-          payload: { operation: 'text_to_image', draft_id: undefined },
+          payload: { operation: 'text_to_image', draft_id: undefined, asset_kind: 'cover' },
         }),
       ),
     ).toBe('/jobs/job_new');
+  });
+
+  it('sends an asset image job notification into its card workspace', () => {
+    expect(
+      targetHref(
+        jobNotification({
+          payload: {
+            operation: 'text_to_image',
+            asset_kind: 'character',
+            linked_character_id: 'sk_char',
+            target_variant_id: 'var_wedding',
+          },
+        }),
+      ),
+    ).toBe('/create/characters/sk_char?look=var_wedding');
+    expect(
+      targetHref(
+        jobNotification({
+          payload: { operation: 'image_to_image', asset_kind: 'scene', linked_scene_id: 'sk_s' },
+        }),
+      ),
+    ).toBe('/create/scenes/sk_s');
+    expect(
+      targetHref(
+        jobNotification({
+          payload: { operation: 'text_to_image', asset_kind: 'prop', linked_prop_id: 'sk_p' },
+        }),
+      ),
+    ).toBe('/create/props/sk_p');
   });
 
   it('sends a video-creation job notification into the studio with that job id', () => {
