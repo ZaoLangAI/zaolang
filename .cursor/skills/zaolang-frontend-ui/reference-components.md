@@ -29,6 +29,7 @@ Where things live under `front/src/`. `ls` the dir for current files; this lists
 | `front/src/components/skills/` | plaza grid/card/detail, create/manage skill dialogs, `skill-mention-menu` (zaolang-creation-library) |
 | `front/src/components/characters/` | `/create/characters` library (zaolang-creation-library) |
 | `front/src/components/scenes/` | `/create/scenes` library (zaolang-creation-library) |
+| `front/src/components/props/` | `/create/props` library + `/create/props/[id]` workspace (zaolang-creation-library) |
 | `front/src/components/library/` | `existing-asset-picker-dialog` (shared asset picker) |
 | `front/src/components/marketplace/` | access-price field, unlock dialog, remix unlock gate (zaolang-credits-billing) |
 | `front/src/components/billing/` | credit packages, ledger, redeem code, spend limit (zaolang-credits-billing) |
@@ -61,6 +62,7 @@ Where things live under `front/src/`. `ls` the dir for current files; this lists
 | `front/src/lib/format.ts` | money / date / count formatting (zaolang-i18n-region) |
 | `front/src/lib/characters.ts` | character sheet helpers, `characterImageStudioHref` |
 | `front/src/lib/scenes.ts` | scene hero helpers, `sceneImageStudioHref` |
+| `front/src/lib/props.ts` | `propManageHref`, `propHeroAsset`, `defaultPropReferenceIds` |
 | `front/src/lib/image-draft.ts` | `isImageCreationOperation`, `imageCreationStudioHref` |
 | `front/src/lib/video-draft.ts` | `isVideoCreationOperation`, `videoCreationStudioHref` |
 | `front/src/lib/draft-title.ts` | `draftDisplayTitle` — title, else first prompt line, else untitled |

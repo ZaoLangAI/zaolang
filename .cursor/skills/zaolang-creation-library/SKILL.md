@@ -1,6 +1,6 @@
 ---
 name: zaolang-creation-library
-description: CreationSkill library — templates, seeded catalogue, character/scene/prop rosters stored as skills, draft→review→publish, paid unlock, @-mention apply. Use when editing skill_library/characters/scenes domains, /v1/skills|characters|scenes, the /skills plaza, or /create/characters|scenes.
+description: CreationSkill library — templates, seeded catalogue, character/scene/prop rosters stored as skills, draft→review→publish, paid unlock, @-mention apply. Use when editing skill_library/characters/scenes/props domains, /v1/skills|characters|scenes|props, the /skills plaza, or /create/characters|scenes|props.
 ---
 
 # Creation Library
@@ -28,8 +28,9 @@ Not here → `zaolang-admin-ops` (review, takedown), `zaolang-credits-billing` (
 | `front/src/app/[locale]/(site)/skills/page.tsx` | plaza; URL filters `contentType` × `category` × `access` |
 | `front/src/components/skills/` | plaza grid/card, detail+unlock dialog, create/manage dialogs, `@` menu |
 | `front/src/components/characters/character-library.tsx` | `/create/characters` grid + text-only edit dialog (never sends `reference_asset_ids` — that flat replace drops unlisted approved images); twin `scene-library.tsx` in `components/scenes/`; cards show the default look's completeness (`cardCompleteness`) and a new card can start from an uploaded image (`seedCardImage`) before opening its workspace |
+| `front/src/components/props/prop-library.tsx` | `/create/props` 道具创作 (AC-6): mirrors the scene library — hero plate (`lib/props.ts:propHeroAsset`, the `hero`-projected `master`), default condition's completeness badge, a new card (optional uploaded hero → `reference_asset_ids`, promoted to `master`) opens its workspace on `master` / `side`; edit is text-only. `prop-manage-page.tsx` = `AssetWorkspace kind="prop"` (创作 \| 状态图谱, no studio jump-out: a condition's 生成 opens the 创作 tab). `lib/props.ts`: `propManageHref`, `defaultPropReferenceIds` (mirrors `default_subset` without a viewpoint). Graph inspectors take `PropPresetFields` (`components/library/prop-preset-fields.tsx`: `prop_state` + `period`), `PROP_ENTRY_TYPES`, prop derive outputs; the scene matrix is scene-only |
 | `front/src/features/asset-workspace/` | the card workspace (AC-5): `asset-workspace.tsx` tabs 创作 / 图谱 / 音色 over one `useAssetGraph` store (polls while `pending`); `create-tab.tsx` slot board per look / variant; `kind-config.ts` standard slots per kind; `completeness.ts` slot status (approved / candidate / pending / missing), `orbitSource`; `slot-panel.tsx` generates a slot — draftless `POST /v1/generation-jobs` (1–4 candidates, optional style skill) via `slot-jobs.ts`, poses via `…:orbit` with `orbit-picker.tsx`, in-scene via `…:derive`; `?tab=` / `?look=` / `?slot=` deep links (`tabs.ts`) |
-| `front/src/app/[locale]/(site)/create/{characters,scenes}/[id]/page.tsx` | per-card management page (`character-manage-page.tsx` / `scene-manage-page.tsx`, `?look=` opens a look); `?manage=` on the list pages redirects here; renders `front/src/components/asset-graph/asset-graph-workspace.tsx` from `GET …/graph`: looks as class-box nodes (attribute rows, expandable into image nodes), typed relation edges (drag handle→handle or the inspector's keyboard `AddRelationForm`), inspectors reusing `library/entry-actions.tsx` (`EntryCard`), `variant-attributes-form.tsx`, `scene-preset-fields.tsx` |
+| `front/src/app/[locale]/(site)/create/{characters,scenes,props}/[id]/page.tsx` | per-card management page (`character-manage-page.tsx` / `scene-manage-page.tsx`, `?look=` opens a look); `?manage=` on the list pages redirects here; renders `front/src/components/asset-graph/asset-graph-workspace.tsx` from `GET …/graph`: looks as class-box nodes (attribute rows, expandable into image nodes), typed relation edges (drag handle→handle or the inspector's keyboard `AddRelationForm`), inspectors reusing `library/entry-actions.tsx` (`EntryCard`), `variant-attributes-form.tsx`, `scene-preset-fields.tsx` |
 | `front/src/lib/skill-mention.ts` | `isSkillMentionable`, `creationStudioHref`, `@Title` token helpers |
 | `front/src/components/studio/use-applied-skills.tsx` | studio apply, `MAX_APPLIED_SKILLS`, `?skillId=` seed |
 
@@ -67,5 +68,5 @@ Not here → `zaolang-admin-ops` (review, takedown), `zaolang-credits-billing` (
 
 ```bash
 cd back && conda run -n zaolang pytest tests/integration/test_skill_library.py tests/integration/test_characters.py tests/integration/test_scenes.py tests/integration/test_access_marketplace.py tests/unit/test_characters_service.py tests/unit/test_scenes_service.py tests/unit/test_asset_camera_slots.py tests/integration/test_asset_orbit.py tests/unit/test_skill_library_catalog.py tests/unit/test_ensure_catalog.py tests/unit/test_skill_context.py tests/unit/test_skill_matcher.py -q
-cd front && npm run test -- src/lib/skill-mention.test.ts src/lib/plaza-skills.test.ts src/lib/characters.test.ts src/lib/scenes.test.ts
+cd front && npm run test -- src/lib/skill-mention.test.ts src/lib/plaza-skills.test.ts src/lib/characters.test.ts src/lib/scenes.test.ts src/lib/props.test.ts
 ```
