@@ -216,3 +216,61 @@ describe('linked looks in breakpoint refs', () => {
     });
   });
 });
+
+describe('resolveBreakpointRefs props', () => {
+  const scene: ScriptScene = {
+    heading: '内景 便利店 夜',
+    ref_id: null,
+    blocks: [
+      { type: 'action', character: null, text: '林夏把玉佩塞进口袋' },
+      { type: 'dialogue', character: '林夏', text: '钥匙给我。' },
+      { type: 'breakpoint', character: null, text: '' },
+      { type: 'action', character: null, text: '她撑开雨伞走出门' },
+      { type: 'breakpoint', character: null, text: '' },
+    ],
+  };
+  const document: ScriptDocument = {
+    title: '',
+    logline: '',
+    characters: [],
+    scenes: [scene],
+    props: [
+      { name: '玉佩', description: '', prop_ref_id: 'sk_jade' },
+      { name: '钥匙', description: '', prop_ref_id: 'sk_key' },
+      { name: '雨伞', description: '', prop_ref_id: 'sk_umbrella' },
+      { name: '信封', description: '', prop_ref_id: 'sk_letter' },
+      { name: '口袋', description: '', prop_ref_id: null },
+    ],
+  };
+
+  it('links only the props the segment names, dialogue included', () => {
+    expect(resolveBreakpointRefs(document, scene, 2).propIds).toEqual(['sk_jade', 'sk_key']);
+    expect(resolveBreakpointRefs(document, scene, 4).propIds).toEqual(['sk_umbrella']);
+  });
+
+  it('is empty for a document saved before props existed', () => {
+    const { props: _props, ...legacy } = document;
+    expect(resolveBreakpointRefs(legacy, scene, 2).propIds).toEqual([]);
+  });
+
+  it('caps the props at the job limit', () => {
+    const crowded: ScriptDocument = {
+      ...document,
+      props: Array.from({ length: 6 }, (_, index) => ({
+        name: index === 0 ? '玉佩' : `玉佩${index}`,
+        description: '',
+        prop_ref_id: `sk_${index}`,
+      })),
+      scenes: [
+        {
+          ...scene,
+          blocks: [
+            { type: 'action', character: null, text: '玉佩玉佩1玉佩2玉佩3玉佩4玉佩5' },
+            { type: 'breakpoint', character: null, text: '' },
+          ],
+        },
+      ],
+    };
+    expect(resolveBreakpointRefs(crowded, crowded.scenes[0]!, 1).propIds).toHaveLength(4);
+  });
+});

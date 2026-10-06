@@ -15,6 +15,8 @@ export interface PendingVideo {
   /** Linked looks / scene variant, as `*_ref_selection` items. */
   selections: ReturnType<typeof lookSelections>;
   sceneId: string | null;
+  /** Linked props the segment's text names. */
+  propIds: string[];
   prompt: string;
 }
 
@@ -110,7 +112,7 @@ export function hasLinkedReference(document: ScriptDocument): boolean {
 
 function segmentHasRefs(document: ScriptDocument, scene: ScriptScene, blockIndex: number): boolean {
   const refs = resolveBreakpointRefs(document, scene, blockIndex);
-  return refs.characterIds.length > 0 || Boolean(refs.sceneId);
+  return refs.characterIds.length > 0 || Boolean(refs.sceneId) || refs.propIds.length > 0;
 }
 
 export function pendingVideos(
@@ -130,6 +132,7 @@ export function pendingVideos(
       blockIndex: located.blockIndex,
       characterIds: refs.characterIds,
       sceneId: refs.sceneId,
+      propIds: refs.propIds,
       selections: lookSelections(refs),
       prompt: breakpointSegmentPrompt(located.scene, located.blockIndex),
     });
@@ -144,7 +147,7 @@ export function boundVideoCount(
   return orderedBreakpointKeys(document).filter((key) => key in bindings).length;
 }
 
-/** Unbound segments that still have no character or scene ref to generate from. */
+/** Unbound segments that still have no character, scene or prop ref to generate from. */
 export function unreferencedVideoKeys(
   document: ScriptDocument,
   bindings: Record<string, BreakpointVideoBinding>,
