@@ -8903,6 +8903,8 @@ export interface components {
             asset_variants?: components["schemas"]["AssetVariantView"][];
             /** Anchor Asset Id */
             anchor_asset_id?: string | null;
+            /** Voices */
+            voices?: components["schemas"]["CharacterVoiceView"][];
         };
         /** CreationSkillPricingRequest */
         CreationSkillPricingRequest: {
