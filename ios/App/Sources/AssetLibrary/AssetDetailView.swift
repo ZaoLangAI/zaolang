@@ -1,31 +1,44 @@
 import SwiftUI
 import ZaolangKit
 
-/// 一个角色的管理页（只读为主）：造型 | 音色。造型按派生关系缩进排列，同一张图的多个版本
-/// 折叠为一格（`CharacterGraphModel`）；候选图可定稿，音色可试听 / 设默认 / 生成试听。
-struct CharacterDetailView: View {
-    let characterID: String
+/// 一张角色 / 场景 / 道具卡的工作区（只读为主）：创作（资产板）| 造型 / 变体 / 状态图谱 | 音色（仅角色）。
+/// 资产板按槽位显示完备度与机位覆盖，候选可定稿、主槽位可快速生成；图谱按派生关系缩进排列，
+/// 同一张图的多个版本折叠为一格（`AssetGraphModel`）。其余编辑在网页端继续。
+struct AssetDetailView: View {
+    let kind: AssetCardKind
+    let cardID: String
 
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.openURL) private var openURL
-    @State private var viewModel: CharacterDetailViewModel?
-    @State private var tab: Tab = .looks
+    @State private var viewModel: AssetDetailViewModel?
+    @State private var tab: Tab = .create
+    @State private var variantID: String?
+    @State private var openSlot: OpenSlot?
     @State private var viewing: AssetEntryView?
     @State private var editing = false
     @State private var player = VoicePlayer()
 
-    enum Tab: Hashable { case looks, voices }
+    enum Tab: Hashable { case create, graph, voices }
 
-    init(characterID: String) {
-        self.characterID = characterID
+    struct OpenSlot: Identifiable {
+        let variantID: String
+        let slotID: String
+        var id: String { AssetDetailViewModel.slotKey(variantID: variantID, slotID: slotID) }
+    }
+
+    /// `variantID` opens that look / variant first (a notification's `target_variant_id`).
+    init(kind: AssetCardKind, cardID: String, variantID: String? = nil) {
+        self.kind = kind
+        self.cardID = cardID
+        _variantID = State(initialValue: variantID)
     }
 
     var body: some View {
         content
-            .navigationTitle(viewModel?.graph?.name ?? L10n.t("characters.manageEyebrow"))
+            .navigationTitle(viewModel?.graph?.name ?? L10n.t(AssetSlots.titleKey(kind)))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if viewModel?.graph != nil {
+                if kind == .character, viewModel?.graph != nil {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(L10n.t("iosCharacters.editProfile")) { editing = true }
                     }
@@ -33,12 +46,17 @@ struct CharacterDetailView: View {
             }
             .task {
                 if viewModel == nil {
-                    viewModel = CharacterDetailViewModel(characterID: characterID, apiClient: environment.apiClient)
+                    viewModel = AssetDetailViewModel(kind: kind, cardID: cardID, environment: environment)
                 }
                 await viewModel?.load()
             }
             .refreshable { await viewModel?.load() }
             .onDisappear { player.stop() }
+            .sheet(item: $openSlot) { slot in
+                if let viewModel {
+                    SlotSheet(variantID: slot.variantID, slotID: slot.slotID, viewModel: viewModel)
+                }
+            }
             .sheet(item: $viewing) { entry in
                 if let viewModel, let graph = viewModel.graph {
                     EntryViewerSheet(graph: graph, entry: entry, viewModel: viewModel)
@@ -79,13 +97,20 @@ struct CharacterDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     header(graph)
                     Picker("", selection: $tab) {
-                        Text(L10n.t("assetGraph.tabLooks", ["count": graph.variants.count])).tag(Tab.looks)
-                        Text(L10n.t("assetGraph.tabVoices", ["count": graph.voices.count])).tag(Tab.voices)
+                        Text(L10n.t("assetWorkspace.tabCreate")).tag(Tab.create)
+                        Text(L10n.t("assetWorkspace.tabGraph.\(kind.rawValue)", ["count": graph.variants.count])).tag(Tab.graph)
+                        if kind == .character {
+                            Text(L10n.t("assetGraph.tabVoices", ["count": graph.voices.count])).tag(Tab.voices)
+                        }
                     }
                     .pickerStyle(.segmented)
                     .accessibilityLabel(L10n.t("assetGraph.tabsLabel"))
-                    if tab == .looks { looks(graph) } else { voices(graph) }
-                    webFooter
+                    switch tab {
+                    case .create: board(graph)
+                    case .graph: looks(graph)
+                    case .voices: voices(graph)
+                    }
+                    webFooter(graph)
                 }
                 .padding(16)
             }
@@ -103,12 +128,46 @@ struct CharacterDetailView: View {
         }
     }
 
+    /// The look / variant the board shows: the picked one, else the default.
+    private func currentVariant(_ graph: AssetGraphResponse) -> AssetVariantView? {
+        graph.variants.first { $0.id == variantID }
+            ?? graph.variants.first(where: \.isDefault)
+            ?? graph.variants.first
+    }
+
+    @ViewBuilder
+    private func board(_ graph: AssetGraphResponse) -> some View {
+        if let variant = currentVariant(graph) {
+            if graph.variants.count > 1 {
+                Picker(L10n.t("assetWorkspace.variantsLabel.\(kind.rawValue)"), selection: Binding(
+                    get: { variant.id },
+                    set: { variantID = $0 }
+                )) {
+                    ForEach(graph.variants) { option in
+                        Text(option.name).tag(option.id)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+            AssetSlotBoard(
+                kind: kind,
+                graph: graph,
+                variant: variant,
+                generatingSlot: viewModel?.generatingSlot
+            ) { state in
+                openSlot = OpenSlot(variantID: variant.id, slotID: state.slot.id)
+            }
+        } else {
+            Text(L10n.t("assetWorkspace.noVariants")).font(.subheadline).foregroundStyle(Color.zl.textMuted)
+        }
+    }
+
     @ViewBuilder
     private func looks(_ graph: AssetGraphResponse) -> some View {
-        let rows = CharacterGraphModel.lookRows(graph)
-        let versions = CharacterGraphModel.versionIndex(graph).versions
-        if rows.allSatisfy({ $0.heads.isEmpty }) {
-            Text(L10n.t("iosCharacters.noLooks")).font(.subheadline).foregroundStyle(Color.zl.textMuted)
+        let rows = AssetGraphModel.lookRows(graph)
+        let versions = AssetGraphModel.versionIndex(graph).versions
+        if rows.isEmpty {
+            Text(L10n.t("assetWorkspace.noVariants")).font(.subheadline).foregroundStyle(Color.zl.textMuted)
         }
         ForEach(rows) { row in
             LookCard(row: row, versions: versions, anchorEntryID: graph.anchorEntryID) { viewing = $0 }
@@ -135,13 +194,15 @@ struct CharacterDetailView: View {
         }
     }
 
-    private var webFooter: some View {
+    private func webFooter(_ graph: AssetGraphResponse) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(L10n.t("iosCharacters.manageOnWebHint")).font(.caption).foregroundStyle(Color.zl.textMuted)
-            Button(L10n.t("iosCharacters.manageOnWeb")) {
-                if let url = URL(string: "\(AppConfig.webBaseURLString)/create/characters/\(characterID)") {
+            Text(L10n.t("iosAssets.continueOnWebHint")).font(.caption).foregroundStyle(Color.zl.textMuted)
+            Button {
+                if let url = AssetSlots.webURL(kind, cardID: cardID, variantID: currentVariant(graph)?.id) {
                     openURL(url)
                 }
+            } label: {
+                Label(L10n.t("iosAssets.continueOnWeb"), systemImage: "arrow.up.right.square")
             }
             .buttonStyle(.bordered)
         }
@@ -151,7 +212,7 @@ struct CharacterDetailView: View {
 
 /// 一个造型：名称、属性行、派生来源，以及（版本折叠后的）图片网格。
 struct LookCard: View {
-    let row: CharacterGraphModel.LookRow
+    let row: AssetGraphModel.LookRow
     let versions: [String: [AssetEntryView]]
     let anchorEntryID: String?
     let onOpen: (AssetEntryView) -> Void
@@ -167,13 +228,13 @@ struct LookCard: View {
                     Circle().fill(Color.zl.relation(parent.relations.first ?? "custom")).frame(width: 8, height: 8)
                         .accessibilityHidden(true)
                     Text(L10n.t("assetGraph.derivedFrom", ["names": parent.name]))
-                    Text(CharacterGraphModel.relationText(parent.relations, label: parent.label))
+                    Text(AssetGraphModel.relationText(parent.relations, label: parent.label))
                         .foregroundStyle(Color.zl.text)
                 }
                 .font(.caption)
                 .foregroundStyle(Color.zl.textMuted)
             }
-            let attributes = CharacterGraphModel.attributeRows(row.look)
+            let attributes = AssetGraphModel.attributeRows(row.look)
             if !attributes.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(Array(attributes.enumerated()), id: \.offset) { _, attribute in

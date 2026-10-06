@@ -94,7 +94,7 @@ struct CreateView: View {
                 systemImage: "person.2.crop.square.stack"
             ) {
                 environment.requireAuth(actionLabel: L10n.t("iosCharacters.entryTitle")) {
-                    path.append(CreateRoute.characterLibrary)
+                    path.append(CreateRoute.assetLibrary(.character))
                 }
             }
         }

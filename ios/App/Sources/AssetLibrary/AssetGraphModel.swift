@@ -1,11 +1,11 @@
 import Foundation
 import ZaolangKit
 
-/// 角色管理图在手机上的形态：不画画布，按派生关系排成缩进列表
+/// 卡片管理图（角色造型 / 场景变体 / 道具状态）在手机上的形态：不画画布，按派生关系排成缩进列表
 /// （与网页窄屏的 `asset-graph-outline.tsx` 同一规则）。同一张图的多个版本——调整修改
 /// 产出（`edit` 关系）与同一槽位的候选——折叠成一个图片格，与网页 `versions.ts` 同一规则：
 /// 版本不在关系图里单独出现。
-enum CharacterGraphModel {
+enum AssetGraphModel {
     struct LookRow: Identifiable {
         let look: AssetVariantView
         let depth: Int
@@ -121,7 +121,7 @@ enum CharacterGraphModel {
         .joined(separator: " · ")
     }
 
-    /// 造型的「类属性」行：年龄 / 时代 / 服装 / 状态 / 场景 / 自定义。
+    /// 造型 / 变体的「类属性」行：年龄 / 时代 / 场景光线·天气·状态 / 道具成色 / 服装 / 状态 / 场景 / 自定义。
     static func attributeRows(_ look: AssetVariantView) -> [(label: String, value: String)] {
         var rows: [(String, String)] = []
         if let age = look.presets["age_stage"] {
@@ -129,6 +129,14 @@ enum CharacterGraphModel {
         }
         if let period = look.presets["period"] {
             rows.append((L10n.t("assetGraph.row.period"), L10n.t("remixPage.presets.period.\(period)")))
+        }
+        for (axis, label) in [("lighting", "axisLighting"), ("weather", "axisWeather"), ("state", "axisState")] {
+            if let value = look.presets[axis] {
+                rows.append((L10n.t("remixPage.presets.\(label)"), L10n.t("remixPage.presets.\(axis).\(value)")))
+            }
+        }
+        if let condition = look.presets["prop_state"] {
+            rows.append((L10n.t("props.stateLabel"), L10n.t("props.state.\(condition)")))
         }
         if let outfit = look.attributes?.outfit { rows.append((L10n.t("assetGraph.row.outfit"), outfit)) }
         if let state = look.attributes?.state { rows.append((L10n.t("assetGraph.row.state"), state)) }

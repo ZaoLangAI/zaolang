@@ -34,8 +34,10 @@ enum CreateRoute: Hashable {
     case workDetail(workID: String)
     case lineage(workID: String)
     case profile(handle: String)
-    case characterLibrary
-    case characterDetail(characterID: String)
+    /// 角色 / 场景 / 道具创作的库列表。
+    case assetLibrary(AssetCardKind)
+    /// 一张卡的工作区；`variantID` 先打开那个造型 / 变体（通知的 `target_variant_id`）。
+    case assetDetail(kind: AssetCardKind, cardID: String, variantID: String?)
 }
 
 /// 我的库栈内的 push 目的地。设置 / 通知 / 账单都挂在这一栈下——iOS 没有独立的"账号" Tab，
