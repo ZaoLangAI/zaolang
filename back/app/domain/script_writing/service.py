@@ -830,6 +830,7 @@ def update_links(
     character_links: list[tuple[str, str | None, str | None]],
     scene_links: list[tuple[str, str | None, str | None]],
     prop_links: list[tuple[str, str | None]] | None = None,
+    prop_descriptions: dict[str, str] | None = None,
 ) -> DramaEpisode:
     """Links a script's characters/scene headings/props to reusable
     character/scene/prop cards — a structural edit, not a content revision, so it writes
@@ -884,7 +885,9 @@ def update_links(
             scene["ref_id"], scene["variant_id"] = scene_ref_by_heading[scene["heading"]]
         next_scenes.append(scene)
 
-    next_props = link_props(script.get("props") or [], prop_ref_by_name)
+    next_props = link_props(
+        script.get("props") or [], prop_ref_by_name, descriptions=prop_descriptions
+    )
 
     # A fresh dict, not a mutated nested one — SQLAlchemy only detects a
     # JSONB column change on reassignment, matching how every other turn

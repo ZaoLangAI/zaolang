@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
 from app.api.schemas.blocking import BlockingState
 from app.api.schemas.common import ApiModel
 from app.domain.blocking.vocabulary import BlockingAspectRatio
+from app.domain.image_assets.vocabulary import AgeStage, SceneLighting, ScenePeriod
+from app.models.enums import QualityTier
 
 
 class ScriptBlock(ApiModel):
@@ -223,3 +225,101 @@ class BlockingSettingsRequest(ApiModel):
     target_duration_seconds: int | None = Field(default=None, ge=1, le=1800)
     aspect_ratio: BlockingAspectRatio | None = None
     base_version_no: int = Field(ge=0)
+
+
+# ---- 剧本拆解建卡 (AC-9) -------------------------------------------------------
+
+BreakdownKind = Literal["character", "scene", "prop"]
+BreakdownAction = Literal["create", "link", "skip"]
+
+
+class ScriptBreakdownMatch(ApiModel):
+    """One of the caller's own cards with the proposal's name."""
+
+    id: str
+    name: str
+
+
+class ScriptBreakdownItem(ApiModel):
+    """One proposed card. `headings`: a scene's headings set at this place,
+    or the headings a prop appears in; empty for a character. Presets are
+    only set for the kind they belong to (`age_stage` character, `period` /
+    `lighting` scene)."""
+
+    kind: BreakdownKind
+    name: str
+    description: str = ""
+    headings: list[str] = Field(default_factory=list)
+    age_stage: AgeStage | None = None
+    period: ScenePeriod | None = None
+    lighting: SceneLighting | None = None
+    # The caller's card this script already links (`character_ref_id`, the
+    # first linked heading's `ref_id`, the prop's `prop_ref_id`).
+    linked_card_id: str | None = None
+    matches: list[ScriptBreakdownMatch] = Field(default_factory=list)
+
+
+class ScriptBreakdownResponse(ApiModel):
+    characters: list[ScriptBreakdownItem]
+    scenes: list[ScriptBreakdownItem]
+    props: list[ScriptBreakdownItem]
+    # The model gave nothing usable: characters and places come straight
+    # from the script, and no props were found.
+    degraded: bool = False
+
+
+class ScriptBreakdownApplyItem(ApiModel):
+    kind: BreakdownKind
+    # A character's name in the script, a scene card's name, a prop's name.
+    name: str = Field(min_length=1, max_length=60)
+    action: BreakdownAction
+    # `link`: one of the caller's cards of `kind`.
+    card_id: str | None = Field(default=None, max_length=40)
+    # `create`: the new card's description.
+    description: str = Field(default="", max_length=2000)
+    # Scene: the headings linked to the card (required unless `skip`).
+    headings: list[str] = Field(default_factory=list, max_length=40)
+    age_stage: AgeStage | None = None
+    period: ScenePeriod | None = None
+    lighting: SceneLighting | None = None
+
+
+class ScriptBreakdownGenerate(ApiModel):
+    """First images for the cards this apply creates: a character's identity
+    portrait, a scene's master plate, a prop's hero plate."""
+
+    enabled: bool = False
+    quality_tier: QualityTier = QualityTier.STANDARD
+
+
+class ScriptBreakdownApplyRequest(ApiModel):
+    items: list[ScriptBreakdownApplyItem] = Field(default_factory=list, max_length=100)
+    generate: ScriptBreakdownGenerate = Field(default_factory=ScriptBreakdownGenerate)
+    # Validates and prices without writing anything.
+    dry_run: bool = True
+
+
+class ScriptBreakdownApplyResult(ApiModel):
+    kind: BreakdownKind
+    name: str
+    action: BreakdownAction
+    card_id: str | None = None
+    created: bool = False
+    # The first-image job, when one was asked for and submitted.
+    job_id: str | None = None
+    credits: int = 0
+    error: str | None = None
+
+
+class ScriptBreakdownApplyResponse(ApiModel):
+    items: list[ScriptBreakdownApplyResult]
+    # The script after the links were written (unchanged on a dry run).
+    script: ScriptDocument
+    # Every first image priced through the same `quote_for` a submit uses.
+    total_credits: int
+    available_credits: int
+    period_remaining: int | None = None
+    within_spend_limit: bool
+    sufficient: bool
+    submitted: int = 0
+    dry_run: bool

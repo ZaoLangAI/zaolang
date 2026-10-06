@@ -42,6 +42,7 @@ from app.api.v1 import (
     props,
     scene_matrix,
     scenes,
+    script_breakdown,
     scripts,
     shortform,
     skills,
@@ -87,6 +88,7 @@ def build_router() -> APIRouter:
     router.include_router(editor.router)
     router.include_router(canvas.router)
     router.include_router(scripts.router)
+    router.include_router(script_breakdown.router)
     router.include_router(blocking.router)
     router.include_router(distribution.router)
     router.include_router(admin.router)
