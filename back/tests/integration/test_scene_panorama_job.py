@@ -20,6 +20,37 @@ from tests.conftest import auth_header
 pytestmark = pytest.mark.usefixtures("fake_media_catalog")
 
 
+def test_a_running_panorama_job_is_pending_as_a_panorama(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(tasks, "dispatch_generation", lambda job: None)
+    credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
+    scene = scenes_service.create_scene(
+        db, user_id=author.id, name="客厅", description=None, reference_asset_ids=[]
+    )
+    variant = av.find_default(scene.skill)
+    response = client.post(
+        "/v1/generation-jobs",
+        json={
+            "operation": "text_to_image",
+            "quality_tier": "standard",
+            "params": {
+                "prompt": "老式客厅",
+                "asset_kind": "scene",
+                "target_scene_id": scene.id,
+                "target_variant_id": variant.id,
+                "scene_panorama": True,
+            },
+        },
+        headers={**auth_header(author), "Idempotency-Key": "pano-pending"},
+    )
+    assert response.status_code == 202, response.text
+    graph = client.get(f"/v1/scenes/{scene.id}/graph", headers=auth_header(author)).json()
+    (pending,) = graph["pending"]
+    assert pending["mode"] == "panorama"
+    assert pending["target_variant_id"] == variant.id
+
+
 def test_a_panorama_job_files_the_variant_panorama(
     client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:

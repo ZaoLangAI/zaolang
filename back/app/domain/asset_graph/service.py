@@ -393,6 +393,8 @@ def pending_jobs(session: Session, skill: CreationSkill) -> list[dict[str, Any]]
             if job.request_json.get("asset_edit")
             else "orbit"
             if job.request_json.get("camera_poses")
+            else "panorama"
+            if job.request_json.get("scene_panorama")
             else job.request_json.get("asset_output_mode")
             or ("derive" if job.request_json.get("source_entry_id") else None),
             "target_variant_id": job.request_json.get("target_variant_id"),
