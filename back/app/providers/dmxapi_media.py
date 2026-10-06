@@ -282,6 +282,15 @@ _SEEDREAM_SIZE_BY_ASPECT: dict[str, dict[str, str]] = {
 }
 
 
+def exact_image_aspect_ratios(model: str) -> frozenset[str] | None:
+    """The aspect ratios this image model gets an exact `WxH` for (see
+    `ProviderCapability.exact_image_aspect_ratios`); `None` when it has no
+    size table."""
+    if image_model_profile(model) is None:
+        return None
+    return frozenset(_SEEDREAM_SIZE_BY_ASPECT)
+
+
 def _seedream_size_for(aspect_ratio: str, quality_tier: str) -> str:
     """An exact `WxH` when the aspect ratio is a known one, else the bare
     tier string — DMXAPI honours both, falling back to letting the model
