@@ -843,6 +843,10 @@ class AssetEntryType(StrEnum):
     # Scene entries.
     MASTER = "master"
     SHOT = "shot"
+    # A 360° equirectangular (2:1) still of the variant (AC-7): one slot per
+    # variant, viewed in the panorama viewer and cut into posed shots —
+    # never a reference image itself (too distorted).
+    PANORAMA = "panorama"
     # Either.
     OTHER = "other"
 
@@ -860,7 +864,7 @@ CHARACTER_ENTRY_TYPES: frozenset[str] = frozenset(
     }
 )
 SCENE_ENTRY_TYPES: frozenset[str] = frozenset(
-    {AssetEntryType.MASTER, AssetEntryType.SHOT, AssetEntryType.OTHER}
+    {AssetEntryType.MASTER, AssetEntryType.SHOT, AssetEntryType.PANORAMA, AssetEntryType.OTHER}
 )
 # A prop: its hero plate (`master`), turntable views (`view`, one per camera
 # pose), details / in-use shots (`shot`).
