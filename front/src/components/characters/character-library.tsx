@@ -28,6 +28,8 @@ import { useRouter } from '@/i18n/navigation';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { Character, CharacterScriptLink } from '@/lib/api/types';
+import { cardCompleteness } from '@/features/asset-workspace/completeness';
+import { seedCardImage, workspaceHref } from '@/features/asset-workspace/new-card';
 import { characterHeroUrl, characterManageHref } from '@/lib/characters';
 import {
   CREATION_SKILL_STATUS_LABEL_KEY,
@@ -64,6 +66,7 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
   const tActions = useTranslations('actions');
   const tStates = useTranslations('states');
   const tMedia = useTranslations('media');
+  const tWorkspace = useTranslations('assetWorkspace');
   const { notify } = useToast();
   const router = useRouter();
 
@@ -79,6 +82,8 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
   const [describeOpen, setDescribeOpen] = useState(false);
   const linksFor = useRef<string | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  // 从图片新建: an optional first image (filed as the identity portrait).
+  const [startImage, setStartImage] = useState<File | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Character | null>(null);
   // `Sheet` (bottom drawer) below `lg`, `Dialog` (centred) at/above it — the
@@ -96,6 +101,7 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
 
   const openCreate = () => {
+    setStartImage(null);
     setEditing(null);
     setForm(EMPTY_FORM);
     setFormError(null);
@@ -161,8 +167,19 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
           : [saved, ...current],
       );
       setSheetOpen(false);
-      // A new card has no images yet — its page is where the first look starts.
-      if (!editing) router.push(characterManageHref(saved.id));
+      // A new card opens on its 创作 board: from an uploaded image the
+      // portrait is filed and the sheet is next, else the portrait is.
+      if (!editing) {
+        let slot = 'portrait';
+        if (startImage) {
+          try {
+            slot = await seedCardImage('character', saved.id, saved.looks ?? [], startImage);
+          } catch {
+            notify(t('startImageFailed'), 'error');
+          }
+        }
+        router.push(workspaceHref(characterManageHref(saved.id), slot));
+      }
     } catch (caught) {
       if (caught instanceof ApiError) {
         const taken = Boolean(caught.fieldErrors.name);
@@ -298,6 +315,18 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
           setForm((current) => ({ ...current, voiceDescription: event.target.value }))
         }
       />
+      {!editing ? (
+        <label className="flex flex-col gap-1 text-sm">
+          <span>{t('startImageLabel')}</span>
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(event) => setStartImage(event.target.files?.[0] ?? null)}
+            className="text-xs text-muted file:mr-3 file:rounded-[var(--radius-sm)] file:border file:border-border file:bg-surface-soft file:px-3 file:py-1.5 file:text-text"
+          />
+          <span className="text-xs text-muted">{t('startImageHint')}</span>
+        </label>
+      ) : null}
     </form>
   );
 
@@ -361,6 +390,17 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
                       </button>
                     )}
                   </div>
+                  {(() => {
+                    const score = cardCompleteness('character', character.looks ?? []);
+                    return score ? (
+                      <Badge
+                        tone={score.done === score.total ? 'success' : 'neutral'}
+                        className="self-start"
+                      >
+                        {tWorkspace('completeness', score)}
+                      </Badge>
+                    ) : null;
+                  })()}
                   {character.status !== 'draft' || character.access_credits > 0 ? (
                     <div className="flex items-center gap-1.5">
                       {character.status !== 'draft' ? (

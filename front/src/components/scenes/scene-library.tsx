@@ -37,7 +37,9 @@ import {
   CREATION_SKILL_STATUS_LABEL_KEY,
   CREATION_SKILL_STATUS_TONE,
 } from '@/lib/creation-skill-status';
-import { sceneHeroAsset, sceneImageStudioHref, sceneManageHref } from '@/lib/scenes';
+import { cardCompleteness } from '@/features/asset-workspace/completeness';
+import { workspaceHref } from '@/features/asset-workspace/new-card';
+import { sceneHeroAsset, sceneManageHref } from '@/lib/scenes';
 import { useMinWidth } from '@/lib/use-media-query';
 import { uploadFile } from '@/lib/upload';
 
@@ -62,12 +64,9 @@ const EMPTY_FORM: SceneForm = {
   reference: null,
 };
 
-function heroHref(scene: Pick<Scene, 'id' | 'name' | 'description'>): string {
-  return sceneImageStudioHref({
-    sceneId: scene.id,
-    name: scene.name,
-    description: scene.description,
-  });
+/** The scene's 创作 board, on its master plate. */
+function heroHref(scene: Pick<Scene, 'id'>): string {
+  return workspaceHref(sceneManageHref(scene.id), 'master');
 }
 
 /** Extra historical refs that stay on the card strip after the hero is
@@ -106,6 +105,7 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
   const tStates = useTranslations('states');
   const tSkills = useTranslations('skillLibrary');
   const tMedia = useTranslations('media');
+  const tWorkspace = useTranslations('assetWorkspace');
   const { notify } = useToast();
   const router = useRouter();
 
@@ -213,8 +213,12 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
           : [saved, ...current],
       );
       setSheetOpen(false);
-      if (intent === 'saveAndGenerate' && !form.reference) {
-        router.push(heroHref(saved));
+      // A new card opens on its 创作 board — on the master plate, or with
+      // one already filed, on the reverse angle drawn from it.
+      if (!editing || intent === 'saveAndGenerate') {
+        router.push(
+          workspaceHref(sceneManageHref(saved.id), form.reference ? 'reverse' : 'master'),
+        );
       }
     } catch (caught) {
       setFormError(caught instanceof ApiError ? caught.message : tStates('errorHint'));
@@ -454,6 +458,17 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
                       </button>
                     )}
                   </div>
+                  {(() => {
+                    const score = cardCompleteness('scene', scene.variants ?? []);
+                    return score ? (
+                      <Badge
+                        tone={score.done === score.total ? 'success' : 'neutral'}
+                        className="self-start"
+                      >
+                        {tWorkspace('completeness', score)}
+                      </Badge>
+                    ) : null;
+                  })()}
                   {scene.status !== 'draft' || scene.access_credits > 0 ? (
                     <div className="flex items-center gap-1.5">
                       {scene.status !== 'draft' ? (

@@ -1,27 +1,34 @@
 'use client';
 
-import { AssetGraphWorkspace } from '@/components/asset-graph/asset-graph-workspace';
+import { AssetWorkspace } from '@/features/asset-workspace/asset-workspace';
+import type { WorkspaceTab } from '@/features/asset-workspace/tabs';
 import type { AssetGraph } from '@/lib/api/types';
 import { characterImageStudioHref, characterManageHref } from '@/lib/characters';
 
 /**
- * `/create/characters/[id]` body: the character's looks and images as a
- * relation graph (`AssetGraphWorkspace`). Studio jump-outs return here.
+ * `/create/characters/[id]` body: the character workspace — 创作 board,
+ * looks graph, voices (`AssetWorkspace`). Studio jump-outs return here.
  */
 export function CharacterManagePage({
   initial,
   initialLookId,
+  initialTab,
+  initialSlotId,
 }: {
   initial: AssetGraph;
   /** `?look=`: the look to open on. */
   initialLookId?: string | null;
+  initialTab?: WorkspaceTab | null;
+  initialSlotId?: string | null;
 }) {
   const returnTo = characterManageHref(initial.card_id);
   return (
-    <AssetGraphWorkspace
+    <AssetWorkspace
       kind="character"
       initial={initial}
-      initialLookId={initialLookId}
+      initialTab={initialTab}
+      initialVariantId={initialLookId}
+      initialSlotId={initialSlotId}
       generateHref={(look) =>
         characterImageStudioHref({
           characterId: initial.card_id,

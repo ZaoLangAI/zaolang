@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import type { CardKind } from '@/components/library/entry-actions';
 import { Button } from '@/components/ui/button';
@@ -24,15 +24,13 @@ import { useNodeNames } from './inspector/node-names';
 import { VoiceInspector } from './inspector/voice-inspector';
 import { VoicesPanel } from './inspector/voices-panel';
 import { RelationPickerDialog } from './relation-picker';
-import { useAssetGraph } from './use-asset-graph';
+import type { AssetGraphStore } from './use-asset-graph';
 
 // React Flow + dagre load only with the canvas, never with the page shell.
 const AssetGraphCanvas = dynamic(
   () => import('./asset-graph-canvas').then((module) => module.AssetGraphCanvas),
   { ssr: false, loading: () => <Skeleton className="h-full w-full rounded-none" /> },
 );
-
-const PENDING_POLL_MS = 3000;
 
 /** Auto-expand a small card so its images are visible on arrival. */
 const AUTO_EXPAND_LOOKS = 3;
@@ -64,13 +62,19 @@ interface ConnectDraft {
  */
 export function AssetGraphWorkspace({
   kind,
-  initial,
+  store,
+  tab,
   initialLookId,
   generateHref,
   portraitHref,
 }: {
   kind: CardKind;
-  initial: AssetGraph;
+  /** The card's graph and writes, shared with the 创作 tab
+   * (`features/asset-workspace/asset-workspace.tsx`), which also polls it
+   * while jobs are pending. */
+  store: AssetGraphStore;
+  /** 造型图谱 or 音色 — the outer workspace's tabs pick it. */
+  tab: 'looks' | 'voices';
   /** `?look=`: select and expand this look on arrival. */
   initialLookId?: string | null;
   generateHref: (variant: AssetVariant) => string;
@@ -79,7 +83,8 @@ export function AssetGraphWorkspace({
   const t = useTranslations('assetGraph');
   const { notify } = useToast();
   const wide = useMinWidth('md');
-  const { graph, busy, error, actions, clearError } = useAssetGraph(kind, initial);
+  const { graph, busy, error, actions, clearError } = store;
+  const initial = graph;
   const names = useNodeNames(graph);
   const lookExists = Boolean(initialLookId && graph.variants?.some((v) => v.id === initialLookId));
   const [expanded, setExpanded] = useState<Set<string>>(() =>
@@ -90,8 +95,13 @@ export function AssetGraphWorkspace({
   );
   const [connect, setConnect] = useState<ConnectDraft | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  // Characters have a 音色 tab (P8): its own graph and inspector.
-  const [tab, setTab] = useState<'looks' | 'voices'>('looks');
+  // Switching tab (音色 has its own graph) resets the selection.
+  const [seenTab, setSeenTab] = useState(tab);
+  if (seenTab !== tab) {
+    setSeenTab(tab);
+    setSelection({ type: 'card' });
+    setSheetOpen(false);
+  }
   const audioModels = useGenerationModels(
     kind === 'character' ? 'audio_generation' : 'text_to_image',
   );
@@ -105,18 +115,6 @@ export function AssetGraphWorkspace({
       return next;
     });
   }, []);
-  // While jobs are filling the card, refetch it so finished images (and
-  // their auto edges) replace the placeholders.
-  const pendingCount = graph.pending?.length ?? 0;
-  const { refresh } = actions;
-  useEffect(() => {
-    if (!pendingCount) return;
-    const timer = window.setInterval(() => {
-      void refresh().catch(() => undefined);
-    }, PENDING_POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [pendingCount, refresh]);
-
   const toggleAll = (expand: boolean) =>
     setExpanded(expand ? new Set((graph.variants ?? []).map((v) => v.id)) : new Set());
 
@@ -132,12 +130,6 @@ export function AssetGraphWorkspace({
           ? { type: 'voice', id }
           : { type: 'entry', id },
     );
-  const switchTab = (next: 'looks' | 'voices') => {
-    setTab(next);
-    setSelection({ type: 'card' });
-    setSheetOpen(false);
-  };
-
   // The selection can outlive its node (deleted here or in another tab).
   const variants = graph.variants ?? [];
   const selectedVariant =
@@ -248,32 +240,6 @@ export function AssetGraphWorkspace({
             </Button>
           }
         />
-      ) : null}
-
-      {kind === 'character' ? (
-        <div
-          role="tablist"
-          aria-label={t('tabsLabel')}
-          className="flex gap-1 self-start rounded-[var(--radius-sm)] bg-surface-soft p-1"
-        >
-          {(['looks', 'voices'] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              role="tab"
-              aria-selected={tab === value}
-              onClick={() => switchTab(value)}
-              className={cn(
-                'rounded-[var(--radius-sm)] px-3 py-1.5 text-sm transition-colors focus-visible:outline-2',
-                tab === value ? 'bg-surface text-text shadow-sm' : 'text-muted hover:text-text',
-              )}
-            >
-              {value === 'looks'
-                ? t('tabLooks', { count: (graph.variants ?? []).length })
-                : t('tabVoices', { count: (graph.voices ?? []).length })}
-            </button>
-          ))}
-        </div>
       ) : null}
 
       {/* Narrow screens: outline + inspector sheet. */}
