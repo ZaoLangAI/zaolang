@@ -3,6 +3,8 @@
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { SignInPrompt } from '@/components/auth/sign-in-prompt';
+import { useSession } from '@/components/auth/session-provider';
 import { Button } from '@/components/ui/button';
 import { TextArea } from '@/components/ui/field';
 import { IconVideo } from '@/components/ui/icons';
@@ -84,6 +86,7 @@ function ScriptDocumentLoading({ label, hint }: { label: string; hint: string })
 export function ScriptEditor({ episodeId }: { episodeId: string }) {
   const t = useTranslations('scriptStudio');
   const { notify } = useToast();
+  const { status: sessionStatus } = useSession();
   const [detail, setDetail] = useState<ScriptDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null);
@@ -98,7 +101,12 @@ export function ScriptEditor({ episodeId }: { episodeId: string }) {
   const [retryIdeaSeeded, setRetryIdeaSeeded] = useState(false);
   const stream = useScriptTurnStream();
   const createStream = useCreateStream(episodeId);
-  const characterLibrary = useResource<Character[]>('/v1/characters');
+  // Every mount fetch below waits for the session: a hard load mounts this
+  // before `SessionProvider` has redeemed the refresh cookie, and a request
+  // sent then goes out without a token and 401s.
+  const characterLibrary = useResource<Character[]>(
+    sessionStatus === 'authenticated' ? '/v1/characters' : null,
+  );
   const refetchCharacterLibrary = characterLibrary.refetch;
 
   // Seeds the retry composer with the idea/skills that produced the current
@@ -118,6 +126,7 @@ export function ScriptEditor({ episodeId }: { episodeId: string }) {
   }
 
   useEffect(() => {
+    if (sessionStatus !== 'authenticated') return;
     let cancelled = false;
     void (async () => {
       try {
@@ -133,9 +142,10 @@ export function ScriptEditor({ episodeId }: { episodeId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [episodeId, t]);
+  }, [sessionStatus, episodeId, t]);
 
   const refreshLinkedDrafts = useCallback(() => {
+    if (sessionStatus !== 'authenticated') return;
     void editorApi
       .listContentLinks(episodeId)
       .then((links) => {
@@ -152,7 +162,7 @@ export function ScriptEditor({ episodeId }: { episodeId: string }) {
       .catch(() => {
         setLinkedDrafts([]);
       });
-  }, [episodeId]);
+  }, [sessionStatus, episodeId]);
 
   // Same source the episode workspace uses for "生成的视频" — a draft is
   // linked the moment it is created from a breakpoint, so this chip can
@@ -340,6 +350,7 @@ export function ScriptEditor({ episodeId }: { episodeId: string }) {
     );
   };
 
+  if (sessionStatus === 'anonymous') return <SignInPrompt description={t('signInHint')} />;
   if (loadError) return <ErrorNotice title={loadError} />;
   if (!detail) {
     return (
