@@ -8,6 +8,7 @@ that exactly one wins.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 
 from sqlalchemy import func, select
@@ -123,6 +124,75 @@ def test_capture_and_release_cannot_both_settle_one_reservation(
     # The balance follows whichever settlement won, with nothing left reserved.
     expected = 150 if settlements[0] == LedgerEntryType.CAPTURE else 200
     assert account.available_balance == expected
+
+
+def test_sibling_jobs_settling_at_once_both_capture(sessions: SessionFactory) -> None:
+    """Two of one user's jobs finishing together (the 创作 board's 2–4
+    candidates, a scene matrix) must both settle.
+
+    Each racer has read the account before either writes, so the second
+    UPDATE finds a newer `version`. A worker cannot hand "please retry" to
+    anyone — before the retry this failed a finished job as
+    WORKER_TASK_FAILED.
+    """
+    setup = sessions()
+    user = _seed_account(setup, balance=200)
+    jobs = [make_job(setup, user, reserved=30) for _ in range(2)]
+    for job in jobs:
+        credits.reserve(setup, user.id, 30, job_id=job.id)
+    setup.commit()
+    both_read = threading.Barrier(2, timeout=10)
+
+    def capture(job_id: str) -> Callable[[Session], int]:
+        def work(session: Session) -> int:
+            credits.get_account(session, user.id)
+            both_read.wait()
+            return credits.capture(
+                session, user.id, job_id=job_id, actual_amount=20
+            ).available_balance
+
+        return work
+
+    outcomes = run_in_parallel([race(capture(job.id), sessions) for job in jobs])
+    assert not [o for o in outcomes if isinstance(o, BaseException)], outcomes
+
+    check = sessions()
+    account = credits.get_account(check, user.id)
+    # 200 − 2×30 reserved, then 10 of each reservation returned.
+    assert account.available_balance == 160
+    assert account.reserved_balance == 0
+    assert account.version == 1 + 2 + 2
+
+
+def test_sibling_jobs_failing_at_once_both_release(sessions: SessionFactory) -> None:
+    """The failure side of the same race. `jobs.service.settle_release` reads
+    a Conflict as "already settled", so a lost race used to leave the
+    reservation locked for good."""
+    setup = sessions()
+    user = _seed_account(setup, balance=200)
+    jobs = [make_job(setup, user, reserved=30) for _ in range(2)]
+    for job in jobs:
+        credits.reserve(setup, user.id, 30, job_id=job.id)
+    setup.commit()
+    both_read = threading.Barrier(2, timeout=10)
+
+    def release(job_id: str) -> Callable[[Session], int]:
+        def work(session: Session) -> int:
+            credits.get_account(session, user.id)
+            both_read.wait()
+            return credits.release(
+                session, user.id, job_id=job_id, reason="failed"
+            ).available_balance
+
+        return work
+
+    outcomes = run_in_parallel([race(release(job.id), sessions) for job in jobs])
+    assert not [o for o in outcomes if isinstance(o, BaseException)], outcomes
+
+    check = sessions()
+    account = credits.get_account(check, user.id)
+    assert account.available_balance == 200
+    assert account.reserved_balance == 0
 
 
 def test_redelivered_payment_webhook_books_credits_once(sessions: SessionFactory) -> None:
