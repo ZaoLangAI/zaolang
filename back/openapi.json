@@ -28079,6 +28079,7 @@
           "prop",
           "master",
           "shot",
+          "panorama",
           "other"
         ],
         "title": "AssetEntryType",
@@ -37261,6 +37262,11 @@
           "camera_from_sheet": {
             "type": "boolean",
             "title": "Camera From Sheet",
+            "default": false
+          },
+          "scene_panorama": {
+            "type": "boolean",
+            "title": "Scene Panorama",
             "default": false
           },
           "voice_profile_id": {

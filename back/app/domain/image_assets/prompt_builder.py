@@ -56,6 +56,8 @@ class AssetPass(StrEnum):
     SHEET_FRONT_FIGURE = "sheet_front_figure"
     # AC-4: a prop's hero plate (or a detail shot of it).
     PROP = "prop"
+    # AC-7: a scene variant's 360° equirectangular panorama (2:1).
+    SCENE_PANORAMA = "scene_panorama"
     OTHER = "other"
 
 
@@ -277,6 +279,8 @@ def resolve_pass(
         if params.get("character_portrait"):
             return AssetPass.IDENTITY_PORTRAIT
         return AssetPass.CHARACTER_SHEET
+    if asset_kind == ImageAssetKind.SCENE.value and params.get("scene_panorama"):
+        return AssetPass.SCENE_PANORAMA
     if asset_kind == ImageAssetKind.SCENE.value:
         # A scene variant set runs one SCENE pass per variant, with that
         # variant's presets already folded into the params
@@ -344,6 +348,10 @@ def compose(
         return prompt_out, negative_out
     if asset_pass is AssetPass.PROP:
         return _compose_prop(prompt, negative, params, has_reference=has_reference)
+    if asset_pass is AssetPass.SCENE_PANORAMA:
+        return _compose_scene_panorama(
+            prompt, negative, scene_presets_from(params), has_reference=has_reference
+        )
     if asset_pass is AssetPass.SCENE:
         return _compose_scene(
             prompt, negative, scene_presets_from(params), has_reference=has_reference
@@ -577,6 +585,38 @@ def _compose_scene(
     return _join(prompt, f"{fragment}。"), merge_negative(negative, preset_negative)
 
 
+# 场景全景 (AC-7): one equirectangular still the web viewer wraps onto a
+# sphere — the seam must close, the horizon sit on the middle row, and the
+# room stay empty so posed shots cut from it are clean plates.
+SCENE_PANORAMA_LAYOUT = (
+    "输出一张 360° 全景图（等距柱状投影，宽高比 2:1，单张画面）：从同一个站位环视一周，"
+    "水平方向完整覆盖 360°，画面最左端与最右端无缝衔接；地平线水平且位于画面垂直正中，"
+    "上下覆盖到正上方与正下方；透视与光照连续一致，画面中不出现人物"
+)
+SCENE_PANORAMA_REFERENCE_PREFIX = (
+    "以参考图1中的场景为准，保持建筑结构、陈设布局、材质、光线与时间一致，"
+    "并把它延展成环绕一周的完整空间；"
+)
+SCENE_PANORAMA_NEGATIVE = (
+    "人物、人影、人群、分格拼贴、多张画面并排、圆形鱼眼画面、小行星效果、"
+    "左右两端断裂或不连续、地平线倾斜、画框边框、文字、水印"
+)
+# Framing words a planner may add that a 360° still cannot honour.
+_PANORAMA_FRAMING_MARKERS = ("特写", "近景", "景别", "焦段", "竖构图", "鱼眼", "分割构图")
+
+
+def _compose_scene_panorama(
+    prompt: str, negative: str | None, presets: dict[str, str], *, has_reference: bool
+) -> tuple[str, str]:
+    text = (SCENE_PANORAMA_REFERENCE_PREFIX + prompt) if has_reference else prompt
+    negative_out = merge_negative(negative, SCENE_PANORAMA_NEGATIVE)
+    if presets:
+        fragment, preset_negative = scene_preset_fragments(presets)
+        text = _join(text, fragment)
+        negative_out = merge_negative(negative_out, preset_negative)
+    return _join(text, SCENE_PANORAMA_LAYOUT), negative_out
+
+
 def _other_period_markers(period: str) -> list[str]:
     markers: list[str] = []
     for key, preset in PERIOD_PRESETS.items():
@@ -609,9 +649,14 @@ def sanitize_enhancements(
             AssetPass.CHARACTER_EXPRESSIONS,
             AssetPass.IDENTITY_PORTRAIT,
             AssetPass.SCENE,
+            AssetPass.SCENE_PANORAMA,
             AssetPass.CHARACTER_IN_SCENE,
         )
         if asset_pass in sheetless and any(marker in text for marker in _SHEET_MARKERS):
+            continue
+        if asset_pass is AssetPass.SCENE_PANORAMA and any(
+            marker in text for marker in _PANORAMA_FRAMING_MARKERS
+        ):
             continue
         if foreign_periods and any(marker in text for marker in foreign_periods):
             continue

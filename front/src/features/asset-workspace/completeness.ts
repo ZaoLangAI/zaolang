@@ -33,6 +33,8 @@ export function slotEntries(
       return entries.filter((e) => e.entry_type === 'master');
     case 'in_scene':
       return entries.filter((e) => e.entry_type === 'pose');
+    case 'panorama':
+      return entries.filter((e) => e.entry_type === 'panorama');
     case 'pose': {
       const wanted = slot.pose ? poseKey(slot.pose) : null;
       const type = kind === 'scene' ? 'shot' : 'view';
@@ -46,7 +48,8 @@ export function slotEntries(
 }
 
 /** A running job filing into this look that could produce `slot`: an orbit
- * job for a pose slot, any other job for the rest. */
+ * job for a pose slot, a panorama job for the panorama, any other job for
+ * the rest. */
 function pendingFor(
   slot: SlotDef,
   variant: AssetVariant,
@@ -55,7 +58,9 @@ function pendingFor(
   return pending.some((job) => {
     const here = !job.target_variant_id || job.target_variant_id === variant.id;
     if (!here) return false;
-    return slot.kind === 'pose' ? job.mode === 'orbit' : job.mode !== 'orbit';
+    if (slot.kind === 'pose') return job.mode === 'orbit';
+    if (slot.kind === 'panorama') return job.mode === 'panorama';
+    return job.mode !== 'orbit' && job.mode !== 'panorama';
   });
 }
 

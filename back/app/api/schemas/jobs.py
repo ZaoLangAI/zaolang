@@ -641,6 +641,12 @@ class GenerationParams(ApiModel):
     # is drawn from that figure (`nodes._chain_orbit_front`). Set by the
     # orbit / fill planners; `camera_poses[0]` must then be the front pose.
     camera_from_sheet: bool = False
+    # `asset_kind=scene` only (AC-7): one 360° equirectangular still of the
+    # `target_scene_id` card (`target_variant_id`'s variant, else the
+    # default), filed as that variant's `panorama`. Forces
+    # `aspect_ratio=2:1` and a single image; with no reference the
+    # variant's approved master is borrowed as reference 1.
+    scene_panorama: bool = False
     # `audio_generation` (P7): speak with this character voice — its model,
     # preset voice and knobs (or clone sample) replace `forced_model`,
     # `extra.voice/emotion/speed` and the references at submit
@@ -720,6 +726,15 @@ class GenerationParams(ApiModel):
                 raise ValueError("从设定图生成多机位时，第一个机位必须是正面。")
         elif self.camera_from_sheet:
             raise ValueError("camera_from_sheet 仅适用于多机位任务。")
+        if self.scene_panorama:
+            if not is_scene:
+                raise ValueError("全景图仅适用于 asset_kind=scene。")
+            if not self.target_scene_id:
+                raise ValueError("全景图需要指定目标场景（target_scene_id）。")
+            if derive or self.camera_poses or self.scene_variants:
+                raise ValueError("全景图不能同时指定其他生成方式。")
+            # The viewer maps the still onto a sphere: always one 2:1 image.
+            self.aspect_ratio = "2:1"
         if self.asset_output_entry_type is not None:
             allowed = (
                 CHARACTER_ENTRY_TYPES

@@ -331,6 +331,11 @@ def _request_constraint_failure(
         # edit sent there would come back as some arbitrary angle.
         return "camera_pose_required"
 
+    if params.get("scene_panorama") and "2:1" not in (capability.exact_image_aspect_ratios or ()):
+        # A panorama is wrapped onto a sphere: a route that would quietly
+        # return a square (or 16:9) image is no route for it (AC-7).
+        return "panorama_size_not_supported"
+
     if (
         capability.generation_kind == MediaGenerationKind.EDIT
         and bool(capability.operations & _VIDEO_GENERATION_OPERATIONS)

@@ -35,6 +35,9 @@ from app.providers.dmxapi_media import (
     VideoModelProfile as DmxApiVideoModelProfile,
 )
 from app.providers.dmxapi_media import (
+    exact_image_aspect_ratios as dmxapi_exact_image_aspect_ratios,
+)
+from app.providers.dmxapi_media import (
     image_model_profile as dmxapi_image_profile,
 )
 from app.providers.dmxapi_media import (
@@ -223,6 +226,9 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                 max_image_references=_max_image_references(endpoint.protocol, endpoint.model, tag),
                 max_outputs_per_call=_max_outputs_per_call(endpoint.protocol, endpoint.model, tag),
                 camera_control=_camera_control(endpoint.protocol, endpoint.model, tag),
+                exact_image_aspect_ratios=_exact_image_aspect_ratios(
+                    endpoint.protocol, endpoint.model, tag
+                ),
                 provider_factory=_factory(
                     endpoint_id=endpoint_id,
                     capability_tag=tag,
@@ -323,6 +329,14 @@ def _max_outputs_per_call(protocol: str | None, model: str, tag: str) -> int:
 def _camera_control(protocol: str | None, model: str, tag: str) -> bool:
     """See `ProviderCapability.camera_control`."""
     return tag == "image_to_image" and protocol == "fal" and fal_supports_camera_control(model)
+
+
+def _exact_image_aspect_ratios(protocol: str | None, model: str, tag: str) -> frozenset[str] | None:
+    """See `ProviderCapability.exact_image_aspect_ratios` — known only for
+    DMXAPI's Seedream so far (AiHubMix has no 2:1 size)."""
+    if tag in _IMAGE_TAGS and protocol == "dmxapi":
+        return dmxapi_exact_image_aspect_ratios(model)
+    return None
 
 
 def _music_styles_for(protocol: str | None, model: str, tag: str) -> frozenset[str] | None:

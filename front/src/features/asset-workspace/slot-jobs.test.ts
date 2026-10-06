@@ -42,6 +42,19 @@ describe('slotJob', () => {
     });
   });
 
+  it('asks for a 2:1 panorama of the scene variant', () => {
+    const job = slotJob('scene', graph, look, slot('scene', 'panorama'));
+    expect(job?.operation).toBe('text_to_image');
+    expect(job?.params).toMatchObject({
+      asset_kind: 'scene',
+      target_scene_id: 'sk_1',
+      target_variant_id: 'v2',
+      scene_panorama: true,
+      aspect_ratio: '2:1',
+      scene_lighting: 'dusk',
+    });
+  });
+
   it('carries a prop condition and leaves poses to the orbit route', () => {
     expect(slotJob('prop', graph, look, slot('prop', 'master'))?.params.prop_state).toBe('worn');
     expect(slotJob('prop', graph, look, slot('prop', 'side'))).toBeNull();

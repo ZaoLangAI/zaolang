@@ -39,4 +39,4 @@
 8. Answers are appended as `问题：答案` (`workflow_service.compose_prompt`), never templated; `GenerationParams` gains nothing.
 9. A workflow run is a `CanvasAgentRun` with `origin=workflow` → same confirm/cancel/landing/workbench path. Operation comes from the skill's `applicable_operations_json` (`_operation_for`); request carries `skill_ids`, not a recipe copy.
 10. Paid, locked skill: detail withholds `params` but summary `has_variables` stays true → `workflow-panel.tsx` offers unlock instead of an empty form.
-11. Panorama director (`director-dialog.tsx`, `panorama-viewer.tsx`) lazy-imports `@photo-sphere-viewer/core`; keep it dynamic (bundle budget → `zaolang-frontend-ui`).
+11. Panorama director (`director-dialog.tsx`) renders the shared `front/src/components/media/panorama-viewer.tsx` (lazy-imports `@photo-sphere-viewer/core`; keep it dynamic — the ESLint heavy-dependency boundary allows the package only there) and captures with `components/media/panorama-capture.ts:composeShot`; `director-capture.ts` keeps only `describeFraming`. `readPosition().fov` is the vertical FOV in degrees. The scene workspace's 全景 slot reuses both (`zaolang-creation-library`).

@@ -5,7 +5,8 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref
 import type { Viewer } from '@photo-sphere-viewer/core';
 
 /**
- * A 360° panorama surface, used by the director to stand inside a scene.
+ * A 360° panorama surface: the canvas director stands inside a scene with it,
+ * and the scene workspace's 全景 slot views and cuts shots from it (AC-7).
  *
  * `@photo-sphere-viewer/core` depends on three.js — several hundred kilobytes —
  * so the module is loaded with a dynamic `import()` inside the effect. Only
@@ -20,7 +21,8 @@ const PSV_CANVAS = '.psv-canvas';
 const RADIANS_TO_DEGREES = 180 / Math.PI;
 
 export interface PanoramaHandle {
-  /** Current camera orientation, in degrees. */
+  /** Current camera orientation, in degrees: yaw / pitch, and the vertical
+   * field of view (25°–110°). */
   readPosition: () => { yaw: number; pitch: number; fov: number } | null;
   /** The rendered frame, as a canvas element that can be composited onto. */
   captureCanvas: () => HTMLCanvasElement | null;
@@ -92,11 +94,14 @@ export function PanoramaViewer({
         const { yaw, pitch } = viewer.getPosition();
         if (typeof yaw !== 'number' || typeof pitch !== 'number') return null;
         // The library works in radians. Degrees is what a person reads, and
-        // what the framing sentence in `director-capture.ts` is written in.
+        // what the framing sentence in `features/canvas/director-capture.ts` and
+        // the workspace's pose mapping (`asset-workspace/panorama.ts`) read.
         return {
           yaw: Math.round(yaw * RADIANS_TO_DEGREES),
           pitch: Math.round(pitch * RADIANS_TO_DEGREES),
-          fov: Math.round(viewer.getZoomLevel()),
+          // The real vertical FOV, not `getZoomLevel()` (0–100, inverted:
+          // 100 is the narrowest view) — both readers band it in degrees.
+          fov: Math.round(viewer.state.vFov),
         };
       },
       captureCanvas: () =>

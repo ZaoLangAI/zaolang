@@ -4235,7 +4235,8 @@
       "right": "Right 90°",
       "overhead": "Overhead",
       "detail": "Detail",
-      "top": "Top 60°"
+      "top": "Top 60°",
+      "panorama": "360° panorama"
     },
     "status": {
       "missing": "Missing",
@@ -4301,6 +4302,20 @@
     "insufficient": "Not enough credits — {available} available.",
     "fillAll": "Fill everything missing",
     "candidatesHint": "{count} candidates — approve one; the current image becomes a candidate.",
-    "approve": "Approve"
+    "approve": "Approve",
+    "panorama": {
+      "slotHint": "Generates one 360° panorama (2:1 equirectangular), using the approved main image as reference when there is one. A panorama is for viewing and cutting camera angles; it is never used as a reference image.",
+      "open": "View panorama · cut angles",
+      "title": "{variant} · 360° panorama",
+      "description": "Drag to look around and scroll to zoom. A cut is saved as this variant's shot for the current camera angle.",
+      "capture": "Cut current angle",
+      "currentPose": "Current angle: {pose}",
+      "loading": "Loading panorama…",
+      "hint": "Cuts keep the panorama's distortion. Use Refine to redraw one as a single shot from that angle (the result starts as a candidate). If the angle already has an approved image, the cut also starts as a candidate.",
+      "cuts": "Cut angles",
+      "captured": "Cut: {pose}",
+      "refineFor": "Refine ({credits} credits)",
+      "refining": "Refining. The result will appear among the candidates"
+    }
   }
 }

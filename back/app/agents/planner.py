@@ -278,7 +278,9 @@ ASSET_PLAN_SYSTEM_PROMPT = f"""你是造浪平台的图片资产规划器，
   asset_edit = 以参考图1为基础的局部调整：intent 就是用户要改的全部内容，
   prompt_enhancements 必须为空数组，不得追加任何修改；
   character_in_scene = 把参考图1的人物放进关联场景的单张画面：禁止补三视图/设定图/色板，
-  prompt_enhancements 只补充人物与场景之间的光影、透视与站位
+  prompt_enhancements 只补充人物与场景之间的光影、透视与站位；
+  scene_panorama = 场景 360° 全景图（等距柱状投影，2:1）：从同一个站位环视一周，
+  prompt_enhancements 只补充四周可见的结构、陈设与光源，不得加入景别、焦段、取景方向或构图描述
 - 当 source_params 带有 scene_lighting/scene_weather/scene_state/scene_period
   时，这些预设已经写进了 intent，是硬性要求：prompt_enhancements 不得改写光照、天气、
   破损程度或年代，也不得引入与 scene_period 不同的年代器物；只补充与预设一致的细节

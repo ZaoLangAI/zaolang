@@ -264,7 +264,13 @@ def _promote_master(session: Session, skill: CreationSkill) -> None:
         return
     default = asset_variants_service.find_default(skill)
     approved = (
-        [e for e in default.entries if asset_variants_service.is_approved(e)] if default else []
+        [
+            e
+            for e in default.entries
+            if asset_variants_service.is_approved(e) and not asset_variants_service.is_panorama(e)
+        ]
+        if default
+        else []
     )
     first = approved[0] if approved else None
     if first is None:

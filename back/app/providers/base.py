@@ -378,6 +378,11 @@ class ProviderCapability:
     # prefers these for a posed pass and keeps them away from any other
     # request (`router._request_constraint_failure`).
     camera_control: bool = False
+    # Image aspect ratios the adapter sends as an exact pixel size; any other
+    # ratio falls back to a default (often square) size. `None` = unknown.
+    # A scene panorama (2:1, AC-7) only routes where `2:1` is listed
+    # (`router._request_constraint_failure`).
+    exact_image_aspect_ratios: frozenset[str] | None = None
 
 
 def probe_image_size(payload: bytes) -> tuple[int | None, int | None]:

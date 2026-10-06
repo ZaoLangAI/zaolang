@@ -40,6 +40,8 @@ def build_fake_catalog() -> dict[str, ProviderCapability]:
             model_or_workflow="paid-video-v3",
             # Takes a labelled multi-image reference set (reference legend tests).
             max_image_references=9,
+            # The one fake route a scene panorama (2:1) may take.
+            exact_image_aspect_ratios=frozenset({"1:1", "16:9", "9:16", "2:1"}),
             provider_factory=lambda: fake_providers.get_provider("fake_paid_api"),
         ),
         # Camera-control image route: only ever eligible for a posed pass

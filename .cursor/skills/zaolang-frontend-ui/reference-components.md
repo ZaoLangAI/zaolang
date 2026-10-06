@@ -18,7 +18,7 @@ Where things live under `front/src/`. `ls` the dir for current files; this lists
 | `front/src/components/create/` | `/create` page: mode cards, tool cards, recent drafts rail (`recent-draft-card.tsx`), recent series, credits tile, shortform hero banner |
 | `front/src/components/studio/` | generation studios — see `reference-studios.md` |
 | `front/src/components/job/` | `/jobs/[jobId]` page, stage table + readers, awaiting-input panel (`input-request-retry.ts`), promote dialog |
-| `front/src/components/media/` | device preview/frame (specs in `front/src/lib/devices.ts`), video-player, posters, output-gallery, download button |
+| `front/src/components/media/` | device preview/frame (specs in `front/src/lib/devices.ts`), video-player, posters, output-gallery, download button; `panorama-viewer.tsx` (360° viewer, lazy `@photo-sphere-viewer/core`) + `panorama-capture.ts` (`composeShot`) shared by the canvas director and the scene 全景 slot |
 | `front/src/components/media/safe-media-playback.ts` | signed-URL re-sign margin, abort-safe play, duration fallback |
 | `front/src/components/work/` | work detail: stage, info panel, rail, card, lineage strip, reusable params, report/appeal/delete dialogs |
 | `front/src/components/discover/` | discover wall + hero (zaolang-discovery-search) |

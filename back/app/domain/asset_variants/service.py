@@ -144,6 +144,17 @@ def anchor(skill: CreationSkill) -> SkillAssetEntry | None:
     return next((entry for entry in entries(skill) if entry.is_anchor), None)
 
 
+def is_panorama(entry: SkillAssetEntry) -> bool:
+    return entry.entry_type == AssetEntryType.PANORAMA
+
+
+def _referenceable(items: list[SkillAssetEntry]) -> list[SkillAssetEntry]:
+    """Drops scene panoramas (AC-7): a 360° equirectangular still is too
+    distorted to stand in for the scene — it is never a default reference,
+    a representative still or an anchor."""
+    return [entry for entry in items if not is_panorama(entry)]
+
+
 def master_or_anchor(
     scene: CreationSkill, variant: SkillAssetVariant | None = None
 ) -> SkillAssetEntry | None:
@@ -156,7 +167,7 @@ def master_or_anchor(
     master = next((e for e in pool if e.entry_type == AssetEntryType.MASTER), None)
     if master is not None:
         return master
-    approved = approved_entries(scene)
+    approved = _referenceable(approved_entries(scene))
     return anchor(scene) or (approved[0] if approved else None)
 
 
@@ -528,6 +539,7 @@ _SLOT_TYPES = frozenset(
         AssetEntryType.VIEW.value,
         AssetEntryType.EXPRESSION_SHEET.value,
         AssetEntryType.MASTER.value,
+        AssetEntryType.PANORAMA.value,
     }
 )
 
@@ -558,7 +570,8 @@ def slot_mates(
     The identity portrait is card-wide (one face for every look); the other
     slots are per look / variant: the front sheet, each camera pose (a
     single view — an old `side` view is the right-side pose — or a scene shot
-    drawn from a pose), each distinct set of expressions, the master plate.
+    drawn from a pose), each distinct set of expressions, the master plate,
+    the 360° panorama (AC-7).
     """
     pose = camera_vocab.parse(camera)
     if entry_type == AssetEntryType.SHOT and pose is not None:
@@ -807,6 +820,8 @@ def set_anchor(session: Session, skill: CreationSkill, entry: SkillAssetEntry | 
     approved image can be the identity every job leads with (422)."""
     if entry is not None and not is_approved(entry):
         raise ValidationFailed("候选图需要先定稿，才能设为锚点。", fields={"entry_id": "未定稿"})
+    if entry is not None and is_panorama(entry):
+        raise ValidationFailed("全景图不能设为锚点。", fields={"entry_id": "全景图"})
     for other in entries(skill):
         if other.is_anchor and other is not entry:
             other.is_anchor = False
@@ -932,6 +947,7 @@ def default_subset(
     expression images; at most 3. Scene: the variant's master then its
     shots, else the card's anchor (the structure every variant shares); at
     most 2. With no look named and nothing in the default, anything approved.
+    A scene panorama (AC-7) is never part of it.
 
     `hints` re-rank within the same caps (P2-7). Character: a close shot
     leads with the identity portrait and an expression sheet showing
@@ -946,7 +962,7 @@ def default_subset(
     subject (within 90°) still leads with the face; one from behind does not.
     """
     target = variant or find_default(skill)
-    target_entries = _approved(list(target.entries)) if target else []
+    target_entries = _referenceable(_approved(list(target.entries))) if target else []
     card_anchor = anchor(skill)
     framing = hints.framing if hints else None
     emotion = hints.emotion if hints else None
@@ -998,7 +1014,7 @@ def default_subset(
         limit = MAX_DEFAULT_SCENE_REFERENCES
 
     if not ordered and variant is None:
-        ordered = approved_entries(skill)
+        ordered = _referenceable(approved_entries(skill))
     picked: list[str] = []
     for entry in ordered:
         if entry.asset_id not in picked:
@@ -1053,7 +1069,7 @@ def _angled_subset(
             ordered = [card_anchor]
         limit = MAX_DEFAULT_SCENE_REFERENCES
     if not ordered and target is None:
-        ordered = approved_entries(skill)
+        ordered = _referenceable(approved_entries(skill))
     picked: list[str] = []
     for entry in ordered:
         if entry.asset_id not in picked:
@@ -1101,6 +1117,7 @@ _ENTRY_TYPE_NAMES: dict[AssetEntryType, str] = {
     AssetEntryType.PROP: "道具",
     AssetEntryType.MASTER: "主图",
     AssetEntryType.SHOT: "机位",
+    AssetEntryType.PANORAMA: "全景",
 }
 _VIEW_NAMES = {"side": "侧面", "back": "背面", "detail": "细节", "reverse": "反打"}
 

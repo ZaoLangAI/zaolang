@@ -4235,7 +4235,8 @@
       "right": "右机位 90°",
       "overhead": "俯视全景",
       "detail": "细节特写",
-      "top": "俯视 60°"
+      "top": "俯视 60°",
+      "panorama": "360° 全景"
     },
     "status": {
       "missing": "缺失",
@@ -4301,6 +4302,20 @@
     "insufficient": "积分不足，当前可用 {available}。",
     "fillAll": "一键补齐缺失",
     "candidatesHint": "{count} 张候选：选一张定稿，原有的会退为候选。",
-    "approve": "定稿"
+    "approve": "定稿",
+    "panorama": {
+      "slotHint": "生成一张 360° 全景图（2:1 等距柱状投影）；已有定稿主图时以它为参考。全景图用来查看和截取机位，不会作为参考图。",
+      "open": "查看全景 · 截取机位",
+      "title": "{variant} · 360° 全景",
+      "description": "拖动画面调整朝向，滚轮缩放景别；截取的画面按当前机位存为这个变体的机位图。",
+      "capture": "截取当前机位",
+      "currentPose": "当前机位：{pose}",
+      "loading": "正在加载全景…",
+      "hint": "截图带有全景畸变，可用「精修」按此机位重绘成单镜头画面（结果先作为候选）。机位已有定稿图时，截图也先作为候选。",
+      "cuts": "已截取的机位",
+      "captured": "已截取：{pose}",
+      "refineFor": "精修（{credits} 积分）",
+      "refining": "精修中，完成后出现在候选里"
+    }
   }
 }

@@ -75,6 +75,29 @@ describe('slotStates', () => {
     expect(states.find((s) => s.slot.id === 'reverse')?.status).toBe('approved');
     expect(cardCompleteness('scene', [plate])).toEqual({ done: 2, total: 5 });
   });
+
+  it('keeps the optional panorama slot apart from the master and its jobs', () => {
+    const plate = variant([
+      entry('m', { entry_type: 'master' }),
+      entry('pano', { entry_type: 'panorama', status: 'candidate' }),
+    ]);
+    const states = slotStates('scene', plate, plate.entries ?? []);
+    const panorama = states.find((s) => s.slot.id === 'panorama');
+    expect(panorama?.status).toBe('candidate');
+    expect(panorama?.slot.required).toBe(false);
+    expect(states.find((s) => s.slot.id === 'master')?.approved?.id).toBe('m');
+    // Optional: the badge still counts only the five required slots.
+    expect(cardCompleteness('scene', [plate])).toEqual({ done: 1, total: 5 });
+
+    const running = slotStates(
+      'scene',
+      variant([]),
+      [],
+      [{ job_id: 'j', status: 'running', mode: 'panorama', target_variant_id: 'v1' }],
+    );
+    expect(running.find((s) => s.slot.id === 'panorama')?.status).toBe('pending');
+    expect(running.find((s) => s.slot.id === 'master')?.status).toBe('missing');
+  });
 });
 
 describe('orbitSource', () => {
