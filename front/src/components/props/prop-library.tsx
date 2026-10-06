@@ -32,6 +32,7 @@ import { useToast } from '@/components/ui/toast';
 import { cardCompleteness } from '@/features/asset-workspace/completeness';
 import { workspaceHref } from '@/features/asset-workspace/new-card';
 import { useRouter } from '@/i18n/navigation';
+import { ScriptImportButton } from '@/features/script/script-import-button';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { Prop } from '@/lib/api/types';
@@ -326,7 +327,16 @@ export function PropLibrary({ initial }: { initial: Prop[] }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
+        <ScriptImportButton
+          kind="prop"
+          onApplied={() =>
+            void api
+              .get<Prop[]>('/v1/props')
+              .then(setProps)
+              .catch(() => undefined)
+          }
+        />
         <Button onClick={openCreate} icon={<IconPlus className="size-4" />}>
           {t('newProp')}
         </Button>

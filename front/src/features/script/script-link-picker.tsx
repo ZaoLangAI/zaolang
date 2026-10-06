@@ -10,16 +10,23 @@ import {
   DropdownMenuGroup,
   DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu';
-import { IconImage, IconUser } from '@/components/ui/icons';
-import type { Character, Scene } from '@/lib/api/types';
+import { IconImage, IconSticker, IconUser } from '@/components/ui/icons';
+import type { Character, Prop, Scene } from '@/lib/api/types';
 import { useResource } from '@/lib/use-resource';
 
-type LinkKind = 'character' | 'scene';
+type LinkKind = 'character' | 'scene' | 'prop';
+
+const LIBRARY: Record<LinkKind, { path: string; manageHref: string }> = {
+  character: { path: '/v1/characters', manageHref: '/create/characters' },
+  scene: { path: '/v1/scenes', manageHref: '/create/scenes' },
+  prop: { path: '/v1/props', manageHref: '/create/props' },
+};
 
 /**
- * The "关联角色卡 / 关联场景卡" affordance next to a character chip or scene
- * heading: pick one of the creator's own `Character`/`Scene` assets, or clear
- * the link. Deliberately a picker over the *existing* library, not an
+ * The "关联角色卡 / 关联场景卡 / 关联道具卡" affordance next to a character
+ * chip, scene heading or script prop: pick one of the creator's own cards, or
+ * clear the link. A prop has no variant pick (script props link the card's
+ * default condition). Deliberately a picker over the *existing* library, not an
  * inline create form — creating one with a name, description and reference
  * uploads belongs to the full library page (`manageHref`), linked from the
  * menu's footer, matching the plan's "reuse a lightweight picker, not the
@@ -42,7 +49,8 @@ export function ScriptLinkPicker({
 }: {
   kind: LinkKind;
   refId: string | null;
-  /** The linked card's look (character) / variant (scene); null = default. */
+  /** The linked card's look (character) / variant (scene); null = default.
+   * Unused for a prop. */
   variantId?: string | null;
   onChange: (refId: string | null, variantId?: string | null) => void;
   createHref?: string;
@@ -50,8 +58,7 @@ export function ScriptLinkPicker({
   refreshKey?: number;
 }) {
   const t = useTranslations('scriptStudio');
-  const path = kind === 'character' ? '/v1/characters' : '/v1/scenes';
-  const resource = useResource<(Character | Scene)[]>(path);
+  const resource = useResource<(Character | Scene | Prop)[]>(LIBRARY[kind].path);
 
   useEffect(() => {
     if (refreshKey) resource.refetch();
@@ -62,11 +69,13 @@ export function ScriptLinkPicker({
   const linked = items.find((item) => item.id === refId) ?? null;
   const linkedVariants =
     (linked &&
-      ('looks' in linked ? linked.looks : 'variants' in linked ? linked.variants : null)) ??
+      kind !== 'prop' &&
+      ('looks' in linked ? linked.looks : 'variants' in linked ? linked.variants : null)) ||
     [];
   const linkedVariant = linkedVariants.find((variant) => variant.id === variantId) ?? null;
-  const manageHref = kind === 'character' ? '/create/characters' : '/create/scenes';
-  const label = kind === 'character' ? t('linkCharacter') : t('linkScene');
+  const manageHref = LIBRARY[kind].manageHref;
+  const label =
+    kind === 'character' ? t('linkCharacter') : kind === 'scene' ? t('linkScene') : t('linkProp');
   const createLabel = kind === 'character' ? t('generateCharacterImage') : t('generateSceneImage');
 
   return (
@@ -77,8 +86,10 @@ export function ScriptLinkPicker({
       triggerIcon={
         kind === 'character' ? (
           <IconUser className="size-3.5" />
-        ) : (
+        ) : kind === 'scene' ? (
           <IconImage className="size-3.5" />
+        ) : (
+          <IconSticker className="size-3.5" />
         )
       }
       triggerLabel={
@@ -129,7 +140,11 @@ export function ScriptLinkPicker({
           ) : null}
           <DropdownMenuFooter>
             <Link href={manageHref} className="hover:text-text" onClick={close}>
-              {kind === 'character' ? t('manageCharacters') : t('manageScenes')}
+              {kind === 'character'
+                ? t('manageCharacters')
+                : kind === 'scene'
+                  ? t('manageScenes')
+                  : t('manageProps')}
             </Link>
             {createHref ? (
               <>

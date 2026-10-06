@@ -30,6 +30,7 @@ import { Sheet } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { useRouter } from '@/i18n/navigation';
+import { ScriptImportButton } from '@/features/script/script-import-button';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { Scene } from '@/lib/api/types';
@@ -410,7 +411,16 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
+        <ScriptImportButton
+          kind="scene"
+          onApplied={() =>
+            void api
+              .get<Scene[]>('/v1/scenes')
+              .then(setScenes)
+              .catch(() => undefined)
+          }
+        />
         <Button onClick={openCreate} icon={<IconPlus className="size-4" />}>
           {t('newScene')}
         </Button>

@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
-import { IconImage, IconMic, IconUser, IconVideo } from '@/components/ui/icons';
+import { IconImage, IconMic, IconUser, IconVideo, IconWand } from '@/components/ui/icons';
 
 import type { BatchKind } from './use-script-batch';
 
@@ -20,6 +20,7 @@ export function ScriptBatchToolbar({
   progress,
   onOpen,
   onResume,
+  onBreakdown,
 }: {
   characterCount: number;
   /** Unlinked characters, including library same-name rows the dialog will auto-link. */
@@ -36,6 +37,8 @@ export function ScriptBatchToolbar({
   onOpen: (kind: BatchKind) => void;
   /** Resumes whichever queue (`videos` or `audio`) was last paused. */
   onResume: () => void;
+  /** 拆解建卡 — `AssetBreakdownDialog`. */
+  onBreakdown?: () => void;
 }) {
   const t = useTranslations('scriptStudio');
   const busy = disabled || running;
@@ -44,6 +47,17 @@ export function ScriptBatchToolbar({
     <div className="flex flex-col gap-2 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2.5">
       <p className="text-[11px] font-medium text-muted">{t('batchPipeline')}</p>
       <div className="flex flex-wrap items-center gap-2">
+        {onBreakdown ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<IconWand className="size-3.5" />}
+            disabled={busy}
+            onClick={onBreakdown}
+          >
+            {t('breakdownAction')}
+          </Button>
+        ) : null}
         <Button
           size="sm"
           variant="secondary"
