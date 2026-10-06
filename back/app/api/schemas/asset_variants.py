@@ -22,6 +22,7 @@ from app.domain.image_assets.vocabulary import (
     MAX_CHARACTER_EXPRESSIONS,
     AgeStage,
     CharacterExpression,
+    PropState,
     SceneLighting,
     ScenePeriod,
     SceneState,
@@ -31,15 +32,16 @@ from app.models.enums import AssetEntryStatus, AssetEntryType, QualityTier
 
 
 class VariantPresets(ApiModel):
-    """Scene variant presets (P0 vocabulary) or a look's `age_stage` (P2-6).
-    The service rejects the other kind's keys (a look has no lighting, a
-    scene variant no age)."""
+    """Scene variant presets (P0 vocabulary), a look's `age_stage` (P2-6) or
+    a prop variant's `prop_state` (AC-4). The service rejects the other
+    kinds' keys (a look has no lighting, a scene variant no age)."""
 
     lighting: SceneLighting | None = None
     weather: SceneWeather | None = None
     state: SceneState | None = None
     period: ScenePeriod | None = None
     age_stage: AgeStage | None = None
+    prop_state: PropState | None = None
 
 
 class CustomAttribute(ApiModel):
