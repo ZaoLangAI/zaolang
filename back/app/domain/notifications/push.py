@@ -371,6 +371,32 @@ def script_payload(
     return payload
 
 
+def partial_delivery(job: GenerationJob) -> dict[str, int]:
+    """A multi-pass image job a later pass of which failed still succeeds
+    with the images it delivered and settles per image (P2-0,
+    `workflows.nodes._finish_partial_asset_job`). Its card workspace shows
+    only the images, so the notification is where `delivered_outputs` /
+    `requested_outputs` / `refunded_credits` reach the user. `{}` otherwise.
+    """
+    # Imported here: `jobs.service` imports this module.
+    from app.domain.jobs import service as jobs_service
+
+    if job.status != JobStatus.SUCCEEDED:
+        return {}
+    requested = jobs_service.requested_outputs_of(job)
+    delivered = len(
+        job.output_asset_ids_json or ([job.output_asset_id] if job.output_asset_id else [])
+    )
+    if requested <= 1 or not 0 < delivered < requested:
+        return {}
+    refunded = max(0, job.reserved_credits - (job.actual_credits or 0))
+    return {
+        "delivered_outputs": delivered,
+        "requested_outputs": requested,
+        "refunded_credits": refunded,
+    }
+
+
 def job_payload(session: Session, job: GenerationJob) -> dict[str, Any]:
     params = job.request_json if isinstance(job.request_json, dict) else {}
     prompt = str(params.get("prompt") or "")
@@ -406,6 +432,7 @@ def job_payload(session: Session, job: GenerationJob) -> dict[str, Any]:
     ):
         if isinstance(value, str) and value:
             payload[key] = value
+    payload.update(partial_delivery(job))
     profile = params.get("shortform_profile")
     if isinstance(profile, str) and profile:
         payload["shortform_profile"] = profile

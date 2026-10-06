@@ -2739,6 +2739,7 @@
     "jobRunning": "{operation}「{excerpt}」を生成しています。",
     "jobAwaitingInput": "{operation}を続けるには、いくつか答える必要があります。",
     "jobSucceeded": "{operation}「{excerpt}」が完成しました。",
+    "jobSucceededPartial": "{requested} 枚中 {delivered} 枚を納品、残りの {refunded} クレジットは返却済み：{operation}「{excerpt}」",
     "jobFailed": "{operation}「{excerpt}」は完了できませんでした。",
     "jobCancelled": "{operation}「{excerpt}」はキャンセルされました。",
     "jobExpired": "{operation}「{excerpt}」はタイムアウトし、クレジットを返却しました。",

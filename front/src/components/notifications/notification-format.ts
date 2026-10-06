@@ -122,10 +122,21 @@ const TITLE_KEYS: Record<
     key: 'jobAwaitingInput',
     params: jobParams(p, tBody),
   }),
-  'notification.job_succeeded': (p, tBody) => ({
-    key: 'jobSucceeded',
-    params: jobParams(p, tBody),
-  }),
+  'notification.job_succeeded': (p, tBody) =>
+    typeof p.delivered_outputs === 'number' && typeof p.requested_outputs === 'number'
+      ? {
+          // A multi-pass image job that kept some images (P2-0): the
+          // workspace only shows them, so the count and refund live here —
+          // first, since the bell and toasts clamp the text to two lines.
+          key: 'jobSucceededPartial',
+          params: {
+            ...jobParams(p, tBody),
+            delivered: String(p.delivered_outputs),
+            requested: String(p.requested_outputs),
+            refunded: String(p.refunded_credits ?? 0),
+          },
+        }
+      : { key: 'jobSucceeded', params: jobParams(p, tBody) },
   'notification.job_failed': (p, tBody) => ({
     key: 'jobFailed',
     params: jobParams(p, tBody),

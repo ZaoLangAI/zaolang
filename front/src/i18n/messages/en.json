@@ -2739,6 +2739,7 @@
     "jobRunning": "Your {operation} “{excerpt}” is generating.",
     "jobAwaitingInput": "Your {operation} needs a few answers from you before it can continue.",
     "jobSucceeded": "Your {operation} “{excerpt}” is ready.",
+    "jobSucceededPartial": "{delivered} of {requested} images delivered, {refunded} credits refunded for the rest: your {operation} “{excerpt}”.",
     "jobFailed": "Your {operation} “{excerpt}” could not finish.",
     "jobCancelled": "Your {operation} “{excerpt}” was cancelled.",
     "jobExpired": "Your {operation} “{excerpt}” timed out. Credits were returned.",

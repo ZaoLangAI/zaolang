@@ -2739,6 +2739,7 @@
     "jobRunning": "你的{operation}「{excerpt}」正在生成。",
     "jobAwaitingInput": "你的{operation}需要你回答几个问题才能继续。",
     "jobSucceeded": "你的{operation}「{excerpt}」已完成。",
+    "jobSucceededPartial": "已交付 {delivered}/{requested} 张，未完成部分已退回 {refunded} 积分：你的{operation}「{excerpt}」。",
     "jobFailed": "你的{operation}「{excerpt}」未能完成。",
     "jobCancelled": "你的{operation}「{excerpt}」已取消。",
     "jobExpired": "你的{operation}「{excerpt}」已超时，积分已退回。",

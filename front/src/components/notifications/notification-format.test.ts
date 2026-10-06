@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { Notification } from '@/lib/api/types';
 
-import { MAX_VISIBLE_TOASTS, targetHref, visibleToasts } from './notification-format';
+import {
+  MAX_VISIBLE_TOASTS,
+  notificationText,
+  targetHref,
+  visibleToasts,
+} from './notification-format';
 
 function jobNotification(
   overrides: Partial<Notification> & { payload?: Notification['payload'] } = {},
@@ -97,6 +102,35 @@ describe('targetHref', () => {
         }),
       ),
     ).toBe('/jobs/job_new');
+  });
+});
+
+describe('notificationText', () => {
+  // Echoes the key and its params so the test reads which copy was chosen.
+  const tBody = ((key: string, params?: Record<string, string>) =>
+    params ? `${key} ${JSON.stringify(params)}` : key) as unknown as Parameters<
+    typeof notificationText
+  >[1];
+
+  it('names what a partially delivered image job kept and refunded', () => {
+    const text = notificationText(
+      jobNotification({
+        type: 'job_succeeded',
+        title_key: 'notification.job_succeeded',
+        payload: { delivered_outputs: 1, requested_outputs: 5, refunded_credits: 48 },
+      }),
+      tBody,
+    );
+    expect(text).toContain('jobSucceededPartial');
+    expect(text).toContain('"delivered":"1","requested":"5","refunded":"48"');
+  });
+
+  it('keeps the plain copy for a complete job', () => {
+    const text = notificationText(
+      jobNotification({ type: 'job_succeeded', title_key: 'notification.job_succeeded' }),
+      tBody,
+    );
+    expect(text.startsWith('jobSucceeded ')).toBe(true);
   });
 });
 
