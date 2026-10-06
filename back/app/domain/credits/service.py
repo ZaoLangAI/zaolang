@@ -13,6 +13,7 @@ the four required invariants hold under concurrency:
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -120,6 +121,12 @@ def set_monthly_spend_limit(session: Session, user_id: str, limit: int | None) -
     return account
 
 
+# Settling two of one user's jobs at once races on the account `version`.
+# The loser re-reads the row and retries; only a row that keeps changing
+# under it is reported back as a conflict.
+STALE_ACCOUNT_ATTEMPTS = 5
+
+
 def _apply(
     session: Session,
     account: CreditAccount,
@@ -137,12 +144,71 @@ def _apply(
     created_at: dt.datetime | None = None,
     spend_delta: int = 0,
     spend_period: str | None = None,
+    recheck: Callable[[], None] | None = None,
 ) -> LedgerResult:
+    """`_try_apply`; with `recheck`, retried against a fresh read of the
+    account when another transaction moved it first.
+
+    Settlement opts in: a worker has no one to hand "please retry" to, so a
+    finished job failed (WORKER_TASK_FAILED) whenever a sibling job of the
+    same user captured in the same instant — the 创作 board's 2–4
+    candidates, a scene matrix or a fill wave. `recheck` re-runs the caller's
+    preconditions before each retry (it raises when they no longer hold —
+    e.g. the job was released meanwhile, which the `(job_id, type)` unique
+    key alone would not stop).
+    """
+    attempts = STALE_ACCOUNT_ATTEMPTS if recheck is not None else 1
+    for attempt in range(attempts):
+        if attempt:
+            session.refresh(account)
+            assert recheck is not None
+            recheck()
+        result = _try_apply(
+            session,
+            account,
+            available_delta=available_delta,
+            reserved_delta=reserved_delta,
+            entry_type=entry_type,
+            amount=amount,
+            job_id=job_id,
+            payment_reference=payment_reference,
+            idempotency_key=idempotency_key,
+            reason=reason,
+            actor_user_id=actor_user_id,
+            metadata=metadata,
+            created_at=created_at,
+            spend_delta=spend_delta,
+            spend_period=spend_period,
+        )
+        if result is not None:
+            return result
+    raise Conflict("积分账户已被并发修改，请重试。")
+
+
+def _try_apply(
+    session: Session,
+    account: CreditAccount,
+    *,
+    available_delta: int,
+    reserved_delta: int,
+    entry_type: LedgerEntryType,
+    amount: int,
+    job_id: str | None = None,
+    payment_reference: str | None = None,
+    idempotency_key: str | None = None,
+    reason: str | None = None,
+    actor_user_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    created_at: dt.datetime | None = None,
+    spend_delta: int = 0,
+    spend_period: str | None = None,
+) -> LedgerResult | None:
     """Applies one balance movement and records it.
 
     The UPDATE carries the account version and non-negativity in its WHERE
-    clause, so a losing racer simply matches zero rows and is told to retry
-    instead of silently overdrawing.
+    clause, so a losing racer simply matches zero rows — returned as `None`
+    for `_apply` to re-read the row and try again — instead of silently
+    overdrawing.
 
     `spend_delta` moves the month's spend for the monthly cap: positive on
     a reserve (the cap is part of the same WHERE), negative when that
@@ -202,7 +268,7 @@ def _apply(
         update(CreditAccount).where(*conditions).values(**values),
     )
     if matched != 1:
-        raise Conflict("积分账户已被并发修改，请重试。")
+        return None
 
     entry = CreditLedgerEntry(
         account_id=account.id,
@@ -325,10 +391,14 @@ def capture(session: Session, user_id: str, *, job_id: str, actual_amount: int) 
     reservation = _find_entry(session, account.id, job_id, LedgerEntryType.RESERVE)
     if reservation is None:
         raise Conflict("该任务没有预扣记录。")
-    if _find_entry(session, account.id, job_id, LedgerEntryType.CAPTURE) is not None:
-        raise Conflict("该任务已经结算过。")
-    if _find_entry(session, account.id, job_id, LedgerEntryType.RELEASE) is not None:
-        raise Conflict("该任务的预扣已释放，不能再结算。")
+
+    def unsettled() -> None:
+        if _find_entry(session, account.id, job_id, LedgerEntryType.CAPTURE) is not None:
+            raise Conflict("该任务已经结算过。")
+        if _find_entry(session, account.id, job_id, LedgerEntryType.RELEASE) is not None:
+            raise Conflict("该任务的预扣已释放，不能再结算。")
+
+    unsettled()
 
     reserved_amount = -reservation.amount
     if actual_amount < 0:
@@ -349,6 +419,7 @@ def capture(session: Session, user_id: str, *, job_id: str, actual_amount: int) 
         metadata={"reserved": reserved_amount, "settled": settled, "returned": refund},
         spend_delta=-refund,
         spend_period=_reserve_period(reservation),
+        recheck=unsettled,
     )
 
 
@@ -360,10 +431,14 @@ def release(
     reservation = _find_entry(session, account.id, job_id, LedgerEntryType.RESERVE)
     if reservation is None:
         raise Conflict("该任务没有预扣记录。")
-    if _find_entry(session, account.id, job_id, LedgerEntryType.RELEASE) is not None:
-        raise Conflict("该任务的预扣已释放。")
-    if _find_entry(session, account.id, job_id, LedgerEntryType.CAPTURE) is not None:
-        raise Conflict("该任务已结算，不能释放。")
+
+    def unsettled() -> None:
+        if _find_entry(session, account.id, job_id, LedgerEntryType.RELEASE) is not None:
+            raise Conflict("该任务的预扣已释放。")
+        if _find_entry(session, account.id, job_id, LedgerEntryType.CAPTURE) is not None:
+            raise Conflict("该任务已结算，不能释放。")
+
+    unsettled()
 
     reserved_amount = -reservation.amount
     return _apply(
@@ -377,6 +452,7 @@ def release(
         reason=reason,
         spend_delta=-reserved_amount,
         spend_period=_reserve_period(reservation),
+        recheck=unsettled,
     )
 
 
