@@ -710,11 +710,36 @@ def test_every_enhance_coach_carries_the_shared_rewrite_self_checks() -> None:
         copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION,
         copywriter.ENHANCE_SYSTEM_PROMPT_TRANSITION_VIDEO,
         copywriter.ENHANCE_SYSTEM_PROMPT_COVER_VIDEO,
+        copywriter.ENHANCE_SYSTEM_PROMPT_VIDEO_EDIT,
     ):
         assert "全部改成正向陈述" in prompt
         assert "互斥指令只留一个" in prompt
         assert "可测量的锚点" in prompt
         assert "容器参数不写进正文" in prompt
+
+
+def test_a_video_to_video_polish_gets_the_edit_coach() -> None:
+    """A remix or clip-studio `video_to_video` arrives as `general`; it needs
+    an A-to-B edit against existing footage, not a fresh beat-by-beat clip.
+    An author-picked video kind still wins, and the edit coach deliberately
+    skips `_ENHANCE_VIDEO_DETAIL_RULES`: its 600-1200-character target would
+    have the coach re-narrate footage the model can already see."""
+    edit = copywriter.ENHANCE_SYSTEM_PROMPT_VIDEO_EDIT
+    assert not edit.startswith(copywriter.ENHANCE_SYSTEM_PROMPT)
+    assert "把 A 改成 B" in edit
+    assert "生效区间" in edit
+    assert "保持与原片一致" in edit
+    assert "透视、光线和遮挡关系" in edit
+    assert copywriter._ENHANCE_VIDEO_DETAIL_RULES not in edit
+
+    select = copywriter._enhance_system_prompt
+    assert select("", "video_to_video") == edit
+    assert select("general", "video_to_video") == edit
+    assert select("character_action", "video_to_video") == (
+        copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION
+    )
+    assert select("general", "text_to_video") == copywriter.ENHANCE_SYSTEM_PROMPT
+    assert select("", "") == copywriter.ENHANCE_SYSTEM_PROMPT
 
 
 def test_the_video_coaches_carry_the_one_move_per_clip_rules() -> None:

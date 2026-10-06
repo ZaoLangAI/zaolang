@@ -543,11 +543,55 @@ pacing 在这里是开场冲击：前两秒有没有抓人的画面，整段是�
 
 feedback：视觉冲击或节奏弱时点名哪里平淡或拖沓；前两秒缺少人脸或炸点时直接说缺哪一个。"""
 
+# Selected by operation, not asset kind: a `video_to_video` request (remix
+# page, script clip studio) almost always arrives as `general`, and what it
+# needs is an edit instruction against footage that already exists, not the
+# generic coach's 600-1200-character beat-by-beat narrative of a new clip.
+# A dedicated `VideoAssetKind` coach still wins when the author picked one.
+ENHANCE_SYSTEM_PROMPT_VIDEO_EDIT = f"""你是造浪平台的视频改编提示词教练。\
+用户正在基于一段已有视频（operation=video_to_video）写修改要求：原片已经决定了大部分画面，\
+这段文字要说清楚改哪里、改成什么、哪些保持原样，而不是重新讲一遍整段故事。
+
+{_ENHANCE_CONTRACT}
+
+只输出视频维度：subject、scene、action、camera、lighting、mood、pacing，含义按改编来理解：\
+subject 是要改的对象，具体到哪个人、哪件物、画面哪个位置；action 是操作本身——添加、移除、\
+替换还是修改；camera 是机位与运镜是沿用原片还是有意改变；pacing 是生效区间，全片还是某一段。\
+对象说不清是谁、操作只有「改一下」「优化」这类词时就是 weak。
+
+改写硬性要求：
+- 每一处修改写成「把 A 改成 B」：点名原片里的对象 A，写清要变成的样子 B。\
+「换个风格」「换件衣服」缺了 B，模型只能自己猜
+- 写清生效区间：全片，或者用「约 X 到 Y 秒」标出一段；不写区间时模型往往整片重绘
+- 用一句正向陈述列出保持原样的部分，例如「人物身份、动作节奏、机位与背景保持与原片一致」——\
+只说要改什么，没被点名的部分也会跟着漂移
+- 移除某个元素时，写明空出来的地方按原片的透视、光线和遮挡关系补成合理的背景
+- 风格或氛围迁移时，分开写借原片的哪几项（运动轨迹、机位、节奏、构图）和换成什么\
+（材质、色调、时代、媒介），两类各列具体项
+- 一次改动控制在一到两处。改动越多，原片能保住的部分越少；要大改时在 feedback 里建议\
+改用文生视频重新生成
+- 篇幅以说清楚为准，通常两到五句就够；不要补写原片里已有的情节、外貌和场景描述，\
+那些信息模型从原片里直接看得到，重复写反而会被当成新的修改要求
+- has_reference 为 true 时，其余参考图只用来说明 B 的样子，写明「图N 只用于……的外观」
+
+feedback：对象或目标写得模糊时点名缺的是 A 还是 B；改动过多时直接建议拆成两次。"""
+
 _VIDEO_ENHANCE_SYSTEM_PROMPTS: dict[str, str] = {
     "character_action": ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION,
     "transition_video": ENHANCE_SYSTEM_PROMPT_TRANSITION_VIDEO,
     "cover_video": ENHANCE_SYSTEM_PROMPT_COVER_VIDEO,
 }
+
+
+def _enhance_system_prompt(asset_kind: str, operation: str) -> str:
+    """The code-level coach for this polish: the asset kind's dedicated coach,
+    else the video-edit coach for `video_to_video`, else the generic one."""
+    return (
+        _ENHANCE_SYSTEM_PROMPTS.get(asset_kind)
+        or _VIDEO_ENHANCE_SYSTEM_PROMPTS.get(asset_kind)
+        or (ENHANCE_SYSTEM_PROMPT_VIDEO_EDIT if operation == "video_to_video" else "")
+        or ENHANCE_SYSTEM_PROMPT
+    )
 
 
 def enhance_prompt(
@@ -585,9 +629,11 @@ def enhance_prompt(
     `agent_skills.service.resolve_copy_agent_id`: a dedicated default for a
     client-facing asset kind wins, everything else (including `general`)
     lands on the `copy` request bucket. The specialised system prompt
-    (image: `_ENHANCE_SYSTEM_PROMPTS`; video: `_VIDEO_ENHANCE_SYSTEM_PROMPTS`)
-    is still the code-level fallback, so the extra diagnostic rules apply
-    even before an operator has published a matching `AgentSkill`.
+    (image: `_ENHANCE_SYSTEM_PROMPTS`; video: `_VIDEO_ENHANCE_SYSTEM_PROMPTS`;
+    a `video_to_video` with no dedicated kind: `ENHANCE_SYSTEM_PROMPT_VIDEO_EDIT`,
+    see `_enhance_system_prompt`) is still the code-level fallback, so the
+    extra diagnostic rules apply even before an operator has published a
+    matching `AgentSkill`.
 
     The fallback keeps the caller's own text rather than a static placeholder,
     so a degraded model call never empties the field it was meant to improve.
@@ -603,11 +649,7 @@ def enhance_prompt(
     resolved_agent_id = agent_skills_service.resolve_copy_agent_id(
         session, asset_kind=asset_kind, agent_id=agent_id
     )
-    enhance_system_prompt = (
-        _ENHANCE_SYSTEM_PROMPTS.get(asset_kind)
-        or _VIDEO_ENHANCE_SYSTEM_PROMPTS.get(asset_kind)
-        or ENHANCE_SYSTEM_PROMPT
-    )
+    enhance_system_prompt = _enhance_system_prompt(asset_kind, operation)
     outcome = run_agent(
         session,
         agent_name=AgentName.COPY,
@@ -674,11 +716,7 @@ def stream_enhance_prompt(
     resolved_agent_id = agent_skills_service.resolve_copy_agent_id(
         session, asset_kind=asset_kind, agent_id=agent_id
     )
-    enhance_system_prompt = (
-        _ENHANCE_SYSTEM_PROMPTS.get(asset_kind)
-        or _VIDEO_ENHANCE_SYSTEM_PROMPTS.get(asset_kind)
-        or ENHANCE_SYSTEM_PROMPT
-    )
+    enhance_system_prompt = _enhance_system_prompt(asset_kind, operation)
     user_prompt = _enhance_user_prompt(
         prompt=prompt,
         operation=operation,
