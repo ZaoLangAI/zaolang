@@ -84,11 +84,6 @@ public enum CharacterViewAngle: String, Codable, Sendable, CaseIterable {
     case back
 }
 
-/// The views one `assetKind == .character` job may be asked to produce, in
-/// the canonical front → side → back order the backend's
-/// `execute_asset_output_advance` walks regardless of the order named.
-public let characterJobViews: [CharacterViewAngle] = [.front, .side, .back]
-
 public enum JobStatus: String, Codable, Sendable, CaseIterable {
     case created
     case queued

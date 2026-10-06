@@ -21,8 +21,8 @@ public struct GenerationParams: Codable, Sendable, Equatable {
     public var assetKind: ImageAssetKind
     /// Only meaningful with `assetKind == .character`: which of front/side/
     /// back this job produces, one at a time. `nil` means `[.front]` — a
-    /// plain single-view request. The character library's "补全侧面/背面"
-    /// completion action is the one caller that names `[.side, .back]`.
+    /// plain single-view request. iOS no longer sends it (the turnaround is
+    /// the web workspace's camera poses).
     public var characterViews: [CharacterViewAngle]?
     /// The character skill this output auto-attaches to. Unset with a
     /// character `assetKind` creates a brand-new character skill instead.

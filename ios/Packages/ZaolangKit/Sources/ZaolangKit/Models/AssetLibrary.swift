@@ -23,7 +23,7 @@ public struct LibraryReferenceAsset: Codable, Sendable, Equatable, Identifiable 
 /// A character in the creator's library. Since `character-into-skill-library`,
 /// this is a `CreationSkill` (`category=character`) under the hood — see
 /// `back/app/api/schemas/characters.py::CharacterResponse` — but the app only
-/// needs the read-only shape here (list + pick), not the full skill lifecycle.
+/// needs the read-only list shape here, not the full skill lifecycle.
 public struct CharacterResponse: Codable, Sendable, Equatable, Identifiable {
     public let id: String
     public let name: String
@@ -53,39 +53,7 @@ public struct CharacterResponse: Codable, Sendable, Equatable, Identifiable {
         let approved = (looks ?? []).flatMap(\.entries).filter { !$0.isCandidate && $0.url != nil }
         if let anchor = approved.first(where: { $0.id == anchorEntryID }) { return anchor.url }
         if let portrait = approved.first(where: { $0.entryType == "identity_portrait" }) { return portrait.url }
-        return frontReference?.url ?? referenceAssets.first?.url
-    }
-
-    /// The character's front view, if it has one — what the "补全侧面/背面"
-    /// completion action borrows so the side/back stay recognisably the
-    /// same person (mirrors the web character library's `completeViews`).
-    public var frontReference: LibraryReferenceAsset? {
-        referenceAssets.first { $0.view == CharacterViewAngle.front.rawValue }
-    }
-
-    public var sideReference: LibraryReferenceAsset? {
-        referenceAssets.first { $0.view == CharacterViewAngle.side.rawValue }
-    }
-
-    public var backReference: LibraryReferenceAsset? {
-        referenceAssets.first { $0.view == CharacterViewAngle.back.rawValue }
-    }
-
-    /// Guided step two: shown once a front view exists and either the side
-    /// or back is still missing (mirrors the web library's
-    /// `canCompleteViews`).
-    public var canCompleteViews: Bool {
-        frontReference != nil && (sideReference == nil || backReference == nil)
-    }
-}
-
-public struct CharacterCreateRequest: Encodable, Sendable {
-    public var name: String
-    public var description: String?
-
-    public init(name: String, description: String? = nil) {
-        self.name = name
-        self.description = description
+        return (referenceAssets.first { $0.view == CharacterViewAngle.front.rawValue } ?? referenceAssets.first)?.url
     }
 }
 
@@ -155,15 +123,5 @@ public struct PropResponse: Codable, Sendable, Equatable, Identifiable {
     /// `hero`), else the first image (mirrors web `propHeroAsset`).
     public var heroURL: String? {
         (referenceAssets.first { $0.view == "hero" } ?? referenceAssets.first)?.url
-    }
-}
-
-public struct SceneCreateRequest: Encodable, Sendable {
-    public var name: String
-    public var description: String?
-
-    public init(name: String, description: String? = nil) {
-        self.name = name
-        self.description = description
     }
 }

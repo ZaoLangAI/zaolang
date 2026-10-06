@@ -16032,75 +16032,6 @@
         }
       }
     },
-    "createPage.modeImageCreationDesc": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Generate character front/side/back views, scene stills or covers for your short drama; attach a reference to keep a character or scene consistent."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "短編ドラマ用のキャラクター正面/側面/背面、シーン画像、カバー画像を生成します。参考画像を添付すると人物やシーンの一貫性を保てます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "生成角色正/侧/背面、场景图或封面等短剧创作用图；上传参考图即可保持人物或场景一致。"
-          }
-        }
-      }
-    },
-    "createPage.modeImageCreationTag": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Image creation · 8+ credits"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "画像創作 · 8+ クレジット"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "图片创作 · 8+ 积分"
-          }
-        }
-      }
-    },
-    "createPage.modeImageCreationTitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Image creation"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "画像創作"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "图片创作"
-          }
-        }
-      }
-    },
     "createPage.modeLearnPublishDesc": {
       "extractionState": "manual",
       "localizations": {
@@ -27302,190 +27233,6 @@
         }
       }
     },
-    "remixPage.assetKind": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Creation type"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "創作タイプ"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "创作类型"
-          }
-        }
-      }
-    },
-    "remixPage.assetKindCharacter": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Character"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キャラクター画像"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "角色图"
-          }
-        }
-      }
-    },
-    "remixPage.assetKindCharacterHint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Generates one character sheet (three-view on the left, close-ups and palette on the right) and writes it back as the character's main image."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キャラクター設定図を1枚生成します（左に三面図、右にアップとカラーパレット）。完了後にキャラクターライブラリのメイン画像として書き戻されます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "生成一张角色设定图（左三视图、右特写与色板），成功后回写到角色库作为该角色的主图。"
-          }
-        }
-      }
-    },
-    "remixPage.assetKindCover": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cover"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "カバー"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "封面"
-          }
-        }
-      }
-    },
-    "remixPage.assetKindGeneral": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Freeform"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自由創作"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自由创作"
-          }
-        }
-      }
-    },
-    "remixPage.assetKindHint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "What this image is for decides the generation flow and prompt planning used."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この画像の用途を選ぶと、使用する生成フローとプロンプト設計が決まります。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择这张图片的用途，将决定使用的生成流程与提示词规划。"
-          }
-        }
-      }
-    },
-    "remixPage.assetKindPortraitHint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Generates a front head-and-shoulders identity portrait; once approved it is the character's anchor and every look keeps this face."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正面・胸から上のメイク写真を生成します。確定後はキャラクターの基準となり、すべての衣装がこの顔に合わせられます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "生成一张正面头肩定妆照，定稿后作为该角色的身份锚点，所有造型都以这张脸为准。"
-          }
-        }
-      }
-    },
-    "remixPage.assetKindScene": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scene shot"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "シーン画像"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "场景图"
-          }
-        }
-      }
-    },
     "remixPage.audioModeClone": {
       "extractionState": "manual",
       "localizations": {
@@ -27693,29 +27440,6 @@
         }
       }
     },
-    "remixPage.characterNamePlaceholder": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Character name"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キャラクター名"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "角色名称"
-          }
-        }
-      }
-    },
     "remixPage.cloneRemove": {
       "extractionState": "manual",
       "localizations": {
@@ -27804,52 +27528,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "已上传参考音频"
-          }
-        }
-      }
-    },
-    "remixPage.completeViews": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Complete side/back"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "側面・背面を補完"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "补全侧面/背面"
-          }
-        }
-      }
-    },
-    "remixPage.completeViewsFailed": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Failed to complete side/back views. Please try again."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "側面・背面の補完に失敗しました。しばらくしてから再試行してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "补全侧面/背面失败，请稍后重试。"
           }
         }
       }
@@ -29667,52 +29345,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "作者为二创设置了积分价格。解锁一次后可无限二创。"
-          }
-        }
-      }
-    },
-    "remixPage.newCharacterTitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "New character"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新しいキャラクター"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新建角色"
-          }
-        }
-      }
-    },
-    "remixPage.newSceneTitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "New scene"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新しいシーン"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新建场景"
           }
         }
       }
@@ -32155,29 +31787,6 @@
         }
       }
     },
-    "remixPage.sceneNamePlaceholder": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scene name"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "シーン名"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "场景名称"
-          }
-        }
-      }
-    },
     "remixPage.seed": {
       "extractionState": "manual",
       "localizations": {
@@ -32243,52 +31852,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "请输入 0 到 2147483647 之间的整数。"
-          }
-        }
-      }
-    },
-    "remixPage.selectCharacterTitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Select a character"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キャラクターを選択"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择角色"
-          }
-        }
-      }
-    },
-    "remixPage.selectSceneTitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Select a scene"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "シーンを選択"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择场景"
           }
         }
       }
@@ -32795,52 +32358,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "留空将在生成完成后自动创建一个新角色。"
-          }
-        }
-      }
-    },
-    "remixPage.targetScene": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Target scene"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "対象シーン"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "目标场景"
-          }
-        }
-      }
-    },
-    "remixPage.targetSceneNone": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Don't link to the scene library"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "シーンライブラリと関連付けない"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "不关联场景库"
           }
         }
       }
