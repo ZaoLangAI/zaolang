@@ -444,7 +444,7 @@ export class BlockingPlayer {
     this.rebuildListeners.clear();
     this.renderer.dispose();
     // Hand the WebGL context back immediately — browsers cap live contexts,
-    // same reasoning as `features/canvas/panorama-viewer.tsx`.
+    // same reasoning as `components/media/panorama-viewer.tsx`.
     this.renderer.forceContextLoss();
   }
 }

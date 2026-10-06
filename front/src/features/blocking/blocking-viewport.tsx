@@ -15,7 +15,7 @@ import type { AspectRatio, BlockingDocument } from './types';
  * React host for the three.js player. The engine module (and three.js with
  * it) is loaded with a dynamic `import()` on mount, so only someone who
  * opens the 白膜 studio pays for it — same approach as
- * `features/canvas/panorama-viewer.tsx`.
+ * `components/media/panorama-viewer.tsx`.
  *
  * The canvas always fills the available area. In the director view the
  * delivered frame (the document's aspect) is outlined and everything around

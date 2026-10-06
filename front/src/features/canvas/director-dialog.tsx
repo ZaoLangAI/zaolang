@@ -5,14 +5,15 @@ import { useCallback, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
+import { composeShot, type CharacterPlacement } from '@/components/media/panorama-capture';
+import { PanoramaViewer, type PanoramaHandle } from '@/components/media/panorama-viewer';
 import { EmptyState } from '@/components/ui/primitives';
 import { uploadFile, type Asset } from '@/lib/upload';
 
 import type { CanvasSnapshot } from './api';
 import { applyCameraPrompt } from './canvas-camera';
 import { CameraControl, DEFAULT_CAMERA_CONTROL } from './camera-control';
-import { composeShot, describeFraming, type CharacterPlacement } from './director-capture';
-import { PanoramaViewer, type PanoramaHandle } from './panorama-viewer';
+import { describeFraming } from './director-capture';
 
 /**
  * The director suite: stand inside a 360° environment, frame a shot, and take

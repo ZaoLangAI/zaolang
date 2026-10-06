@@ -51,6 +51,13 @@ const heavyDependencyBoundaries = [
       'export-runner.ts dynamically imports this from inside the cut editor — a static import anywhere else puts WASM weight in a bundle that never needs it.',
   },
   {
+    packages: ['@photo-sphere-viewer/core'],
+    patterns: ['@photo-sphere-viewer/*'],
+    allow: ['src/components/media/panorama-viewer.tsx'],
+    reason:
+      'the panorama viewer pulls in three.js; panorama-viewer.tsx imports it with a dynamic import() inside an effect, so only someone who opens a panorama (canvas director, scene workspace 全景 slot) pays for it — render <PanoramaViewer> instead of importing the package.',
+  },
+  {
     packages: ['animejs'],
     allow: ['src/lib/motion.ts'],
     reason: 'use loadAnime() from lib/motion.ts instead — it already lazy-loads this on demand.',
@@ -73,6 +80,10 @@ const restrictHeavyDependencies = (boundaries) => ({
       paths: boundaries.flatMap(({ packages, reason }) =>
         packages.map((name) => ({ name, message: reason })),
       ),
+      // Subpath imports (`pkg/index.css`) that `paths`' exact names miss.
+      patterns: boundaries
+        .filter(({ patterns }) => patterns)
+        .map(({ patterns, reason }) => ({ group: patterns, message: reason })),
     },
   ],
 });
