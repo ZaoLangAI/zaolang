@@ -4170,6 +4170,13 @@
     "boundLooks": "Used by looks: {names}",
     "describeHint": "Drafts the descriptions from linked scripts. Review them above, then save."
   },
+  "iosAssets": {
+    "continueOnWeb": "Continue on the web",
+    "continueOnWebHint": "Camera angles, expression sets, panoramas, new looks and relations are made on the web.",
+    "generateConfirm": "This generation costs {credits} credits ({available} available).",
+    "generating": "Submitted — the result shows up among the candidates.",
+    "generateFailed": "Generation failed. Please try again later."
+  },
   "assetWorkspace": {
     "tabCreate": "Create",
     "tabGraph": {

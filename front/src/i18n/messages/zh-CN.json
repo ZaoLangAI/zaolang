@@ -4170,6 +4170,13 @@
     "boundLooks": "用于造型：{names}",
     "describeHint": "根据关联剧本起草描述，填入上方后需保存才生效。"
   },
+  "iosAssets": {
+    "continueOnWeb": "在网页端继续",
+    "continueOnWebHint": "转面机位、表情组、全景、新造型与关系请在网页端完成。",
+    "generateConfirm": "生成将消耗 {credits} 积分（可用 {available}）。",
+    "generating": "已提交，完成后出现在候选里。",
+    "generateFailed": "生成失败，请稍后重试。"
+  },
   "assetWorkspace": {
     "tabCreate": "创作",
     "tabGraph": {

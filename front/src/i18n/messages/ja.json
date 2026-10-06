@@ -4170,6 +4170,13 @@
     "boundLooks": "使用する造形：{names}",
     "describeHint": "関連する脚本から説明を下書きします。上で確認してから保存してください。"
   },
+  "iosAssets": {
+    "continueOnWeb": "Web で続ける",
+    "continueOnWebHint": "カメラアングル、表情セット、パノラマ、新しいルックや関係は Web で作成します。",
+    "generateConfirm": "この生成で {credits} クレジットを消費します（利用可能 {available}）。",
+    "generating": "送信しました。完成すると候補に表示されます。",
+    "generateFailed": "生成に失敗しました。しばらくしてから再度お試しください。"
+  },
   "assetWorkspace": {
     "tabCreate": "制作",
     "tabGraph": {
