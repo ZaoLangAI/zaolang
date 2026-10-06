@@ -100,6 +100,12 @@ def _source(skill: CreationSkill, entry_id: str) -> SkillAssetEntry:
     entry = av.find_entry(skill, entry_id)
     if entry is None:
         raise NotFound("参考图不存在。")
+    if av.is_panorama(entry):
+        # A 2:1 equirectangular still redrawn as an ordinary image would be
+        # neither a panorama nor a usable plate; cut a posed shot first.
+        raise ValidationFailed(
+            "全景图不能直接调整或派生，请先截取一个机位。", fields={"entry_id": "全景图"}
+        )
     return entry
 
 

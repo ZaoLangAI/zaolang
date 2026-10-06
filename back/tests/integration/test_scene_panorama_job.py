@@ -103,3 +103,41 @@ def test_a_panorama_job_files_the_variant_panorama(
         first.output_asset_id: AssetEntryStatus.APPROVED,
         second.output_asset_id: AssetEntryStatus.CANDIDATE,
     }
+
+
+def test_a_panorama_is_no_adjust_derive_or_orbit_source(
+    client: TestClient, db: Session, author: User
+) -> None:
+    from app.models import Asset
+    from app.models.enums import AssetRole, MediaType, ModerationStatus, Visibility
+
+    scene = client.post("/v1/scenes", json={"name": "客厅"}, headers=auth_header(author)).json()
+    asset = Asset(
+        owner_user_id=author.id,
+        object_key=f"test/{new_id('obj')}.png",
+        media_type=MediaType.IMAGE,
+        mime_type="image/png",
+        size_bytes=1024,
+        checksum_sha256="c" * 64,
+        role=AssetRole.GENERATION_OUTPUT,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    db.add(asset)
+    db.flush()
+    variant_id = scene["variants"][0]["id"]
+    created = client.post(
+        f"/v1/scenes/{scene['id']}/variants/{variant_id}/entries",
+        json={"asset_id": asset.id, "entry_type": "panorama"},
+        headers=auth_header(author),
+    )
+    assert created.status_code == 201, created.text
+    entry_id = created.json()["id"]
+    base = f"/v1/scenes/{scene['id']}/entries/{entry_id}"
+    for suffix, body in (
+        (":adjust", {"instruction": "去掉吊灯"}),
+        (":derive", {"output": "shot", "target_variant_id": variant_id}),
+        (":orbit", {"poses": [{"azimuth": 90}]}),
+    ):
+        response = client.post(base + suffix, json=body, headers=auth_header(author))
+        assert response.status_code == 422, (suffix, response.text)
