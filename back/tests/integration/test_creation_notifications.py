@@ -26,6 +26,7 @@ from app.models.enums import (
     QualityTier,
 )
 from tests.conftest import auth_header
+from tests.factories import make_job
 from tests.integration.test_editor import _enable_editor, _open_cut, _video_asset
 
 
@@ -292,3 +293,32 @@ def test_a_general_image_payload_names_no_card(db: Session, author: User) -> Non
         "target_variant_id",
     ):
         assert key not in payload
+
+
+def test_a_partial_delivery_payload_says_what_was_refunded(db: Session, author: User) -> None:
+    """A 5-pose orbit job whose later passes failed succeeds with 1 image,
+    settled pro rata (P2-0). The workspace shows only the image, so the
+    notification carries the counts and the refund."""
+    job = make_job(db, author, reserved=60, operation=Operation.IMAGE_TO_IMAGE)
+    job.request_json = {
+        "prompt": "转面",
+        "asset_kind": "character",
+        "camera_poses": [
+            {"azimuth": a, "elevation": 0, "distance": 1} for a in (0, 45, 90, 180, 270)
+        ],
+    }
+    job.status = JobStatus.SUCCEEDED
+    job.output_asset_ids_json = [new_id("ast")]
+    job.actual_credits = 12
+    assert notification_push.partial_delivery(job) == {
+        "delivered_outputs": 1,
+        "requested_outputs": 5,
+        "refunded_credits": 48,
+    }
+
+    job.output_asset_ids_json = [new_id("ast") for _ in range(5)]
+    job.actual_credits = 60
+    assert notification_push.partial_delivery(job) == {}
+    job.status = JobStatus.FAILED
+    job.output_asset_ids_json = None
+    assert notification_push.partial_delivery(job) == {}

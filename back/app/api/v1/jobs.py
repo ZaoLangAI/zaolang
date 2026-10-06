@@ -739,7 +739,7 @@ def _job_response(
         video_asset_kind=_video_asset_kind_of(job),
         forced_model=_forced_model_of(job),
         character_views=_character_views_of(job),
-        requested_outputs=_requested_outputs_of(job),
+        requested_outputs=jobs_service.requested_outputs_of(job),
         duration_seconds=_duration_seconds_of(job),
         linked_character_id=job.linked_character_id,
         linked_scene_id=job.linked_scene_id,
@@ -823,19 +823,6 @@ def _forced_model_of(job: GenerationJob) -> str | None:
     params = job.request_json if isinstance(job.request_json, dict) else {}
     raw = params.get("forced_model")
     return raw if isinstance(raw, str) and raw else None
-
-
-def _requested_outputs_of(job: GenerationJob) -> int:
-    params = job.request_json if isinstance(job.request_json, dict) else {}
-    views = params.get("character_views")
-    variants = params.get("scene_variants")
-    poses = params.get("camera_poses")
-    return jobs_service.requested_output_count(
-        asset_kind=params.get("asset_kind"),
-        character_views=views if isinstance(views, list) else None,
-        scene_variants=variants if isinstance(variants, list) else None,
-        camera_poses=poses if isinstance(poses, list) else None,
-    )
 
 
 def _candidate_entries_of(session: Session, job: GenerationJob) -> int:
