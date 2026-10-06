@@ -138,6 +138,7 @@ export default async function NewCreationPage({
     returnLinkLabel?: string;
     referenceCharacterIds?: string;
     referenceSceneIds?: string;
+    referencePropIds?: string;
     linkEpisodeId?: string;
     linkBreakpointKey?: string;
     referenceAssetIds?: string;
@@ -166,6 +167,7 @@ export default async function NewCreationPage({
     returnLinkLabel,
     referenceCharacterIds,
     referenceSceneIds,
+    referencePropIds,
     linkEpisodeId,
     linkBreakpointKey,
     referenceAssetIds,
@@ -240,6 +242,7 @@ export default async function NewCreationPage({
     returnLinkLabel?.trim().slice(0, 60) || draftReturn.returnLinkLabel;
   const resolvedReferenceCharacterIds = parseReferenceIds(referenceCharacterIds);
   const resolvedReferenceSceneIds = parseReferenceIds(referenceSceneIds);
+  const resolvedReferencePropIds = parseReferenceIds(referencePropIds);
   const resolvedReferenceAssetIds = parseAssetIds(referenceAssetIds);
   // The previous script breakpoint's video, if any — see
   // `previousBoundVideoAssetId`/`buildBreakpointVideoHref`. Only meaningful
@@ -297,6 +300,7 @@ export default async function NewCreationPage({
         returnLinkLabel={resolvedReturnLinkLabel}
         initialReferenceCharacterIds={resolvedReferenceCharacterIds}
         initialReferenceSceneIds={resolvedReferenceSceneIds}
+        initialReferencePropIds={resolvedReferencePropIds}
         linkEpisodeId={linkEpisodeId}
         linkBreakpointKey={linkBreakpointKey}
         continuitySourceAssetId={resolvedContinuityAssetId}

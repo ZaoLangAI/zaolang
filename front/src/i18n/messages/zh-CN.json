@@ -3623,7 +3623,10 @@
     "viewCoverImage": "查看大图",
     "paramPromptLabel": "提示词",
     "paramPromptSuffixLabel": "提示词后缀",
-    "paramAspectRatioLabel": "画面比例"
+    "paramAspectRatioLabel": "画面比例",
+    "useForCharacters": "用于角色创作",
+    "useForScenes": "用于场景创作",
+    "useForProps": "用于道具创作"
   },
   "states": {
     "loading": "加载中",
@@ -4294,6 +4297,9 @@
     "insufficient": "积分不足，当前可用 {available}。",
     "fillAll": "一键补齐缺失",
     "candidatesHint": "{count} 张候选：选一张定稿，原有的会退为候选。",
-    "approve": "定稿"
+    "approve": "定稿",
+    "styleSkillCarried": "已带入风格技能「{title}」：打开卡片后，创作面板会默认选中它。",
+    "styleSkillCarriedFailed": "无法使用这个风格技能。",
+    "styleSkillCarriedClear": "不使用"
   }
 }

@@ -31,6 +31,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { cardCompleteness } from '@/features/asset-workspace/completeness';
 import { workspaceHref } from '@/features/asset-workspace/new-card';
+import { withStyleSkill } from '@/features/asset-workspace/style-skill';
 import { useRouter } from '@/i18n/navigation';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
@@ -66,7 +67,14 @@ function heroHref(prop: Pick<Prop, 'id'>): string {
  * images live in the workspace, and a flat `reference_asset_ids` replace
  * would drop the ones it does not list).
  */
-export function PropLibrary({ initial }: { initial: Prop[] }) {
+export function PropLibrary({
+  initial,
+  styleSkillId = null,
+}: {
+  initial: Prop[];
+  /** A plaza style skill (`?skillId=`) every card link carries on. */
+  styleSkillId?: string | null;
+}) {
   const t = useTranslations('props');
   const tActions = useTranslations('actions');
   const tStates = useTranslations('states');
@@ -75,6 +83,7 @@ export function PropLibrary({ initial }: { initial: Prop[] }) {
   const tWorkspace = useTranslations('assetWorkspace');
   const { notify } = useToast();
   const router = useRouter();
+  const go = (href: string) => router.push(withStyleSkill(href, styleSkillId));
 
   const [props, setProps] = useState(initial);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -157,7 +166,7 @@ export function PropLibrary({ initial }: { initial: Prop[] }) {
       // A new card opens on its 创作 board — on the hero plate, or with one
       // already filed, on the first turntable angle drawn from it.
       if (!editing) {
-        router.push(workspaceHref(propManageHref(saved.id), form.reference ? 'side' : 'master'));
+        go(workspaceHref(propManageHref(saved.id), form.reference ? 'side' : 'master'));
       }
     } catch (caught) {
       setFormError(caught instanceof ApiError ? caught.message : tStates('errorHint'));
@@ -368,7 +377,7 @@ export function PropLibrary({ initial }: { initial: Prop[] }) {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => router.push(heroHref(prop))}
+                        onClick={() => go(heroHref(prop))}
                         className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted transition-colors hover:text-text"
                       >
                         <IconSparkle className="size-4" />
@@ -402,7 +411,7 @@ export function PropLibrary({ initial }: { initial: Prop[] }) {
                     <IconButton
                       size="sm"
                       label={hero ? t('generateAgain') : t('generateHero')}
-                      onClick={() => router.push(heroHref(prop))}
+                      onClick={() => go(heroHref(prop))}
                     >
                       <IconSparkle className="size-4" />
                     </IconButton>
@@ -412,7 +421,7 @@ export function PropLibrary({ initial }: { initial: Prop[] }) {
                     <IconButton
                       size="sm"
                       label={t('openWorkspace')}
-                      onClick={() => router.push(propManageHref(prop.id))}
+                      onClick={() => go(propManageHref(prop.id))}
                     >
                       <IconGrid className="size-4" />
                     </IconButton>

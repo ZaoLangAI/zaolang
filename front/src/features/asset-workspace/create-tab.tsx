@@ -33,6 +33,7 @@ export function CreateTab({
   busy,
   initialVariantId,
   initialSlotId,
+  initialSkillId,
 }: {
   kind: CardKind;
   graph: AssetGraph;
@@ -40,6 +41,7 @@ export function CreateTab({
   busy: boolean;
   initialVariantId?: string | null;
   initialSlotId?: string | null;
+  initialSkillId?: string | null;
 }) {
   const t = useTranslations('assetWorkspace');
   const wide = useMinWidth('md');
@@ -95,6 +97,7 @@ export function CreateTab({
       state={selected}
       states={states}
       actions={actions}
+      initialSkillId={initialSkillId}
       onSubmitted={() => {
         setSheetOpen(false);
         void actions.refresh();

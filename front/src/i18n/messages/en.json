@@ -3623,7 +3623,10 @@
     "viewCoverImage": "View full image",
     "paramPromptLabel": "Prompt",
     "paramPromptSuffixLabel": "Prompt suffix",
-    "paramAspectRatioLabel": "Aspect ratio"
+    "paramAspectRatioLabel": "Aspect ratio",
+    "useForCharacters": "Use for characters",
+    "useForScenes": "Use for scenes",
+    "useForProps": "Use for props"
   },
   "states": {
     "loading": "Loading",
@@ -4294,6 +4297,9 @@
     "insufficient": "Not enough credits — {available} available.",
     "fillAll": "Fill everything missing",
     "candidatesHint": "{count} candidates — approve one; the current image becomes a candidate.",
-    "approve": "Approve"
+    "approve": "Approve",
+    "styleSkillCarried": "Style skill “{title}” is carried along: a card’s create panel starts with it selected.",
+    "styleSkillCarriedFailed": "This style skill can’t be used.",
+    "styleSkillCarriedClear": "Don’t use"
   }
 }

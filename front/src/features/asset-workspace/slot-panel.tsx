@@ -72,6 +72,7 @@ export function SlotPanel({
   state,
   states,
   actions,
+  initialSkillId,
   onSubmitted,
   onFill,
 }: {
@@ -81,6 +82,8 @@ export function SlotPanel({
   state: SlotState;
   states: SlotState[];
   actions: AssetGraphActions;
+  /** A plaza style skill carried in by `?skillId=` (AC-8): preselected. */
+  initialSkillId?: string | null;
   onSubmitted: () => void;
   /** Character looks: open 补齐缺失. */
   onFill?: () => void;
@@ -92,7 +95,7 @@ export function SlotPanel({
   const [tier, setTier] = useState<Tier>('standard');
   const [extra, setExtra] = useState('');
   const [count, setCount] = useState(1);
-  const [skillId, setSkillId] = useState('');
+  const [skillId, setSkillId] = useState(initialSkillId ?? '');
   const [expressions, setExpressions] = useState<CharacterExpression[]>([
     ...DEFAULT_FILL_EXPRESSIONS,
   ]);
@@ -128,9 +131,18 @@ export function SlotPanel({
   const skills = useResource<Page<CreationSkillSummary>>(
     '/v1/skills/public?content_type=template&limit=60',
   );
-  const styleSkills = (skills.data?.items ?? []).filter(
+  // The carried skill may be any image template (the plaza sends every
+  // image-only recipe here), or beyond the first page — fetch it on its own.
+  const carried = useResource<CreationSkillSummary>(
+    initialSkillId ? `/v1/skills/${encodeURIComponent(initialSkillId)}` : null,
+  );
+  const listed = (skills.data?.items ?? []).filter(
     (skill) => STYLE_CATEGORIES.has(skill.category) && isSkillMentionable(skill, 'text_to_image'),
   );
+  const styleSkills =
+    carried.data && !listed.some((skill) => skill.id === carried.data?.id)
+      ? [carried.data, ...listed]
+      : listed;
 
   // What a submit would send, and the request that prices it.
   const plan = useMemo((): {

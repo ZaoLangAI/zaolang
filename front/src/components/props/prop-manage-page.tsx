@@ -12,12 +12,15 @@ export function PropManagePage({
   initialVariantId,
   initialTab,
   initialSlotId,
+  initialSkillId,
 }: {
   initial: AssetGraph;
   /** `?look=`: the condition to open on. */
   initialVariantId?: string | null;
   initialTab?: WorkspaceTab | null;
   initialSlotId?: string | null;
+  /** `?skillId=`: a plaza style skill for the 创作 slots. */
+  initialSkillId?: string | null;
 }) {
   return (
     <AssetWorkspace
@@ -26,6 +29,7 @@ export function PropManagePage({
       initialTab={initialTab}
       initialVariantId={initialVariantId}
       initialSlotId={initialSlotId}
+      initialSkillId={initialSkillId}
     />
   );
 }

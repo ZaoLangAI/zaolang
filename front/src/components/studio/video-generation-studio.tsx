@@ -142,6 +142,7 @@ export function VideoGenerationStudio({
   subjectNameHint,
   initialReferenceCharacterIds,
   initialReferenceSceneIds,
+  initialReferencePropIds,
   linkEpisodeId,
   linkBreakpointKey,
   initialSkillId,
@@ -191,6 +192,8 @@ export function VideoGenerationStudio({
    */
   initialReferenceCharacterIds?: string[];
   initialReferenceSceneIds?: string[];
+  /** A plaza prop card the viewer owns (`?referencePropIds=`). */
+  initialReferencePropIds?: string[];
   /** The short-drama workspace's "去视频创作" jump-out (`?linkEpisodeId=`) —
    * see `GenerationSubmitInput.linkEpisodeId`. */
   linkEpisodeId?: string;
@@ -268,7 +271,9 @@ export function VideoGenerationStudio({
   // 婚礼 outfit) — unset means the backend's default subset.
   const characterRefPicks = useReferencePicks();
   const sceneRefPicks = useReferencePicks();
-  const [selectedReferencePropIds, setSelectedReferencePropIds] = useState<string[]>([]);
+  const [selectedReferencePropIds, setSelectedReferencePropIds] = useState<string[]>(
+    initialReferencePropIds ?? [],
+  );
   const propRefPicks = useReferencePicks();
   // Ranks the picked characters' *default* references (P2-7): an expression
   // sheet showing this emotion goes in first. The shot size comes from the

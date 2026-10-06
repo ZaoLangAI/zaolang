@@ -30,6 +30,7 @@ import { ApiError } from '@/lib/api/errors';
 import type { Character, CharacterScriptLink } from '@/lib/api/types';
 import { cardCompleteness } from '@/features/asset-workspace/completeness';
 import { seedCardImage, workspaceHref } from '@/features/asset-workspace/new-card';
+import { withStyleSkill } from '@/features/asset-workspace/style-skill';
 import { characterHeroUrl, characterManageHref } from '@/lib/characters';
 import {
   CREATION_SKILL_STATUS_LABEL_KEY,
@@ -61,7 +62,14 @@ const EMPTY_FORM: CharacterForm = {
  * flat replace (`asset_variants.service.set_members`) that would drop every
  * approved image the form did not list.
  */
-export function CharacterLibrary({ initial }: { initial: Character[] }) {
+export function CharacterLibrary({
+  initial,
+  styleSkillId = null,
+}: {
+  initial: Character[];
+  /** A plaza style skill (`?skillId=`) every card link carries on. */
+  styleSkillId?: string | null;
+}) {
   const t = useTranslations('characters');
   const tActions = useTranslations('actions');
   const tStates = useTranslations('states');
@@ -69,6 +77,7 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
   const tWorkspace = useTranslations('assetWorkspace');
   const { notify } = useToast();
   const router = useRouter();
+  const go = (href: string) => router.push(withStyleSkill(href, styleSkillId));
 
   const [characters, setCharacters] = useState(initial);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -178,7 +187,7 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
             notify(t('startImageFailed'), 'error');
           }
         }
-        router.push(workspaceHref(characterManageHref(saved.id), slot));
+        go(workspaceHref(characterManageHref(saved.id), slot));
       }
     } catch (caught) {
       if (caught instanceof ApiError) {
@@ -382,7 +391,7 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => router.push(characterManageHref(character.id))}
+                        onClick={() => go(characterManageHref(character.id))}
                         className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted transition-colors hover:text-text"
                       >
                         <IconSparkle className="size-4" />
@@ -457,7 +466,7 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
                     <IconButton
                       size="sm"
                       label={t('manageLooks')}
-                      onClick={() => router.push(characterManageHref(character.id))}
+                      onClick={() => go(characterManageHref(character.id))}
                     >
                       <IconGrid className="size-4" />
                     </IconButton>

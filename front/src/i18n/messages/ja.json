@@ -3623,7 +3623,10 @@
     "viewCoverImage": "拡大表示",
     "paramPromptLabel": "プロンプト",
     "paramPromptSuffixLabel": "プロンプトサフィックス",
-    "paramAspectRatioLabel": "アスペクト比"
+    "paramAspectRatioLabel": "アスペクト比",
+    "useForCharacters": "キャラクター制作に使う",
+    "useForScenes": "シーン制作に使う",
+    "useForProps": "小道具制作に使う"
   },
   "states": {
     "loading": "読み込み中",
@@ -4294,6 +4297,9 @@
     "insufficient": "クレジット不足（利用可能 {available}）。",
     "fillAll": "不足分をまとめて補完",
     "candidatesHint": "候補 {count} 枚：1 枚を確定すると現在の画像は候補に戻ります。",
-    "approve": "確定"
+    "approve": "確定",
+    "styleSkillCarried": "スタイルスキル「{title}」を引き継ぎました。カードの制作パネルで最初から選択されます。",
+    "styleSkillCarriedFailed": "このスタイルスキルは使用できません。",
+    "styleSkillCarriedClear": "使わない"
   }
 }

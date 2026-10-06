@@ -58,6 +58,7 @@ export function CreateStudio({
   returnLinkLabel,
   initialReferenceCharacterIds,
   initialReferenceSceneIds,
+  initialReferencePropIds,
   linkEpisodeId,
   linkBreakpointKey,
   continuitySourceAssetId,
@@ -84,6 +85,7 @@ export function CreateStudio({
   returnLinkLabel?: string;
   initialReferenceCharacterIds?: string[];
   initialReferenceSceneIds?: string[];
+  initialReferencePropIds?: string[];
   linkEpisodeId?: string;
   linkBreakpointKey?: string;
   /** The previous script breakpoint's already-generated video, if any — see
@@ -143,6 +145,7 @@ export function CreateStudio({
       subjectNameHint={subjectNameHint}
       initialReferenceCharacterIds={initialReferenceCharacterIds}
       initialReferenceSceneIds={initialReferenceSceneIds}
+      initialReferencePropIds={initialReferencePropIds}
       linkEpisodeId={linkEpisodeId}
       linkBreakpointKey={linkBreakpointKey}
       continuitySourceAssetId={continuitySourceAssetId}

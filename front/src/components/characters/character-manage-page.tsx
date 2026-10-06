@@ -14,12 +14,15 @@ export function CharacterManagePage({
   initialLookId,
   initialTab,
   initialSlotId,
+  initialSkillId,
 }: {
   initial: AssetGraph;
   /** `?look=`: the look to open on. */
   initialLookId?: string | null;
   initialTab?: WorkspaceTab | null;
   initialSlotId?: string | null;
+  /** `?skillId=`: a plaza style skill for the 创作 slots. */
+  initialSkillId?: string | null;
 }) {
   const returnTo = characterManageHref(initial.card_id);
   return (
@@ -29,6 +32,7 @@ export function CharacterManagePage({
       initialTab={initialTab}
       initialVariantId={initialLookId}
       initialSlotId={initialSlotId}
+      initialSkillId={initialSkillId}
       generateHref={(look) =>
         characterImageStudioHref({
           characterId: initial.card_id,

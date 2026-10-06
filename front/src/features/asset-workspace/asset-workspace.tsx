@@ -28,6 +28,7 @@ export function AssetWorkspace({
   initialTab,
   initialVariantId,
   initialSlotId,
+  initialSkillId,
   generateHref,
   portraitHref,
 }: {
@@ -38,6 +39,8 @@ export function AssetWorkspace({
   initialVariantId?: string | null;
   /** `?slot=`: preselect a 创作 slot. */
   initialSlotId?: string | null;
+  /** `?skillId=`: the style skill the 创作 slot panel starts on. */
+  initialSkillId?: string | null;
   /** The graph's image-studio jump-out (characters, scenes); a prop has
    * none, so its looks open in the 创作 tab instead. */
   generateHref?: (variant: AssetVariant) => string;
@@ -112,6 +115,7 @@ export function AssetWorkspace({
             busy={busy}
             initialVariantId={createVariantId ?? initialVariantId}
             initialSlotId={createVariantId ? null : initialSlotId}
+            initialSkillId={initialSkillId}
           />
         </>
       ) : (
