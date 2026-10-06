@@ -63,6 +63,7 @@ Not here → `zaolang-agent-gateway` (routing, provider quirks, character-sheet 
 20. Route/generate nodes stamp `requested_resolution` / `adapted_resolution` / `adapted_vendor_resolution` / `resolution_adapt_kind` (`nodes._resolution_adapt_fields`). Keep them; pricing reads the adapted tier.
 21. `draft_id` groups refine attempts into a flat version history; `submit()` advances `Draft.latest_job_id` for create/retry/promote alike (`_point_draft_at_job`) — never per-route. Pointer rules: see `zaolang-data-model`.
 22. Video analysis (`Operation.VIDEO_ANALYSIS`): flag `video_analysis_enabled` gates `POST /generation-jobs`; clip = upload purpose `video_analysis_source` (≤3 min); graph `defaults.video_analysis_graph`; no output asset — result in `GenerationJob.analysis_result_json` → `GenerationJobResponse.analysis`. Synchronous provider call; a `pending` reply is treated as failure/retry.
+23. Consumer image jobs must be library assets (AC-8): `back/app/api/v1/jobs.py:_require_asset_image_kind` runs in `quote`, `quote:batch`, `create_job`, `retry_job` and `promote_job` (retry / promote read `original.request_json`) and 422s `IMAGE_ASSET_KIND_REQUIRED` (`params.asset_kind`) for `text_to_image` / `image_to_image` without `asset_kind` character / scene / prop. Never move it into `jobs_service.submit` — the canvas Agent submits general images there. `GenerationParams` also refuses a new `cover`. So fast retry (axis-free jobs only) no longer applies to a consumer image.
 
 ## Recipes
 

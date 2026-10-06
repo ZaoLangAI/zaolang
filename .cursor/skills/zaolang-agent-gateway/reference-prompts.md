@@ -28,7 +28,7 @@ Copy coaches, asset-kind prompt rules, scene skill packs, follow-up questions. S
 | `back/app/domain/image_assets/prompt_builder.py` `CHARACTER_COMPLETION_FIXED_PROMPTS` | side/back pass prompt **replaced** by a fixed reference-driven prompt + anti-collage negative |
 | `back/app/domain/image_assets/prompt_builder.py` `apply_visual_medium` | sheet/expression pass with no named medium gets a photoreal lock; named anime/photoreal kept |
 | `back/app/agents/copywriter.py` `ENHANCE_SYSTEM_PROMPT_CHARACTER`, `restore_character_sheet_prompt` | coach + repair: missing `三视图`/`色板` or collapse markers → re-append `CHARACTER_SHEET_LAYOUT_SENTENCE`; with `character_portrait` the repair is `restore_identity_portrait_prompt` instead (strip sheet sentences, keep `IDENTITY_PORTRAIT_SENTENCE`) |
-| `front/src/lib/characters.ts` `characterSheetPrompt` | library/script jump-out prompt sent to the image studio (web submits front only) |
+| `front/src/lib/characters.ts` `characterSheetPrompt` | script batch prompt for a character sheet (web submits front only) |
 
 ## Character/scene preset vocabulary
 

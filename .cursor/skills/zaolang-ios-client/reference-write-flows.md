@@ -10,6 +10,7 @@ Paths below are relative to `ios/App/Sources/` unless they start with `ios/`.
 ## Studio (`Create/StudioView.swift`, `Create/StudioViewModel.swift`)
 - Entry is always `CreateRoute.studio(StudioMode)`:
   - `.new(operation:initialPrompt:)` — hub cards 图片创作 (`.textToImage`), text-to-video, image-to-video; and the inspiration preview's "create with this prompt" (prompt only, no source, no lineage).
+  - Since AC-8 the API refuses a `text_to_image` / `image_to_image` job without `asset_kind` character / scene / prop (422 `IMAGE_ASSET_KIND_REQUIRED`, also on quote / retry / promote) and any new `cover`; the 图片创作 card and the general / cover kinds still on this screen surface that server message until AC-10 replaces them with the asset libraries. Web removed its image studio; its copy keys `createPage.modeImageCreation*`, `remixPage.assetKind*`, `remixPage.targetScene*` stay in the catalogues only for this screen.
   - `.remix(sourceWorkID:)` — work detail "remix". `load()` fetches `WorkDetail` and prefills `reusableParams.prompt`/`negativePrompt`; `rightsSection` (keep-attribution checkbox) must be checked to submit.
 - Always switch to the Create tab before pushing (`RootTabView.startRemix`); never push the studio onto another tab's stack.
 - The hub's remix card only `selectTab(.discover)`; its learn-publish card switches to Learn and pushes `LearnRoute.publish`. `CreateRoute.publish(draftID:)` is reachable only from a draft.

@@ -60,13 +60,13 @@ Where things live under `front/src/`. `ls` the dir for current files; this lists
 | `front/src/lib/search-history.ts` | local recent searches for the top-bar box |
 | `front/src/lib/style-gallery.ts` | `styleGalleryLabel` (trilingual labels in one response) |
 | `front/src/lib/format.ts` | money / date / count formatting (zaolang-i18n-region) |
-| `front/src/lib/characters.ts` | character sheet helpers, `characterImageStudioHref` |
-| `front/src/lib/scenes.ts` | scene hero helpers, `sceneImageStudioHref` |
+| `front/src/lib/characters.ts` | character sheet helpers, `characterManageHref` |
+| `front/src/lib/scenes.ts` | scene hero helpers, `sceneManageHref` |
 | `front/src/lib/props.ts` | `propManageHref`, `propHeroAsset`, `defaultPropReferenceIds` |
-| `front/src/lib/image-draft.ts` | `isImageCreationOperation`, `imageCreationStudioHref` |
+| `front/src/lib/asset-job-href.ts` | where an image job / draft / notification resumes: `assetWorkspaceHref`, `assetJobHref`, `imageDraftHref`, `isRetiredImageJob` |
 | `front/src/lib/video-draft.ts` | `isVideoCreationOperation`, `videoCreationStudioHref` |
 | `front/src/lib/draft-title.ts` | `draftDisplayTitle` — title, else first prompt line, else untitled |
-| `front/src/lib/studio-session.ts` | `studioSessionKey`, `sanitizeReturnTo`, draft return-context helpers |
+| `front/src/lib/studio-session.ts` | `studioSessionKey` |
 | `front/src/lib/motion.ts` | `loadAnime`, `useReducedMotion`, `useIsomorphicLayoutEffect` (zaolang-theming) |
 | `front/src/lib/theme-sync.ts` | `syncThemePreference` — theme → account (zaolang-theming) |
 | `front/src/lib/locale-transition.ts` | region-switch fade (zaolang-i18n-region) |

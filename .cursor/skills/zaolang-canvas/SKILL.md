@@ -36,7 +36,7 @@ Not here → `zaolang-generation-jobs` (terminal-job hook, job SSE), `zaolang-da
 5. One SSE stream per open canvas (`GET …/events`), never one per job — `MAX_CONCURRENT_STREAMS_PER_USER = 8` in `back/app/api/sse_quota.py`. Resume via `Last-Event-ID`; backfill ends with an id-less `synced` frame.
 6. Publish only after commit, from frames serialised before it. `/graph-ops` calls `publish_changes` in the route; the Agent uses `agent_service._queue_frames` (`after_commit` listener). A new write path must pick one deliberately.
 7. `changes_since` → `gap: true` (cursor too old or > `MAX_CHANGES_PER_READ = 500` behind) means full reload, never "no news".
-8. Canvas is never a second write path for domain objects; "送进剧集" stays explicit (`send-to-series.tsx`).
+8. Canvas is never a second write path for domain objects; "送进剧集" stays explicit (`onSendToSeries` in `canvas-properties.tsx`). A prompt card no longer hands off to an image studio (AC-8 removed 用这段提示词生成); images on the canvas come from the Agent.
 9. Bindings degrade to stale, never delete (scene keyed by heading, shot by `{heading}#{ordinal}`). Never persist presigned URLs — store `binding.asset_id`; `domain_snapshot` signs per request and checks asset owner ∈ owner + active collaborators.
 10. `binding_asset_id` / `binding_skill_id` are indexed columns (no FK), written as a set so a swapped binding clears the old one. Card `skill_id` is client-written → `_bound_skills` filters to published-or-own.
 11. Edge handles are `""`, never NULL (else `uq_canvas_edges_endpoints` is defeated); edges have no `revision`; duplicate create = applied.
