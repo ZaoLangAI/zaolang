@@ -46,6 +46,13 @@
 3. `asset_output_advance` records `{asset_id, view, camera}` per pass; a legacy side/back view pass records its pose too (`camera.from_view`) and writes it to `extra` so a camera route could serve it. Write-back passes `camera` → a character `view` (coarse view from the pose) or a scene `shot` (`reverse` at 180°, `detail` when close), one slot per pose.
 4. Priced `unit × N` (`requested_output_count(camera_poses=…)`); time limit adds `_IMAGE_EXTRA_VIEW` per extra pose (capped); progress rescales (`_pass_position`).
 
+## Scene panoramas (`scene_panorama`, AC-7)
+
+1. `GenerationParams.scene_panorama` needs `asset_kind=scene` + `target_scene_id`, excludes derive (`source_entry_id`/`asset_edit`/output overrides), `camera_poses` and `scene_variants`, and forces `aspect_ratio="2:1"` (single-image `scene_*` presets still apply). Priced as one image. The API is the only place that forces the ratio — domain callers never set the flag.
+2. `reference_resolver._borrow_scene_reference`: with no reference, borrow only a master plate (the target variant's, else the default's, else a master anchor); no master → text-only.
+3. Routing: `router._request_constraint_failure` drops every route whose `ProviderCapability.exact_image_aspect_ratios` lacks `2:1` (`panorama_size_not_supported`) — today only DMXAPI Seedream (`zaolang-agent-gateway` › providers).
+4. `AssetPass.SCENE_PANORAMA` composes the plate (`zaolang-agent-gateway` › `reference-prompts.md`); write-back (`_derive_filing`) files it as the variant's `panorama` entry (a candidate when one is approved), never master or anchor.
+
 ## Write-back (`execute_asset_output_link`)
 
 1. The only node that mutates something outside job/Work/Draft. No-op on `dry_run`, no outputs, no axis, or `auto_attach_asset=False`; never fails the job (logs and skips).
