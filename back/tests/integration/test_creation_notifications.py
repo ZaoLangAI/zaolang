@@ -241,3 +241,54 @@ def test_every_upserted_creation_target_is_unique_in_the_database(
     with pytest.raises(IntegrityError):
         db.flush()
     nested.rollback()
+
+
+def test_an_asset_image_payload_names_its_card_and_look(db: Session, author: User) -> None:
+    """Image notifications open the card workspace (`asset-job-href.ts`):
+    the payload carries the kind, the target card and look up front, and
+    the filed card once write-back sets it."""
+    from app.domain.asset_variants import service as asset_variants_service
+    from app.domain.scenes import service as scenes_service
+
+    credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
+    scene = scenes_service.create_scene(
+        db, user_id=author.id, name="深夜便利店", description=None, reference_asset_ids=[]
+    )
+    variant_id = asset_variants_service.ensure_default(db, scene.skill).id
+    job = jobs_service.submit(
+        db,
+        user_id=author.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={
+            "prompt": "深夜便利店",
+            "asset_kind": "scene",
+            "target_scene_id": scene.id,
+            "target_variant_id": variant_id,
+        },
+        idempotency_key=new_id("idk"),
+    ).job
+    payload = _job_notes(db, author)[0].payload_json
+    assert payload["asset_kind"] == "scene"
+    assert payload["target_scene_id"] == scene.id
+    assert payload["target_variant_id"] == variant_id
+    assert "linked_scene_id" not in payload
+
+    job.linked_scene_id = scene.id
+    sm.transition(db, job.id, JobStatus.QUEUED)
+    payload = _job_notes(db, author)[0].payload_json
+    assert payload["linked_scene_id"] == scene.id
+
+
+def test_a_general_image_payload_names_no_card(db: Session, author: User) -> None:
+    credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
+    _submit(db, author)
+    payload = _job_notes(db, author)[0].payload_json
+    for key in (
+        "asset_kind",
+        "linked_character_id",
+        "linked_scene_id",
+        "linked_prop_id",
+        "target_variant_id",
+    ):
+        assert key not in payload
