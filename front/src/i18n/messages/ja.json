@@ -2729,6 +2729,7 @@
     "collection": "ライブラリ",
     "characterLibrary": "キャラクター",
     "sceneLibrary": "シーン",
+    "propLibrary": "小道具の制作",
     "profile": "プロフィール",
     "settings": "アカウントと設定",
     "billing": "クレジットと請求",
@@ -3153,6 +3154,8 @@
     "referenceCastEmpty": "キャラクターがまだありません。先にキャラクターライブラリで作成してください。",
     "referenceScenesLabel": "シーン参照",
     "referenceScenesEmpty": "シーンがまだありません。先にシーンライブラリで作成してください。",
+    "referencePropsLabel": "小道具の参考",
+    "referencePropsEmpty": "小道具がまだありません。先に小道具の制作で追加してください。",
     "referenceFramesGroup": "参照設定",
     "referenceLimitReached": "4件の上限に達しました",
     "useVideoAsReference": "この動画を元に続けて創作する",
@@ -3286,6 +3289,45 @@
     "manageVariants": "バリエーションを管理",
     "manageEyebrow": "シーン管理",
     "backToLibrary": "シーン一覧へ戻る"
+  },
+  "props": {
+    "eyebrow": "小道具の制作",
+    "title": "小道具",
+    "subtitle": "形見、武器、手紙など。小道具のメインビューとターンテーブルを保存し、複数話で見た目をそろえます。",
+    "newProp": "小道具を追加",
+    "editProp": "小道具を編集",
+    "nameLabel": "小道具名",
+    "namePlaceholder": "例：青銅の古剣、玉佩",
+    "descriptionLabel": "説明",
+    "descriptionHint": "素材、色、大きさ、模様など。生成時のプロンプトに使われます。",
+    "heroLabel": "メインビュー（任意）",
+    "heroHint": "既存の画像は確定済みのメインビューになり、ターンテーブルのアングルはそこから描かれます。空欄ならワークスペースで生成します。",
+    "referenceUpload": "アップロード",
+    "referenceChooseExisting": "既存を選ぶ",
+    "referencePickerTitle": "生成済みの画像を選ぶ",
+    "referencePickerEmpty": "選べる画像はまだありません",
+    "referencePickerError": "読み込みに失敗しました。再試行してください",
+    "createAndOpen": "作成してワークスペースへ",
+    "generateHero": "メインビューを生成",
+    "generateAgain": "メインビューを再生成",
+    "openWorkspace": "ワークスペースを開く",
+    "emptyTitle": "まだ小道具がありません",
+    "emptyHint": "小道具を追加し、メインビューとターンテーブルを生成すると、動画で繰り返し使えます。",
+    "priceLabel": "解除価格",
+    "priceHint": "0 は無料です。共有するとスキルマーケットで他の人が発見・利用できます（有料はクレジットで解除）。",
+    "publishProp": "小道具を共有",
+    "publishPropHint": "共有すると審査に送られます。承認後、他のクリエイターがスキルマーケットで見つけて利用できます（クレジット価格を設定した場合は購入も可能）。",
+    "deleteConfirmTitle": "この小道具を削除しますか？",
+    "deleteConfirmBody": "「{name}」を削除すると元に戻せません。画像もすべて削除されます。",
+    "manageEyebrow": "小道具ワークスペース",
+    "backToLibrary": "小道具一覧に戻る",
+    "stateLabel": "状態",
+    "state": {
+      "new": "新品",
+      "worn": "使い込み",
+      "damaged": "破損",
+      "broken": "大破"
+    }
   },
   "scriptStudio": {
     "title": "台本づくり",
@@ -3920,7 +3962,8 @@
     "customAdd": "属性を追加",
     "customRemove": "属性を削除",
     "customIncomplete": "カスタム属性は名前と内容の両方が必要です。",
-    "saveAttributes": "属性を保存"
+    "saveAttributes": "属性を保存",
+    "propVariantPlaceholder": "例：使い込み、破損"
   },
   "assetGraph": {
     "genericError": "操作に失敗しました。もう一度お試しください。",
@@ -3933,7 +3976,7 @@
       "period": "時代",
       "lighting": "光",
       "weather": "天気",
-      "state": "シーンの状態",
+      "state": "状態",
       "edit": "調整",
       "custom": "カスタム",
       "params": "パラメータ",
@@ -3950,7 +3993,8 @@
       "weather": "天気",
       "scene_state": "状態",
       "voice_use": "用途",
-      "voice_emotion": "感情"
+      "voice_emotion": "感情",
+      "prop_state": "状態"
     },
     "defaultBadge": "デフォルト",
     "imageCount": "確定 {count} 枚",
@@ -4036,7 +4080,9 @@
       "expression_sheet": "表情集",
       "in_scene": "シーン内のキャラクター（シーン連携が必要）",
       "master": "メインカット",
-      "shot": "追加カット"
+      "shot": "追加カット",
+      "prop_master": "小道具のメインビュー",
+      "prop_shot": "ディテールのアップ"
     },
     "deriveTarget": "生成先",
     "deriveTargetNew": "新しい衣装",
@@ -4127,7 +4173,8 @@
       "dialogue": "台詞",
       "inner_monologue": "心の声",
       "narration": "ナレーション"
-    }
+    },
+    "openInCreate": "制作タブで生成"
   },
   "iosCharacters": {
     "entryTitle": "キャラクター",

@@ -55,6 +55,7 @@ import type {
   GenerationJob,
   Page,
   QualityTier,
+  Prop,
   Scene,
   WorkDetail,
 } from '@/lib/api/types';
@@ -71,6 +72,7 @@ import {
   useReferencePicks,
 } from '@/components/studio/reference-image-picker';
 import { defaultCharacterReferenceIds } from '@/lib/characters';
+import { defaultPropReferenceIds, propHeroAsset } from '@/lib/props';
 import { defaultSceneReferenceIds } from '@/lib/scenes';
 
 type Operation = 'text_to_video' | 'image_to_video' | 'video_to_video';
@@ -105,7 +107,7 @@ const PORTRAIT_ASPECTS = ['9:16', '3:4', '2:3', '9:21'] as const;
 const ADAPTIVE_ASPECT = 'adaptive';
 const ASPECTS = [...LANDSCAPE_ASPECTS, ...PORTRAIT_ASPECTS, ADAPTIVE_ASPECT] as const;
 const DURATIONS = Array.from({ length: 12 }, (_, index) => index + 4);
-// Mirrors the backend's `GenerationParams.character_ids`/`scene_ids` cap
+// Mirrors the backend's `GenerationParams.character_ids`/`scene_ids`/`prop_ids` cap
 // (`max_length=4`) — the picker refuses a 5th selection client-side instead
 // of letting submit fail with a 422.
 const MAX_REFERENCE_SELECTION = 4;
@@ -268,6 +270,8 @@ export function VideoGenerationStudio({
   // 婚礼 outfit) — unset means the backend's default subset.
   const characterRefPicks = useReferencePicks();
   const sceneRefPicks = useReferencePicks();
+  const [selectedReferencePropIds, setSelectedReferencePropIds] = useState<string[]>([]);
+  const propRefPicks = useReferencePicks();
   // Ranks the picked characters' *default* references (P2-7): an expression
   // sheet showing this emotion goes in first. The shot size comes from the
   // prompt's 「镜头：」 line on the backend.
@@ -471,6 +475,15 @@ export function VideoGenerationStudio({
           : current,
     );
 
+  const toggleReferenceProp = (id: string) =>
+    setSelectedReferencePropIds((current) =>
+      current.includes(id)
+        ? current.filter((existing) => existing !== id)
+        : current.length < MAX_REFERENCE_SELECTION
+          ? [...current, id]
+          : current,
+    );
+
   /** Shared by presets, skills and the style gallery: all three apply the same `prompt`/`aspect_ratio`/extras shape. */
   const applyParams = (params: Record<string, unknown>) => {
     const aspectRatio = params.aspect_ratio;
@@ -527,6 +540,8 @@ export function VideoGenerationStudio({
   );
   const characters = charactersResource.data ?? [];
   const scenes = scenesResource.data ?? [];
+  const propsResource = useResource<Prop[]>(sessionStatus === 'authenticated' ? '/v1/props' : null);
+  const propCards = propsResource.data ?? [];
   const isCharacterActionKind = videoAssetKind === 'character_action';
 
   const {
@@ -635,6 +650,7 @@ export function VideoGenerationStudio({
       styleGalleryId: appliedStyleGalleryId ?? undefined,
       characterIds: selectedReferenceCharacterIds,
       sceneIds: selectedReferenceSceneIds,
+      propIds: selectedReferencePropIds,
       assetPresets: {
         character_ref_selection: characterRefPicks
           .selectionFor(selectedReferenceCharacterIds)
@@ -642,6 +658,9 @@ export function VideoGenerationStudio({
         scene_ref_selection: sceneRefPicks
           .selectionFor(selectedReferenceSceneIds)
           .map(({ ownerId, ...pick }) => ({ scene_id: ownerId, ...pick })),
+        prop_ref_selection: propRefPicks
+          .selectionFor(selectedReferencePropIds)
+          .map(({ ownerId, ...pick }) => ({ prop_id: ownerId, ...pick })),
         reference_emotion:
           selectedReferenceCharacterIds.length && referenceEmotion ? referenceEmotion : null,
       },
@@ -840,8 +859,62 @@ export function VideoGenerationStudio({
           ) : (
             <p className="text-xs text-muted">{t('referenceScenesEmpty')}</p>
           )}
+
+          <p className="mt-1 text-xs text-muted">{t('referencePropsLabel')}</p>
+          {propCards.length > 0 ? (
+            <ul className="flex flex-col gap-1.5">
+              {propCards.map((prop) => {
+                const checked = selectedReferencePropIds.includes(prop.id);
+                const disabled =
+                  !checked && selectedReferencePropIds.length >= MAX_REFERENCE_SELECTION;
+                const thumbnailUrl = propHeroAsset(prop)?.url;
+                return (
+                  <li key={prop.id}>
+                    <label
+                      className={cn(
+                        'flex items-center gap-2.5 text-sm',
+                        disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={disabled}
+                        onChange={() => toggleReferenceProp(prop.id)}
+                        className="size-4 shrink-0 accent-[var(--primary)]"
+                      />
+                      <span className="relative size-7 shrink-0 overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
+                        {thumbnailUrl ? (
+                          <Image
+                            src={thumbnailUrl}
+                            alt=""
+                            fill
+                            sizes="28px"
+                            className="object-cover"
+                          />
+                        ) : null}
+                      </span>
+                      {prop.name}
+                    </label>
+                    {checked ? (
+                      <ReferenceImagePicker
+                        label={t('referencePickLabel', { name: prop.name })}
+                        variants={prop.variants ?? []}
+                        defaultAssetIds={defaultPropReferenceIds(prop)}
+                        value={propRefPicks.picks[prop.id]}
+                        onChange={(pick) => propRefPicks.set(prop.id, pick)}
+                      />
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-xs text-muted">{t('referencePropsEmpty')}</p>
+          )}
           {selectedReferenceCharacterIds.length >= MAX_REFERENCE_SELECTION ||
-          selectedReferenceSceneIds.length >= MAX_REFERENCE_SELECTION ? (
+          selectedReferenceSceneIds.length >= MAX_REFERENCE_SELECTION ||
+          selectedReferencePropIds.length >= MAX_REFERENCE_SELECTION ? (
             <p className="text-[11px] text-muted">{t('referenceLimitReached')}</p>
           ) : null}
         </div>

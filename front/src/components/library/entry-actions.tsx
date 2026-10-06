@@ -23,6 +23,8 @@ export const CHARACTER_ENTRY_TYPES: AssetEntryType[] = [
   'other',
 ];
 export const SCENE_ENTRY_TYPES: AssetEntryType[] = ['master', 'shot', 'other'];
+/** `PROP_ENTRY_TYPES` (AC-4): hero plate, turntable views, detail shots. */
+export const PROP_ENTRY_TYPES: AssetEntryType[] = ['master', 'view', 'shot', 'other'];
 
 /** One filed image with its own actions: 定稿 a candidate; retype, move,
  * anchor or remove an approved one. Shared by the looks panel and the

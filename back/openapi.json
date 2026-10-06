@@ -47946,11 +47946,28 @@
               }
             ],
             "title": "Age Stage"
+          },
+          "prop_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "new",
+                  "worn",
+                  "damaged",
+                  "broken"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prop State"
           }
         },
         "type": "object",
         "title": "VariantPresets",
-        "description": "Scene variant presets (P0 vocabulary) or a look's `age_stage` (P2-6).\nThe service rejects the other kind's keys (a look has no lighting, a\nscene variant no age)."
+        "description": "Scene variant presets (P0 vocabulary), a look's `age_stage` (P2-6) or\na prop variant's `prop_state` (AC-4). The service rejects the other\nkinds' keys (a look has no lighting, a scene variant no age)."
       },
       "VendorCatalogView": {
         "properties": {

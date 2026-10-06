@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import { LookFillDialog } from '@/components/characters/look-fill-dialog';
 import type { CardKind } from '@/components/library/entry-actions';
+import { PropPresetFields, propPresetsOf } from '@/components/library/prop-preset-fields';
 import { ScenePresetFields } from '@/components/library/scene-preset-fields';
 import { VariantAttributesForm } from '@/components/library/variant-attributes-form';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,7 @@ export function LookInspector({
   onSelectEdge,
   onDeleted,
   generateHref,
+  onOpenCreate,
 }: {
   graph: AssetGraph;
   kind: CardKind;
@@ -43,7 +45,9 @@ export function LookInspector({
   onToggle: () => void;
   onSelectEdge: (edgeId: string) => void;
   onDeleted: () => void;
-  generateHref: (variant: AssetVariant) => string;
+  /** The image studio jump-out; without it (props) 生成 opens the 创作 tab. */
+  generateHref?: (variant: AssetVariant) => string;
+  onOpenCreate?: (variant: AssetVariant) => void;
 }) {
   const t = useTranslations('assetGraph');
   const tVariants = useTranslations('assetVariants');
@@ -90,9 +94,14 @@ export function LookInspector({
       </InspectorSection>
 
       <InspectorSection title={t('sectionAttributes')}>
-        {!character ? (
+        {kind === 'scene' ? (
           <ScenePresetFields
             presets={(variant.presets ?? {}) as ScenePresets}
+            onChange={(next) => void actions.updateVariant(variant.id, { presets: next })}
+          />
+        ) : kind === 'prop' ? (
+          <PropPresetFields
+            presets={propPresetsOf(variant.presets)}
             onChange={(next) => void actions.updateVariant(variant.id, { presets: next })}
           />
         ) : null}
@@ -149,9 +158,15 @@ export function LookInspector({
               {tVariants('fillOpen')}
             </Button>
           ) : null}
-          <Button size="sm" variant="ghost" onClick={() => router.push(generateHref(variant))}>
-            {t('openInStudio')}
-          </Button>
+          {generateHref ? (
+            <Button size="sm" variant="ghost" onClick={() => router.push(generateHref(variant))}>
+              {t('openInStudio')}
+            </Button>
+          ) : onOpenCreate ? (
+            <Button size="sm" variant="ghost" onClick={() => onOpenCreate(variant)}>
+              {t('openInCreate')}
+            </Button>
+          ) : null}
         </div>
       </InspectorSection>
 

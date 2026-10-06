@@ -165,6 +165,7 @@ function UserMenu({ name, onSignOut }: { name: string; onSignOut: () => void }) 
     { href: '/collection', label: t('nav.collection') },
     { href: '/create/characters', label: t('nav.characterLibrary') },
     { href: '/create/scenes', label: t('nav.sceneLibrary') },
+    { href: '/create/props', label: t('nav.propLibrary') },
     { href: '/billing', label: t('nav.billing') },
     { href: '/profile/settings', label: t('nav.settings') },
   ] as const;

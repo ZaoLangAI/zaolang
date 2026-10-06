@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import {
   CHARACTER_ENTRY_TYPES,
+  PROP_ENTRY_TYPES,
   EntryCard,
   SCENE_ENTRY_TYPES,
   type CardKind,
@@ -119,7 +120,13 @@ export function EntryInspector({
             variant={variant}
             variants={graph.variants ?? []}
             isAnchor={entry.id === graph.anchor_entry_id}
-            entryTypes={kind === 'character' ? CHARACTER_ENTRY_TYPES : SCENE_ENTRY_TYPES}
+            entryTypes={
+              kind === 'character'
+                ? CHARACTER_ENTRY_TYPES
+                : kind === 'prop'
+                  ? PROP_ENTRY_TYPES
+                  : SCENE_ENTRY_TYPES
+            }
             onUpdate={(body) => void actions.updateEntry(entry.id, body)}
             onDelete={() =>
               void actions.deleteEntry(entry.id).then((done) => {

@@ -82,6 +82,7 @@ export type AttributeRowKey =
   | 'lighting'
   | 'weather'
   | 'scene_state'
+  | 'prop_state'
   | 'custom';
 
 export interface AttributeRow {
@@ -106,6 +107,9 @@ export function attributeRows(variant: AssetVariant, kind: CardKind): AttributeR
     push('state', attributes.state);
     push('scene', variant.scene_link?.scene_name);
     push('scene_note', attributes.scene_note);
+  } else if (kind === 'prop') {
+    push('prop_state', presets.prop_state);
+    push('period', presets.period);
   } else {
     push('lighting', presets.lighting);
     push('weather', presets.weather);

@@ -38,7 +38,9 @@ export function AssetWorkspace({
   initialVariantId?: string | null;
   /** `?slot=`: preselect a 创作 slot. */
   initialSlotId?: string | null;
-  generateHref: (variant: AssetVariant) => string;
+  /** The graph's image-studio jump-out (characters, scenes); a prop has
+   * none, so its looks open in the 创作 tab instead. */
+  generateHref?: (variant: AssetVariant) => string;
   portraitHref?: string;
 }) {
   const t = useTranslations('assetWorkspace');
@@ -50,6 +52,8 @@ export function AssetWorkspace({
   const [tab, setTab] = useState<WorkspaceTab>(
     initialTab && tabs.includes(initialTab) ? initialTab : 'create',
   );
+  // A look the graph asked to generate for — the 创作 tab mounts on it.
+  const [createVariantId, setCreateVariantId] = useState<string | null>(null);
 
   const pendingCount = graph.pending?.length ?? 0;
   const { refresh } = actions;
@@ -106,8 +110,8 @@ export function AssetWorkspace({
             graph={graph}
             actions={actions}
             busy={busy}
-            initialVariantId={initialVariantId}
-            initialSlotId={initialSlotId}
+            initialVariantId={createVariantId ?? initialVariantId}
+            initialSlotId={createVariantId ? null : initialSlotId}
           />
         </>
       ) : (
@@ -117,6 +121,10 @@ export function AssetWorkspace({
           tab={tab}
           initialLookId={initialVariantId}
           generateHref={generateHref}
+          onOpenCreate={(variant) => {
+            setCreateVariantId(variant.id);
+            setTab('create');
+          }}
           portraitHref={portraitHref}
         />
       )}

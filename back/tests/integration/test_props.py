@@ -97,6 +97,7 @@ def test_a_prop_variant_takes_a_condition_preset(
         headers=auth_header(author),
     )
     assert made.status_code in (200, 201), made.text
+    assert made.json()["presets"] == {"prop_state": "damaged"}
     bad = client.post(
         f"/v1/props/{prop['id']}/variants",
         json={"name": "黄昏", "presets": {"lighting": "dusk"}},
