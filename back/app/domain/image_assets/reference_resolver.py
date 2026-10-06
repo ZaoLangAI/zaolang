@@ -309,7 +309,6 @@ def _prompt_camera_cue(params: dict[str, Any]) -> camera_language.CameraCue | No
     return camera_language.parse_camera_text(match.group(1)) if match else None
 
 
-
 def _approved_of(variant: Any, entry_type: AssetEntryType) -> list[Any]:
     if variant is None:
         return []
