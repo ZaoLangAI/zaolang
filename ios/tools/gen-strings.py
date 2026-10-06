@@ -68,6 +68,11 @@ NAMESPACES = [
     "assetVariants",
     "assetGraph",
     "iosCharacters",
+    # 角色 / 场景 / 道具创作（AC-10）：资产板、场景库、道具库，及 iOS 独有的快速生成与网页端跳转文案。
+    "assetWorkspace",
+    "scenes",
+    "props",
+    "iosAssets",
 ]
 
 SOURCE_LANGUAGE = "zh-Hans"

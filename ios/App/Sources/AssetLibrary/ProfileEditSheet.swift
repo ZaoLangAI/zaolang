@@ -3,7 +3,7 @@ import ZaolangKit
 
 /// 改角色名与两段描述；关联了剧本时可「AI 生成」草稿，先填进表单，保存才落库。
 struct ProfileEditSheet: View {
-    let viewModel: CharacterDetailViewModel
+    let viewModel: AssetDetailViewModel
 
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
@@ -12,7 +12,7 @@ struct ProfileEditSheet: View {
     @State private var drafting = false
     @State private var saving = false
 
-    init(graph: AssetGraphResponse, viewModel: CharacterDetailViewModel) {
+    init(graph: AssetGraphResponse, viewModel: AssetDetailViewModel) {
         self.viewModel = viewModel
         _name = State(initialValue: graph.name)
         _description = State(initialValue: graph.description ?? "")

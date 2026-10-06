@@ -181,10 +181,10 @@ struct RootTabView: View {
                 onOpenWork: { router.createPath.append(CreateRoute.workDetail(workID: $0)) },
                 onOpenLineage: { router.createPath.append(CreateRoute.lineage(workID: $0)) }
             )
-        case .characterLibrary:
-            CharacterLibraryView()
-        case .characterDetail(let characterID):
-            CharacterDetailView(characterID: characterID)
+        case .assetLibrary(let kind):
+            AssetListView(kind: kind)
+        case .assetDetail(let kind, let cardID, let variantID):
+            AssetDetailView(kind: kind, cardID: cardID, variantID: variantID)
         }
     }
 
@@ -233,6 +233,10 @@ struct RootTabView: View {
                 onOpenPublish: { draftID in
                     router.selectTab(.create)
                     router.createPath.append(CreateRoute.publish(draftID: draftID))
+                },
+                onOpenAssetCard: { link in
+                    router.selectTab(.create)
+                    router.createPath.append(link.route)
                 }
             )
         case .billing:

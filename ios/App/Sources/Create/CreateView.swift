@@ -1,7 +1,7 @@
 import SwiftUI
 import ZaolangKit
 
-/// 创作 Tab 根屏，对应 `(site)/create/page.tsx`：三个模式卡片 + 最近草稿。
+/// 创作 Tab 根屏，对应 `(site)/create/page.tsx`：角色 / 场景 / 道具创作与视频、二创、发表学习内容等模式卡片 + 最近草稿。
 /// 未登录点任意卡片先弹登录墙（`requireAuth`），登录成功后直接把动作补跑一次。
 struct CreateView: View {
     @Environment(AppEnvironment.self) private var environment
@@ -42,14 +42,9 @@ struct CreateView: View {
 
     private var modeCards: some View {
         VStack(spacing: 12) {
-            modeCard(
-                title: L10n.t("createPage.modeImageCreationTitle"),
-                description: L10n.t("createPage.modeImageCreationDesc"),
-                tag: L10n.t("createPage.modeImageCreationTag"),
-                systemImage: "person.crop.rectangle.stack"
-            ) {
-                start(.new(operation: .textToImage, initialPrompt: nil))
-            }
+            assetCard(.character, prefix: "createPage.modeCharacterCreation", systemImage: "person.crop.rectangle.stack")
+            assetCard(.scene, prefix: "createPage.modeSceneCreation", systemImage: "mountain.2")
+            assetCard(.prop, prefix: "createPage.modePropCreation", systemImage: "cube")
             modeCard(
                 title: L10n.t("createPage.modeTextToVideoTitle"),
                 description: L10n.t("createPage.modeTextToVideoDesc"),
@@ -87,15 +82,19 @@ struct CreateView: View {
                     router.learnPath.append(LearnRoute.publish)
                 }
             }
-            modeCard(
-                title: L10n.t("iosCharacters.entryTitle"),
-                description: L10n.t("iosCharacters.entryDesc"),
-                tag: L10n.t("iosCharacters.entryTag"),
-                systemImage: "person.2.crop.square.stack"
-            ) {
-                environment.requireAuth(actionLabel: L10n.t("iosCharacters.entryTitle")) {
-                    path.append(CreateRoute.characterLibrary)
-                }
+        }
+    }
+
+    /// 角色 / 场景 / 道具创作：图片只在卡片工作区里生成（AC-8），卡片进入对应的库。
+    private func assetCard(_ kind: AssetCardKind, prefix: String, systemImage: String) -> some View {
+        modeCard(
+            title: L10n.t("\(prefix)Title"),
+            description: L10n.t("\(prefix)Desc"),
+            tag: L10n.t("\(prefix)Tag"),
+            systemImage: systemImage
+        ) {
+            environment.requireAuth(actionLabel: L10n.t("\(prefix)Title")) {
+                path.append(CreateRoute.assetLibrary(kind))
             }
         }
     }

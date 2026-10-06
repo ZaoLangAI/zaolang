@@ -4,19 +4,19 @@ import ZaolangKit
 /// 一张图的全屏查看：同组版本横排可切换，候选版本可「定稿这张」。
 struct EntryViewerSheet: View {
     let graph: AssetGraphResponse
-    let viewModel: CharacterDetailViewModel
+    let viewModel: AssetDetailViewModel
 
     @Environment(\.dismiss) private var dismiss
     @State private var current: AssetEntryView
 
-    init(graph: AssetGraphResponse, entry: AssetEntryView, viewModel: CharacterDetailViewModel) {
+    init(graph: AssetGraphResponse, entry: AssetEntryView, viewModel: AssetDetailViewModel) {
         self.graph = graph
         self.viewModel = viewModel
         _current = State(initialValue: entry)
     }
 
     private var group: [AssetEntryView] {
-        let index = CharacterGraphModel.versionIndex(graph)
+        let index = AssetGraphModel.versionIndex(graph)
         let head = index.headOf[current.id] ?? current.id
         return index.versions[head] ?? [current]
     }

@@ -1,8 +1,9 @@
 import Foundation
 
-// A character's management graph (`GET /v1/characters/{id}/graph`,
-// `back/app/api/schemas/asset_graph.py`): its looks with their images, the
-// typed relations between them, its voices and jobs still filling it. iOS
+// A card's management graph (`GET /v1/{characters,scenes,props}/{id}/graph`,
+// `back/app/api/schemas/asset_graph.py`): its looks / variants with their
+// images, the typed relations between them, its voices (characters only)
+// and jobs still filling it. iOS
 // renders it read-mostly (`zaolang-ios-client` › reference-roadmap). Free
 // strings stay `String` — an unknown entry type or relation must not fail
 // the whole decode.
@@ -51,19 +52,25 @@ public struct AssetEntryView: Codable, Sendable, Equatable, Identifiable, Hashab
     /// `AssetEntryType` (`back/app/models/enums.py`), e.g. `character_sheet`.
     public let entryType: String
     public let view: String?
+    /// The viewpoint a 多机位 image shows (`view` / `shot` entries); `nil`
+    /// for older images, which fall back to their coarse `view`.
+    public let camera: CameraPose?
     public let expressions: [String]
+    public let label: String?
     /// `candidate` | `approved`.
     public let status: String
     public let isAnchor: Bool
+    public let sourceJobID: String?
     public let createdAt: Date?
 
     public var isCandidate: Bool { status == "candidate" }
 
     private enum CodingKeys: String, CodingKey {
-        case id, url, view, expressions, status
+        case id, url, view, camera, expressions, label, status
         case assetID = "asset_id"
         case entryType = "entry_type"
         case isAnchor = "is_anchor"
+        case sourceJobID = "source_job_id"
         case createdAt = "created_at"
     }
 
@@ -74,9 +81,12 @@ public struct AssetEntryView: Codable, Sendable, Equatable, Identifiable, Hashab
         url = try c.decodeIfPresent(String.self, forKey: .url)
         entryType = try c.decode(String.self, forKey: .entryType)
         view = try c.decodeIfPresent(String.self, forKey: .view)
+        camera = try c.decodeIfPresent(CameraPose.self, forKey: .camera)
         expressions = try c.decodeIfPresent([String].self, forKey: .expressions) ?? []
+        label = try c.decodeIfPresent(String.self, forKey: .label)
         status = try c.decode(String.self, forKey: .status)
         isAnchor = try c.decodeIfPresent(Bool.self, forKey: .isAnchor) ?? false
+        sourceJobID = try c.decodeIfPresent(String.self, forKey: .sourceJobID)
         createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt)
     }
 }
@@ -140,6 +150,8 @@ public struct AssetEdgeView: Codable, Sendable, Equatable, Identifiable {
 public struct AssetGraphPendingJob: Codable, Sendable, Equatable {
     public let jobID: String
     public let status: String
+    /// `orbit` (camera poses), `panorama`, `adjust`, `derive`…; `nil` for a
+    /// plain slot job.
     public let mode: String?
     public let targetVariantID: String?
     public let sourceEntryID: String?
@@ -232,7 +244,7 @@ public struct CharacterVoiceView: Codable, Sendable, Equatable, Identifiable {
 
 public struct AssetGraphResponse: Codable, Sendable, Equatable {
     public let cardID: String
-    /// `character` | `scene`.
+    /// `character` | `scene` | `prop` (`AssetCardKind`).
     public let cardKind: String
     public let name: String
     public let description: String?

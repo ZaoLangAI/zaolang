@@ -69,7 +69,11 @@ final class PushManager: NSObject {
         switch targetType {
         case "generation_job":
             router.selectTab(.create)
-            router.createPath.append(CreateRoute.jobDetail(jobID: targetID))
+            if let link = AssetJobLink(field: { userInfo[$0] as? String }) {
+                router.createPath.append(link.route)
+            } else {
+                router.createPath.append(CreateRoute.jobDetail(jobID: targetID))
+            }
         case "work":
             router.selectTab(.discover)
             router.discoverPath.append(DiscoverRoute.workDetail(workID: targetID))

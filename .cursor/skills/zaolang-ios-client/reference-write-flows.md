@@ -9,28 +9,26 @@ Paths below are relative to `ios/App/Sources/` unless they start with `ios/`.
 
 ## Studio (`Create/StudioView.swift`, `Create/StudioViewModel.swift`)
 - Entry is always `CreateRoute.studio(StudioMode)`:
-  - `.new(operation:initialPrompt:)` — hub cards 图片创作 (`.textToImage`), text-to-video, image-to-video; and the inspiration preview's "create with this prompt" (prompt only, no source, no lineage).
-  - Since AC-8 the API refuses a `text_to_image` / `image_to_image` job without `asset_kind` character / scene / prop (422 `IMAGE_ASSET_KIND_REQUIRED`, also on quote / retry / promote) and any new `cover`; the 图片创作 card and the general / cover kinds still on this screen surface that server message until AC-10 replaces them with the asset libraries. Web removed its image studio; its copy keys `createPage.modeImageCreation*`, `remixPage.assetKind*`, `remixPage.targetScene*` stay in the catalogues only for this screen.
+  - `.new(operation:initialPrompt:)` — hub cards text-to-video, image-to-video; and the inspiration preview's "create with this prompt" (`.textToVideo`, prompt only, no source, no lineage).
+  - No image creation: since AC-8 the API refuses a `text_to_image` / `image_to_image` job without `asset_kind` character / scene / prop (422 `IMAGE_ASSET_KIND_REQUIRED`, also on quote / retry / promote) and any new `cover`; images are generated only from a card (see Asset libraries). Should an old path still submit one, quote / submit errors show the server message (`ApiError.fallbackMessage`).
   - `.remix(sourceWorkID:)` — work detail "remix". `load()` fetches `WorkDetail` and prefills `reusableParams.prompt`/`negativePrompt`; `rightsSection` (keep-attribution checkbox) must be checked to submit.
 - Always switch to the Create tab before pushing (`RootTabView.startRemix`); never push the studio onto another tab's stack.
 - The hub's remix card only `selectTab(.discover)`; its learn-publish card switches to Learn and pushes `LearnRoute.publish`. `CreateRoute.publish(draftID:)` is reachable only from a draft.
-- `effectiveOperation`: `.textToImage` becomes `.imageToImage` once a reference is attached (mirrors web `GenerationStudio`).
 - `remixOperation(for:)` follows the source medium: video → `.videoToVideo`, image → `.imageToVideo`, audio → `.audioGeneration`, unknown → `.textToVideo`. Remix is not always image-to-video.
 - Quote is debounced 400ms.
 - `submit()`: derive the draft title (source work title, else first prompt line capped at 200) and seed `params` with `prompt` + `operation` **before** `createDraft` — the draft caption (`DraftResponse.displayTitle`, fallback `createPage.untitledDraft`) is computed from what was stored at create time. Draft and job share one idempotency key (`idempotencyKeys.key(for: draft.id)`). Then `trackJob(id:)`.
-- Character kind: `ImageAssetKind.character` is one case; angles are `CharacterViewAngle`. `submit()` only produces the default (front) view.
 
-## Character view completion (补全侧面/背面)
-- `StudioViewModel.completeViews(for:)`, triggered from the character `LibraryPickerSheet` row (`canComplete`/`completingID`/`onComplete`) when `CharacterResponse.canCompleteViews`.
-- Submits one `image_to_image` job, `characterViews: [.side, .back]`, `frontReference.assetID` as sole reference, `targetCharacterID`, `autoAttachAsset: true`; idempotency key `complete-views-<character id>`. Polls `fetchGenerationJob` every 3s until terminal, then `fetchCharacter(id:)` replaces the row. No draft, not `submit()`.
-- iOS is the only client calling this (web dropped completion; `front/src/lib/characters.ts:missingReferenceViews` survives for API/iOS callers). Don't delete the path assuming web owns it.
-- Divergence: iOS always requests `[.side, .back]`, even when one already exists; web's `missingReferenceViews` asks only for the missing subset.
-- Reference-image editing and publishing characters/scenes are web-only.
+## Asset libraries (`AssetLibrary/`)
+- Hub cards 角色 / 场景 / 道具创作 → `CreateRoute.assetLibrary(AssetCardKind)` (login wall) → `AssetListView` (full `GET /v1/{characters,scenes,props}`; row = hero, name, description, completeness of the default look / variant) → `CreateRoute.assetDetail(kind:cardID:variantID:)`. New cards are made on the web (toolbar / empty-state button opens `/create/{kind}`).
+- `AssetSlots` is the phone copy of `front/src/features/asset-workspace/kind-config.ts`, `camera.ts`, `completeness.ts` and `slot-jobs.ts` — change them together. Slot status: approved > pending (a graph `pending` job on this variant: `orbit` → pose slots, `panorama` → panorama, else the rest) > candidate > missing; the portrait slot shows only on the default look; completeness counts required slots. The turnaround ring reads entry poses (`camera`, else the coarse `view`; a sheet / master is 0°) at eye level.
+- `approve(_:)` → `POST /v1/{kind}/{id}/entries/{entry_id}:approve` (`approveAssetEntry`), from the slot sheet's candidates or the graph tab's entry viewer.
+- Primary slot only (`Slot.isPrimary`: character `portrait`, scene / prop `master`): `quotePrimary` → `POST /v1/generation-jobs/quote` with `asset_kind`; confirm dialog; `generate` submits a draftless `text_to_image` job with `AssetSlots.primaryJobParams` (prompt = name。description。non-default look description; `asset_kind` + `target_{kind}_id`, `subject_name_hint`; portrait `character_portrait` 3:4; master `target_variant_id`, scene 16:9 + `scene_*` presets, prop 1:1 + `prop_state`), `max_credits` = quote, idempotency key `asset-slot-<card>-<variant>|<slot>` reused until success; then `trackJob`, 3s poll, reload. Every other slot shows 「在网页端继续」 → `/create/{kind}/{id}?look=<variant>`.
+- Removed with AC-10: the studio's character / scene target picker (`LibraryPickerSheet`) and 补全侧面/背面 (`characterViews: [.side, .back]`); turnaround views are the web workspace's camera poses. `front/src/lib/characters.ts:missingReferenceViews` no longer has an iOS caller.
+- Reference-image editing and publishing characters / scenes / props are web-only.
 
-## Character library (`CharacterLibrary/CharacterDetailViewModel.swift`)
-- `approve(_:)` → `POST /v1/characters/{id}/entries/{entry_id}:approve` (`APIClient+AssetLibrary.swift:approveCharacterEntry`); only candidates show the button (entry viewer sheet).
+## Character voices & profile (`AssetLibrary/AssetDetailViewModel.swift`, character cards only)
 - `makeDefault(_:)` → voice `PATCH {make_default: true}`.
-- `previewQuote` sends `dry_run: true`; `generatePreview` reuses one `IdempotencyKeyStore` key per voice (`voice-preview-<voice id>`) until the submit succeeds, then polls `fetchGenerationJob` every 3s and reloads the graph (the backend lands the audio as `preview`).
+- `previewQuote` sends `dry_run: true`; `generatePreview` reuses one `AppEnvironment.idempotencyKeys` key per voice (`voice-preview-<voice id>`) until the submit succeeds, then polls `fetchGenerationJob` every 3s and reloads the graph (the backend lands the audio as `preview`).
 - `saveProfile` PATCHes only name / description / voice_description — never `reference_asset_ids` (that would drop approved images via `set_members`).
 - `describe()` returns a draft from linked scripts; the sheet fills the form and saving persists it. The button shows only when `script-links` is non-empty.
 
@@ -44,6 +42,7 @@ Paths below are relative to `ios/App/Sources/` unless they start with `ios/`.
 - Defaults: `visibility = .publicViewOnly`, `rightsConfirmed` and `aiDisclosureConfirmed` both false.
 - `POST /v1/drafts/{id}/publish` returns 202 `{status: pending, draft_id}` → pop back. Never navigate to a work that doesn't exist yet.
 - `Library/NotificationsViewModel.swift`: `notification.draft_published` / `draft_publish_rejected` with `target_type = draft` route to `payload.work_id` if present, else back to `CreateRoute.publish(draftID:)`.
+- A `generation_job` notification / push whose payload names a card (`linked_*_id`, else `target_*_id`, plus `target_variant_id`) opens `CreateRoute.assetDetail` on that look (`AssetLibrary/AssetJobLink.swift`, mirrors web `assetWorkspaceHref`); other jobs open the job page.
 
 ## Learn publish
 - `Learn/LearnPublishViewModel.swift` → `createLearnPost(_:idempotencyKey:)`. Uploaded images are appended as `![](learn-asset:<assetId>)`; `Learn/LearnAssetImageProvider.swift` swaps them for signed URLs at render time.

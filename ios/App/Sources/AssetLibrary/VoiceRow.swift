@@ -7,7 +7,7 @@ struct VoiceRow: View {
     let lookNames: [String]
     let pending: Bool
     let player: VoicePlayer
-    let viewModel: CharacterDetailViewModel
+    let viewModel: AssetDetailViewModel
 
     @State private var quote: VoicePreviewResponse?
 

@@ -11,8 +11,6 @@ struct StudioView: View {
 
     @State private var viewModel: StudioViewModel?
     @State private var pickerItem: PhotosPickerItem?
-    @State private var showCharacterPicker = false
-    @State private var showScenePicker = false
 
     var body: some View {
         Group {
@@ -53,11 +51,8 @@ struct StudioView: View {
                 if viewModel.sourceWorkID == nil {
                     operationSection(viewModel)
                 }
-                if viewModel.operation.isImage {
-                    assetKindSection(viewModel)
-                }
                 promptSection(viewModel)
-                if viewModel.needsReferenceImage || viewModel.operation.isImage {
+                if viewModel.needsReferenceImage {
                     referenceSection(viewModel)
                 }
                 aspectAndDurationSection(viewModel)
@@ -70,35 +65,6 @@ struct StudioView: View {
             .padding(.bottom, 120)
         }
         .safeAreaInset(edge: .bottom) { bottomBar(viewModel) }
-        .sheet(isPresented: $showCharacterPicker) {
-            LibraryPickerSheet(
-                title: L10n.t("remixPage.selectCharacterTitle"),
-                items: viewModel.characters,
-                selectedID: viewModel.targetCharacterID,
-                isLoading: viewModel.isLoadingLibraries,
-                emptyOptionLabel: L10n.t("remixPage.targetCharacterAutoCreate"),
-                newItemTitle: L10n.t("remixPage.newCharacterTitle"),
-                namePlaceholder: L10n.t("remixPage.characterNamePlaceholder"),
-                onSelect: { viewModel.targetCharacterID = $0 },
-                onCreate: { name, description in await viewModel.createCharacter(name: name, description: description) },
-                canComplete: { $0.canCompleteViews },
-                completingID: viewModel.completingCharacterID,
-                onComplete: { character in Task { await viewModel.completeViews(for: character) } }
-            )
-        }
-        .sheet(isPresented: $showScenePicker) {
-            LibraryPickerSheet(
-                title: L10n.t("remixPage.selectSceneTitle"),
-                items: viewModel.scenes,
-                selectedID: viewModel.targetSceneID,
-                isLoading: viewModel.isLoadingLibraries,
-                emptyOptionLabel: L10n.t("remixPage.targetSceneNone"),
-                newItemTitle: L10n.t("remixPage.newSceneTitle"),
-                namePlaceholder: L10n.t("remixPage.sceneNamePlaceholder"),
-                onSelect: { viewModel.targetSceneID = $0 },
-                onCreate: { name, description in await viewModel.createScene(name: name, description: description) }
-            )
-        }
     }
 
     @ViewBuilder
@@ -130,98 +96,17 @@ struct StudioView: View {
 
     @ViewBuilder
     private func operationSection(_ viewModel: StudioViewModel) -> some View {
-        if !viewModel.operation.isImage {
-            Picker(L10n.t("createPage.title"), selection: Binding(
-                get: { viewModel.operation },
-                set: { newValue in
-                    viewModel.operation = newValue
-                    viewModel.scheduleQuote()
-                }
-            )) {
-                Text(L10n.t("createPage.modeTextToVideoTitle")).tag(Operation.textToVideo)
-                Text(L10n.t("createPage.modeImageToVideoTitle")).tag(Operation.imageToVideo)
+        Picker(L10n.t("createPage.title"), selection: Binding(
+            get: { viewModel.operation },
+            set: { newValue in
+                viewModel.operation = newValue
+                viewModel.scheduleQuote()
             }
-            .pickerStyle(.segmented)
+        )) {
+            Text(L10n.t("createPage.modeTextToVideoTitle")).tag(Operation.textToVideo)
+            Text(L10n.t("createPage.modeImageToVideoTitle")).tag(Operation.imageToVideo)
         }
-    }
-
-    /// "创作类型" — what this image is for, mirroring the web studio's
-    /// `assetKind` `OptionGroup`. Only rendered for the image family
-    /// (`.textToImage`/`.imageToImage`, i.e. the merged "图片创作" entry).
-    /// Picking `.character` always generates just the front view — the
-    /// remaining two are a standalone completion action on the character
-    /// library card (`CharacterLibraryView`'s "补全侧面/背面" button), not a
-    /// studio option.
-    private func assetKindSection(_ viewModel: StudioViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L10n.t("remixPage.assetKind")).font(.subheadline.weight(.semibold))
-                Picker(L10n.t("remixPage.assetKind"), selection: Binding(
-                    get: { viewModel.assetKind },
-                    set: { newValue in
-                        viewModel.assetKind = newValue
-                        viewModel.scheduleQuote()
-                    }
-                )) {
-                    Text(L10n.t("remixPage.assetKindGeneral")).tag(ImageAssetKind.general)
-                    Text(L10n.t("remixPage.assetKindCharacter")).tag(ImageAssetKind.character)
-                    Text(L10n.t("remixPage.assetKindScene")).tag(ImageAssetKind.scene)
-                    Text(L10n.t("remixPage.assetKindCover")).tag(ImageAssetKind.cover)
-                }
-                .pickerStyle(.menu)
-                Text(L10n.t(
-                    viewModel.assetKind == .character
-                        ? "remixPage.assetKindCharacterHint"
-                        : "remixPage.assetKindHint"
-                )).font(.caption).foregroundStyle(Color.zl.textMuted)
-            }
-
-            if viewModel.assetKind == .character {
-                targetPickerRow(
-                    label: L10n.t("remixPage.targetCharacter"),
-                    valueLabel: viewModel.selectedCharacter?.name ?? L10n.t("remixPage.targetCharacterAutoCreate")
-                ) {
-                    showCharacterPicker = true
-                }
-                Toggle(isOn: Binding(
-                    get: { viewModel.autoAttachToRoster },
-                    set: { viewModel.autoAttachToRoster = $0 }
-                )) {
-                    Text(L10n.t("remixPage.autoAttachToRoster")).font(.footnote)
-                }
-                if !viewModel.autoAttachToRoster {
-                    Text(L10n.t("remixPage.autoAttachToRosterOffHint"))
-                        .font(.caption)
-                        .foregroundStyle(Color.zl.textMuted)
-                }
-            }
-
-            if viewModel.assetKind == .scene {
-                targetPickerRow(
-                    label: L10n.t("remixPage.targetScene"),
-                    valueLabel: viewModel.scenes.first { $0.id == viewModel.targetSceneID }?.name
-                        ?? L10n.t("remixPage.targetSceneNone")
-                ) {
-                    showScenePicker = true
-                }
-            }
-
-            if let libraryError = viewModel.libraryError {
-                Text(libraryError).font(.caption).foregroundStyle(Color.zl.danger)
-            }
-        }
-    }
-
-    private func targetPickerRow(label: String, valueLabel: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack {
-                Text(label).font(.subheadline).foregroundStyle(Color.zl.text)
-                Spacer()
-                Text(valueLabel).font(.subheadline).foregroundStyle(Color.zl.textMuted)
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(Color.zl.textMuted)
-            }
-        }
-        .buttonStyle(.plain)
+        .pickerStyle(.segmented)
     }
 
     private func promptSection(_ viewModel: StudioViewModel) -> some View {
@@ -239,7 +124,7 @@ struct StudioView: View {
 
     private func referenceSection(_ viewModel: StudioViewModel) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(L10n.t(viewModel.operation.isImage ? "remixPage.imageReference" : "remixPage.firstFrame"))
+            Text(L10n.t("remixPage.firstFrame"))
                 .font(.subheadline.weight(.semibold))
             if let asset = viewModel.referenceAsset {
                 HStack(spacing: 12) {

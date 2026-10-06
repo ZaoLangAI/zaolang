@@ -1,8 +1,9 @@
 import Foundation
 
-/// The character/scene libraries the "图片创作" studio reads from and writes
-/// back to. Both endpoints return a plain array (no pagination) — creators
-/// keep dozens of these at most, not hundreds.
+/// The character / scene / prop libraries behind 角色创作 / 场景创作 / 道具创作.
+/// The list endpoints return a plain array (no pagination) — creators keep
+/// dozens of these at most, not hundreds. Graph reads and 定稿 share one path
+/// shape across the three kinds (`AssetCardKind.segment`).
 public extension APIClient {
     /// `summary: true` (`?view=summary`) leaves out `looks` — for lists that
     /// only show `heroURL` and text. Pickers that choose a look keep the default.
@@ -10,21 +11,10 @@ public extension APIClient {
         try await send(.get("/v1/characters", query: summary ? [URLQueryItem(name: "view", value: "summary")] : []))
     }
 
-    func createCharacter(_ payload: CharacterCreateRequest) async throws -> CharacterResponse {
-        try await send(.post("/v1/characters", body: payload))
-    }
-
-    /// Re-fetched after a "补全侧面/背面" completion job succeeds, so the
-    /// caller sees the newly attached side/back reference assets without
-    /// re-listing the whole roster.
-    func fetchCharacter(id: String) async throws -> CharacterResponse {
-        try await send(.get("/v1/characters/\(id)"))
-    }
-
-    /// The character's management graph: looks + images, relations,
-    /// voices, running jobs (`GET /v1/characters/{id}/graph`).
-    func fetchCharacterGraph(id: String) async throws -> AssetGraphResponse {
-        try await send(.get("/v1/characters/\(id)/graph"))
+    /// A card's management graph: looks / variants + images, relations,
+    /// voices (characters), running jobs (`GET /v1/{segment}/{id}/graph`).
+    func fetchAssetGraph(kind: AssetCardKind, id: String) async throws -> AssetGraphResponse {
+        try await send(.get("/v1/\(kind.segment)/\(id)/graph"))
     }
 
     /// Text fields only (name / description / voice description).
@@ -44,8 +34,8 @@ public extension APIClient {
     }
 
     /// 定稿: a candidate image becomes the approved one of its slot.
-    func approveCharacterEntry(characterID: String, entryID: String) async throws -> AssetEntryView {
-        try await send(.post("/v1/characters/\(characterID)/entries/\(entryID):approve"))
+    func approveAssetEntry(kind: AssetCardKind, cardID: String, entryID: String) async throws -> AssetEntryView {
+        try await send(.post("/v1/\(kind.segment)/\(cardID)/entries/\(entryID):approve"))
     }
 
     func makeDefaultVoice(characterID: String, voiceID: String) async throws -> CharacterVoiceView {
@@ -70,7 +60,7 @@ public extension APIClient {
         try await send(.get("/v1/scenes"))
     }
 
-    func createScene(_ payload: SceneCreateRequest) async throws -> SceneResponse {
-        try await send(.post("/v1/scenes", body: payload))
+    func listProps() async throws -> [PropResponse] {
+        try await send(.get("/v1/props"))
     }
 }
