@@ -3581,7 +3581,10 @@
     "viewCoverImage": "View full image",
     "paramPromptLabel": "Prompt",
     "paramPromptSuffixLabel": "Prompt suffix",
-    "paramAspectRatioLabel": "Aspect ratio"
+    "paramAspectRatioLabel": "Aspect ratio",
+    "voicesTitle": "Character voices",
+    "voicesHint": "Voices unlock with the character. Preview each one and see which looks it goes with.",
+    "voiceLooks": "Used by looks: {names}"
   },
   "states": {
     "loading": "Loading",

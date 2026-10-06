@@ -3581,7 +3581,10 @@
     "viewCoverImage": "查看大图",
     "paramPromptLabel": "提示词",
     "paramPromptSuffixLabel": "提示词后缀",
-    "paramAspectRatioLabel": "画面比例"
+    "paramAspectRatioLabel": "画面比例",
+    "voicesTitle": "角色音色",
+    "voicesHint": "音色随角色一起解锁，可试听每个音色及其适用的造型。",
+    "voiceLooks": "用于造型：{names}"
   },
   "states": {
     "loading": "加载中",

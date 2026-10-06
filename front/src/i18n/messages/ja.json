@@ -3581,7 +3581,10 @@
     "viewCoverImage": "拡大表示",
     "paramPromptLabel": "プロンプト",
     "paramPromptSuffixLabel": "プロンプトサフィックス",
-    "paramAspectRatioLabel": "アスペクト比"
+    "paramAspectRatioLabel": "アスペクト比",
+    "voicesTitle": "キャラクターボイス",
+    "voicesHint": "ボイスはキャラクターと一緒にアンロックされます。各ボイスを試聴し、対応する造形を確認できます。",
+    "voiceLooks": "使用する造形：{names}"
   },
   "states": {
     "loading": "読み込み中",

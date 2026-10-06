@@ -23,6 +23,8 @@ import { formatCount } from '@/lib/format';
 import { creationStudioHref } from '@/lib/skill-mention';
 import { useResource } from '@/lib/use-resource';
 
+import { UnlockedVoicesSection } from './unlocked-voices';
+
 const CATEGORY_LABEL_KEY: Record<
   CreationSkillCategory,
   | 'categoryScene'
@@ -155,6 +157,13 @@ export function SkillDetailDialog({
               locked={locked}
               params={detail.data?.params}
             />
+
+            {unlocked && detail.data?.voices?.length ? (
+              <UnlockedVoicesSection
+                voices={detail.data.voices}
+                looks={detail.data.asset_variants ?? []}
+              />
+            ) : null}
 
             <HowToUseSection title={skill.title} />
 
