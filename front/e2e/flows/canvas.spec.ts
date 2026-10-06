@@ -193,28 +193,6 @@ test.describe('infinite canvas', () => {
     await expect(page.getByText('第一张')).toBeVisible();
   });
 
-  test('a prompt node on a free canvas asks where the result should go', async ({ page }) => {
-    await page.goto('/zh-CN/create/tools/canvas', { waitUntil: 'load' });
-    await page.getByRole('button', { name: '新建画布' }).click();
-    await page.waitForURL(/\/canvas\/cnv_/);
-
-    await page.getByRole('button', { name: '提示词', exact: true }).click();
-    await selectNode(page, page.locator('.react-flow__node').first());
-
-    // Empty prompt cannot generate.
-    await expect(page.getByRole('button', { name: '用这段提示词生成' })).toBeDisabled();
-    await page.getByLabel('提示词').fill('一只在屋顶上的猫');
-    await page.getByRole('button', { name: '用这段提示词生成' }).click();
-
-    // A free canvas has no episode of its own, so it asks before handing off —
-    // this is what stops its output becoming a disconnected library.
-    await expect(page.getByText('这次生成归入哪一集？')).toBeVisible();
-    await page.getByRole('button', { name: '去生成' }).click();
-    await page.waitForURL(/\/create\/new\?/);
-    // The prompt rides along into the studio.
-    expect(decodeURIComponent(page.url())).toContain('prompt=一只在屋顶上的猫');
-  });
-
   test('an uploaded picture renders and wires into a prompt as a reference', async ({ page }) => {
     await page.goto('/zh-CN/create/tools/canvas', { waitUntil: 'load' });
     await page.getByRole('button', { name: '新建画布' }).click();
@@ -259,7 +237,6 @@ test.describe('infinite canvas', () => {
     await expect(page.locator('.react-flow__node')).toHaveCount(2);
     const promptNode = page.locator('.react-flow__node').last();
     await selectNode(page, promptNode);
-    await expect(page.getByText('把图片节点连到这张卡片，即可作为参考图一起生成。')).toBeVisible();
 
     const source = page.locator('.react-flow__node').first().locator('.react-flow__handle-right');
     const target = promptNode.locator('.react-flow__handle-left');
@@ -280,23 +257,14 @@ test.describe('infinite canvas', () => {
     await page.mouse.up();
     await expect(page.locator('.react-flow__edge')).toHaveCount(1);
 
-    await selectNode(page, promptNode);
-    await expect(page.getByText('将带上 1 张参考图')).toBeVisible();
-
     // Both the picture and the wiring survive a cold reload — the part a
     // stored (expiring) URL, or an edge dropped as dangling, would get wrong.
     await page.goto(canvasUrl, { waitUntil: 'load' });
     await expect(page.locator('.react-flow__node img').first()).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('.react-flow__edge')).toHaveCount(1);
-
-    // And it rides along into the studio.
+    // The canvas no longer hands a prompt off to an image studio (AC-8).
     await selectNode(page, page.locator('.react-flow__node').last());
-    await page.getByLabel('提示词').fill('把这只猫放到屋顶上');
-    await page.getByRole('button', { name: '用这段提示词生成' }).click();
-    await expect(page.getByText('这次生成归入哪一集？')).toBeVisible();
-    await page.getByRole('button', { name: '去生成' }).click();
-    await page.waitForURL(/\/create\/new\?/);
-    expect(page.url()).toContain('referenceAssetIds=ast_');
+    await expect(page.getByRole('button', { name: '用这段提示词生成' })).toHaveCount(0);
   });
 
   test('undo and redo walk the board back and forward', async ({ page }) => {
@@ -402,7 +370,7 @@ test.describe('infinite canvas', () => {
     await expect(menu).toBeHidden();
   });
 
-  test('camera direction is folded into the generated prompt', async ({ page }) => {
+  test('camera direction persists on a prompt card', async ({ page }) => {
     await page.goto('/zh-CN/create/tools/canvas', { waitUntil: 'load' });
     await page.getByRole('button', { name: '新建画布' }).click();
     await page.waitForURL(/\/canvas\/cnv_/);
@@ -425,26 +393,10 @@ test.describe('infinite canvas', () => {
     await selectNode(page, page.locator('.react-flow__node').first());
     await expect(page.getByLabel('焦段')).toHaveValue('85');
     await expect(page.getByLabel('光圈')).toHaveValue('1.4');
-
-    await page.getByRole('button', { name: '用这段提示词生成' }).click();
-    await expect(page.getByText('这次生成归入哪一集？')).toBeVisible();
-    await page.getByRole('button', { name: '去生成' }).click();
-    await page.waitForURL(/\/create\/new\?/);
-
-    // Read the parameter rather than the raw URL: `URLSearchParams` encodes
-    // spaces as `+`, which `decodeURIComponent` does not undo.
-    const prompt = new URL(page.url()).searchParams.get('prompt') ?? '';
-    // The author's own words stay first, with the lens language appended and
-    // the guardrail that keeps a camera out of the picture.
-    expect(prompt.startsWith('一只在屋顶上的猫,')).toBe(true);
-    expect(prompt).toContain('85mm');
-    expect(prompt).toContain('f/1.4');
-    expect(prompt).toContain('no camera, lens, tripod, rig or crew may appear');
+    // How the lens language folds into a prompt: `canvas-camera.test.ts`.
   });
 
-  test('the director frames a panorama into a shot the canvas can generate from', async ({
-    page,
-  }) => {
+  test('the director frames a panorama into a shot wired into a prompt', async ({ page }) => {
     const scriptUrls: string[] = [];
     page.on('request', (request) => {
       if (request.resourceType() === 'script') scriptUrls.push(request.url());
@@ -489,8 +441,8 @@ test.describe('infinite canvas', () => {
     await uploaded;
     await expect(page.getByRole('dialog')).toBeHidden();
 
-    // The shot lands as a picture wired into a prompt describing the framing,
-    // ready to generate from — the same pair a hand-built one would be.
+    // The shot lands as a picture wired into a prompt describing the framing
+    // — the same pair a hand-built one would be.
     await expect(page.locator('.react-flow__node')).toHaveCount(2);
     await expect(page.locator('.react-flow__edge')).toHaveCount(1);
     await selectNode(page, page.locator('.react-flow__node').last());
@@ -499,7 +451,6 @@ test.describe('infinite canvas', () => {
     // The viewpoint guardrail, without which naming a body and a lens reliably
     // returns a photograph of a camera on a tripod.
     expect(framing).toContain('no camera, lens, tripod, rig or crew may appear');
-    await expect(page.getByText('将带上 1 张参考图')).toBeVisible();
   });
 
   test('a change in one window reaches another without a reload', async ({ page }) => {

@@ -33,23 +33,18 @@ export function CanvasProperties({
   canvasId,
   node,
   onPatch,
-  onGenerate,
   onSendToSeries,
   canSendToSeries,
   onUpload,
   uploading = false,
-  referenceCount = 0,
 }: {
   canvasId: string;
   node: CanvasFlowNode | null;
   onPatch: (nodeId: string, patch: NodePatch) => void;
-  onGenerate?: (node: CanvasFlowNode) => void;
   onSendToSeries?: (node: CanvasFlowNode) => void;
   canSendToSeries: boolean;
   onUpload?: (node: CanvasFlowNode, file: File) => void;
   uploading?: boolean;
-  /** How many upstream picture cards feed this prompt — see `upstreamAssetIds`. */
-  referenceCount?: number;
 }) {
   const t = useTranslations('canvas');
 
@@ -133,21 +128,6 @@ export function CanvasProperties({
           value={readCameraControl(node.data.payload)}
           onChange={(camera) => onPatch(node.id, { camera })}
         />
-      ) : null}
-
-      {onGenerate && kind === 'prompt' ? (
-        <>
-          <Button size="sm" onClick={() => onGenerate(node)} disabled={!text.trim()}>
-            {t('propsGenerate')}
-          </Button>
-          {referenceCount > 0 ? (
-            <p className="text-[11px] text-muted">
-              {t('propsReferenceCount', { count: referenceCount })}
-            </p>
-          ) : (
-            <p className="text-[11px] text-muted">{t('propsReferenceHint')}</p>
-          )}
-        </>
       ) : null}
 
       {onSendToSeries && canSendToSeries ? (

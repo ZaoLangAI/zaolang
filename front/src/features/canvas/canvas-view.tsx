@@ -33,7 +33,6 @@ import {
   graphToFlow,
   newCanvasEdgeId,
   newCanvasNodeId,
-  upstreamAssetIds,
   type CanvasFlowEdge,
   type CanvasFlowNode,
 } from './graph-convert';
@@ -67,8 +66,6 @@ interface CanvasViewProps {
   /** Called with the whole graph after a committed change (drag released,
    * edge connected) — never on intermediate drag frames. */
   onCommit: (graph: CanvasGraph) => void;
-  /** Turn a prompt node into a generation request. */
-  onGenerate?: (node: CanvasFlowNode) => void;
   /** Attach a node's content to an episode. */
   onSendToSeries?: (node: CanvasFlowNode) => void;
   canSendToSeries?: boolean;
@@ -93,7 +90,6 @@ function CanvasViewInner({
   snapshot,
   readOnly = false,
   onCommit,
-  onGenerate,
   onSendToSeries,
   canSendToSeries = false,
   onSnapshotStale,
@@ -387,10 +383,6 @@ function CanvasViewInner({
       .finally(() => setUploading(false));
   };
 
-  const referenceCount = selectedNode
-    ? upstreamAssetIds(selectedNode.id, flowToGraph(nodes, edges)).length
-    : 0;
-
   return (
     <div className="flex h-full w-full">
       <div ref={wrapperRef} className="min-w-0 flex-1" data-testid="canvas-surface">
@@ -552,12 +544,10 @@ function CanvasViewInner({
           canvasId={canvasId}
           node={selectedNode}
           onPatch={patchNode}
-          onGenerate={onGenerate}
           onSendToSeries={onSendToSeries}
           canSendToSeries={canSendToSeries}
           onUpload={uploadToNode}
           uploading={uploading}
-          referenceCount={referenceCount}
         />
       )}
     </div>
