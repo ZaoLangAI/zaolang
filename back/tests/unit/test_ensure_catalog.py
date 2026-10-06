@@ -1,8 +1,8 @@
 """`app.scripts.ensure_catalog` is the production-allowed catalogue backfill.
 
 `app.scripts.seed` stays refused when `APP_ENV=production`. This module only
-plants missing `CreationSkill` / `LearnPost` rows and never rotates an
-existing `zaolang_studio` password.
+plants missing `CreationSkill` / `LearnPost` rows and default workflow
+templates, and never rotates an existing `zaolang_studio` password.
 """
 
 from __future__ import annotations
@@ -14,7 +14,9 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.domain.learning import catalog as learning_catalog
 from app.domain.skill_library import catalog as skill_catalog
-from app.models import CreationSkill, LearnPost, Profile, User
+from app.domain.workflow_templates import service as workflow_templates_service
+from app.models import CreationSkill, GenerationWorkflowTemplate, LearnPost, Profile, User
+from app.models.enums import ImageAssetKind
 from app.scripts import ensure_catalog
 from app.scripts.seed import SEED_PASSWORD
 from app.scripts.seed import run as seed_run
@@ -81,7 +83,35 @@ def test_ensure_catalog_does_not_rotate_an_existing_studio_password(
     assert first["studio_created"] == 0
     assert first["skills"] == len(skill_catalog.CATALOG)
     assert first["learn_posts"] == len(learning_catalog.CATALOG)
-    assert second == {"studio_created": 0, "skills": 0, "learn_posts": 0}
+    assert second == {
+        "studio_created": 0,
+        "skills": 0,
+        "learn_posts": 0,
+        "workflow_templates": 0,
+    }
+
+
+def test_ensure_catalog_publishes_a_missing_asset_kind_template(
+    db: Session, _quiet_bucket: None
+) -> None:
+    ensure_catalog.run(session=db)
+    prop = db.scalar(
+        select(GenerationWorkflowTemplate).where(
+            GenerationWorkflowTemplate.operation == "text_to_image",
+            GenerationWorkflowTemplate.asset_kind == ImageAssetKind.PROP.value,
+            GenerationWorkflowTemplate.is_active.is_(True),
+        )
+    )
+    assert prop is not None
+    db.delete(prop)
+    db.flush()
+
+    counts = ensure_catalog.run(session=db)
+
+    assert counts["workflow_templates"] == 1
+    restored = workflow_templates_service.get_active(db, "text_to_image", ImageAssetKind.PROP.value)
+    assert restored is not None
+    assert restored.asset_kind == ImageAssetKind.PROP.value
 
 
 def test_ensure_catalog_refuses_a_split_studio_identity(db: Session, _quiet_bucket: None) -> None:

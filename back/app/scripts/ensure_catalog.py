@@ -2,7 +2,9 @@
 
 `python -m app.scripts.seed` raises when `APP_ENV=production`. This module is
 the allowed production path: it never resets tables, never plants demo
-accounts, and never overwrites an existing `zaolang_studio` password.
+accounts, and never overwrites an existing `zaolang_studio` password. It also
+publishes any missing default workflow template, so a new library kind gets
+its graph on an existing database.
 
 Matched by `(owner, title)` inside `ensure_catalog_skills` /
 `ensure_catalog_posts`, so an operator edit to a previously planted row
@@ -14,7 +16,7 @@ from __future__ import annotations
 import logging
 import secrets
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import session_scope
@@ -22,7 +24,8 @@ from app.domain.credits import service as credits_service
 from app.domain.learning import service as learning_service
 from app.domain.skill_library import catalog as skill_catalog
 from app.domain.skill_library import service as skill_library_service
-from app.models import Profile, User
+from app.domain.workflow_templates import service as workflow_templates_service
+from app.models import GenerationWorkflowTemplate, Profile, User
 from app.models.base import utcnow
 from app.models.enums import Locale, Region, ThemePreference, UserRole, UserStatus
 from app.security.passwords import hash_password
@@ -53,18 +56,37 @@ def _plant(session: Session) -> dict[str, int]:
     owner, created = _ensure_studio_owner(session)
     skills = skill_library_service.ensure_catalog_skills(session, owner_user_id=owner.id)
     posts = learning_service.ensure_catalog_posts(session, author_user_id=owner.id)
+    templates = _ensure_workflow_templates(session)
     logger.info(
-        "catalog backfill: studio_created=%s skills=%s learn_posts=%s owner=%s",
+        "catalog backfill: studio_created=%s skills=%s learn_posts=%s "
+        "workflow_templates=%s owner=%s",
         created,
         len(skills),
         len(posts),
+        templates,
         owner.id,
     )
     return {
         "studio_created": int(created),
         "skills": len(skills),
         "learn_posts": len(posts),
+        "workflow_templates": templates,
     }
+
+
+def _ensure_workflow_templates(session: Session) -> int:
+    """Publishes any missing default `(operation, asset_kind)` template.
+
+    A new library kind (e.g. `prop`) has no template on an existing database
+    until this runs, and its jobs would fall back to the generic graph. Never
+    touches an active template, so operator edits survive. Returns how many
+    rows were added.
+    """
+    count = select(func.count()).select_from(GenerationWorkflowTemplate)
+    before = session.scalar(count) or 0
+    workflow_templates_service.ensure_default_templates(session)
+    session.flush()
+    return (session.scalar(count) or 0) - before
 
 
 def _ensure_studio_owner(session: Session) -> tuple[User, bool]:
