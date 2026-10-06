@@ -3153,6 +3153,8 @@
     "referenceCastEmpty": "还没有角色，先去角色库创建。",
     "referenceScenesLabel": "场景参考",
     "referenceScenesEmpty": "还没有场景，先去场景库创建。",
+    "referencePropsLabel": "道具参考",
+    "referencePropsEmpty": "还没有道具，先去道具创作新建。",
     "referenceFramesGroup": "参考设置",
     "referenceLimitReached": "已达 4 个上限",
     "useVideoAsReference": "基于此视频继续创作",

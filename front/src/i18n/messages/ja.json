@@ -3153,6 +3153,8 @@
     "referenceCastEmpty": "キャラクターがまだありません。先にキャラクターライブラリで作成してください。",
     "referenceScenesLabel": "シーン参照",
     "referenceScenesEmpty": "シーンがまだありません。先にシーンライブラリで作成してください。",
+    "referencePropsLabel": "小道具の参考",
+    "referencePropsEmpty": "小道具がまだありません。先に小道具の制作で追加してください。",
     "referenceFramesGroup": "参照設定",
     "referenceLimitReached": "4件の上限に達しました",
     "useVideoAsReference": "この動画を元に続けて創作する",

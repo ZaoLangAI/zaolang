@@ -3153,6 +3153,8 @@
     "referenceCastEmpty": "No characters yet — create one in the character library first.",
     "referenceScenesLabel": "Scene references",
     "referenceScenesEmpty": "No scenes yet — create one in the scene library first.",
+    "referencePropsLabel": "Prop references",
+    "referencePropsEmpty": "No props yet. Create one in Prop creation first.",
     "referenceFramesGroup": "Reference settings",
     "referenceLimitReached": "4-item limit reached",
     "useVideoAsReference": "Continue from this video",

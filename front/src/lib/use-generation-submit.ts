@@ -48,6 +48,9 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
    * reference images (see `scenes.service.apply_scene_refs`), sharing the same
    * reference-slot budget as `characterIds` above. */
   sceneIds?: string[];
+  /** Objects picked from the prop library (AC-4), after characters and scenes
+   * in the same reference budget (`props.service.apply_prop_refs`). */
+  propIds?: string[];
   /**
    * What a `text_to_image`/`image_to_image` output is *for* — orthogonal to
    * `operation`. Selects the `(operation, asset_kind)` workflow template and,
@@ -341,6 +344,7 @@ export function useGenerationSubmit(
                 video_options: input.videoOptions,
                 character_ids: input.characterIds ?? [],
                 scene_ids: input.sceneIds ?? [],
+                prop_ids: input.propIds ?? [],
                 shortform_profile: input.shortformProfile,
                 skill_ids: input.skillIds ?? [],
                 style_gallery_id: input.styleGalleryId ?? null,
