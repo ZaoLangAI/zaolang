@@ -34,7 +34,6 @@ One `StudioView`, two modes via `StudioMode`. New: text-to-video / image-to-vide
 - **Logout doesn't revoke the refresh token**: `signOut()` posts `/v1/auth/logout` through `APIClient` without `Cookie: zl_refresh`, so the backend's `sid` revocation (`back/app/api/v1/auth.py:logout`) never fires; the Keychain token is only dropped locally. Fix: attach `CookieCodec.requestHeader` like `RefreshTransport`.
 - **Contract gap 3 — lists without cursor**: generation jobs, notifications, drafts, bookmarks and profile works return a single page; iOS parses them as `Page<T>` so adding a cursor needs no client change.
 - **Contract gap 5 — SSE fallback simplified**: SSE and 5s polling always run together instead of a "fall back after N reconnect failures" state machine. Equivalent for correctness; a "live connection unavailable" hint would need that state machine.
-- **Pre-existing copy drift**: the hub and studio still call `createPage.modeTextToVideo*` / `modeImageToVideo*` / `modeRemix*` and `createPage.subtitle`, which the web catalogues no longer have (they render as raw keys); `learnPage.blockRemove` likewise.
 - **Not scheduled**: silent push, StoreKit (only if product reverses), more collection management, style presets, iPad/landscape, offline browsing, share extension, onboarding polish (rewrite chips, analytics), canvas/blocking/script surfaces.
 
 ## Acceptance checklist (every milestone)

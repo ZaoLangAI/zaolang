@@ -99,7 +99,7 @@ struct LearnPublishView: View {
                     .zlCornerRadius(ZLRadius.md)
                     .listRowInsets(EdgeInsets())
                 Button(role: .destructive) { viewModel.removeCover() } label: {
-                    Text(L10n.t("learnPage.blockRemove"))
+                    Text(L10n.t("assetVariants.removeEntry"))
                 }
             } else {
                 PhotosPicker(selection: $coverPickerItem, matching: .images) {

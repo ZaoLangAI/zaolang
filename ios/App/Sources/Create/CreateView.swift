@@ -36,7 +36,7 @@ struct CreateView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(L10n.t("createPage.eyebrow")).zlEyebrow()
             Text(L10n.t("createPage.title")).font(.title2.weight(.semibold))
-            Text(L10n.t("createPage.subtitle")).font(.subheadline).foregroundStyle(Color.zl.textMuted)
+            Text(L10n.t("iosCreate.subtitle")).font(.subheadline).foregroundStyle(Color.zl.textMuted)
         }
     }
 
@@ -45,29 +45,22 @@ struct CreateView: View {
             assetCard(.character, prefix: "createPage.modeCharacterCreation", systemImage: "person.crop.rectangle.stack")
             assetCard(.scene, prefix: "createPage.modeSceneCreation", systemImage: "mountain.2")
             assetCard(.prop, prefix: "createPage.modePropCreation", systemImage: "cube")
+            // 网页端只有一张"创作视频"卡；文生 / 图生在工作室顶部的分段控件里切换。
             modeCard(
-                title: L10n.t("createPage.modeTextToVideoTitle"),
-                description: L10n.t("createPage.modeTextToVideoDesc"),
-                tag: L10n.t("createPage.modeTextToVideoTag"),
-                systemImage: "text.viewfinder"
+                title: L10n.t("createPage.modeVideoCreationTitle"),
+                description: L10n.t("createPage.modeVideoCreationDesc"),
+                tag: L10n.t("createPage.modeVideoCreationTag"),
+                systemImage: "film"
             ) {
                 start(.new(operation: .textToVideo, initialPrompt: nil))
             }
             modeCard(
-                title: L10n.t("createPage.modeImageToVideoTitle"),
-                description: L10n.t("createPage.modeImageToVideoDesc"),
-                tag: L10n.t("createPage.modeImageToVideoTag"),
-                systemImage: "photo.on.rectangle"
-            ) {
-                start(.new(operation: .imageToVideo, initialPrompt: nil))
-            }
-            modeCard(
-                title: L10n.t("createPage.modeRemixTitle"),
-                description: L10n.t("createPage.modeRemixDesc"),
-                tag: L10n.t("createPage.modeRemixTag"),
+                title: L10n.t("iosCreate.remixTitle"),
+                description: L10n.t("iosCreate.remixDesc"),
+                tag: L10n.t("iosCreate.remixTag"),
                 systemImage: "arrow.triangle.branch"
             ) {
-                environment.requireAuth(actionLabel: L10n.t("createPage.modeRemixTitle")) {
+                environment.requireAuth(actionLabel: L10n.t("iosCreate.remixTitle")) {
                     router.selectTab(.discover)
                 }
             }

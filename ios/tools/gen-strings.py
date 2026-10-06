@@ -73,6 +73,8 @@ NAMESPACES = [
     "scenes",
     "props",
     "iosAssets",
+    # 网页端已撤下、iOS 创作页仍在用的文案：页头副标题与"基于作品二创"卡片。
+    "iosCreate",
 ]
 
 SOURCE_LANGUAGE = "zh-Hans"

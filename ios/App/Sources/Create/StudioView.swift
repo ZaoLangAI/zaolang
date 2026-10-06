@@ -103,8 +103,8 @@ struct StudioView: View {
                 viewModel.scheduleQuote()
             }
         )) {
-            Text(L10n.t("createPage.modeTextToVideoTitle")).tag(Operation.textToVideo)
-            Text(L10n.t("createPage.modeImageToVideoTitle")).tag(Operation.imageToVideo)
+            Text(L10n.t("publishPage.operation.text_to_video")).tag(Operation.textToVideo)
+            Text(L10n.t("publishPage.operation.image_to_video")).tag(Operation.imageToVideo)
         }
         .pickerStyle(.segmented)
     }

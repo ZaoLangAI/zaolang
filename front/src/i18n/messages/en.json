@@ -4154,6 +4154,12 @@
     "generating": "Submitted — the result shows up among the candidates.",
     "generateFailed": "Generation failed. Please try again later."
   },
+  "iosCreate": {
+    "subtitle": "Describe the intent. ZaoLang arranges the assets, safety, models and quality pass.",
+    "remixTitle": "Remix a work",
+    "remixDesc": "Inherit licensed assets, parameters and credit, with a traceable new version.",
+    "remixTag": "Lineage preserved"
+  },
   "assetWorkspace": {
     "tabCreate": "Create",
     "tabGraph": {

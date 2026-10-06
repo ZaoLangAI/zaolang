@@ -4154,6 +4154,12 @@
     "generating": "送信しました。完成すると候補に表示されます。",
     "generateFailed": "生成に失敗しました。しばらくしてから再度お試しください。"
   },
+  "iosCreate": {
+    "subtitle": "意図を伝えるだけで、素材・安全・モデル・品質の流れは造浪が整えます。",
+    "remixTitle": "作品から二次創作",
+    "remixDesc": "許諾済みの素材・パラメータ・クレジットを引き継ぎ、追跡可能な新版をつくります。",
+    "remixTag": "出典チェーンを保持"
+  },
   "assetWorkspace": {
     "tabCreate": "制作",
     "tabGraph": {

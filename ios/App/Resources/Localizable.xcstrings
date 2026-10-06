@@ -18401,6 +18401,98 @@
         }
       }
     },
+    "iosCreate.remixDesc": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inherit licensed assets, parameters and credit, with a traceable new version."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許諾済みの素材・パラメータ・クレジットを引き継ぎ、追跡可能な新版をつくります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继承授权素材、参数和署名，创作可追溯的新版本。"
+          }
+        }
+      }
+    },
+    "iosCreate.remixTag": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lineage preserved"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出典チェーンを保持"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来源链已保留"
+          }
+        }
+      }
+    },
+    "iosCreate.remixTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remix a work"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作品から二次創作"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "基于作品二创"
+          }
+        }
+      }
+    },
+    "iosCreate.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Describe the intent. ZaoLang arranges the assets, safety, models and quality pass."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "意図を伝えるだけで、素材・安全・モデル・品質の流れは造浪が整えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只需表达创作意图，造浪会为你安排素材、安全、模型和质量流程。"
+          }
+        }
+      }
+    },
     "iosOnboarding.getStarted": {
       "extractionState": "manual",
       "localizations": {
