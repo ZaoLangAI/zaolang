@@ -92,6 +92,11 @@ PROMPT_SLOTS: dict[str, tuple[PromptSlot, ...]] = {
             "配音选角",
             "根据角色的音色描述，从可用的预设音色中挑选最贴合的一个。",
         ),
+        PromptSlot(
+            "asset_breakdown",
+            "剧本资产拆解",
+            "把分场剧本拆成需要建卡的角色（外貌、年龄段）、场景（时代、光线）与道具（所在场次）。",
+        ),
     ),
     AgentName.INTENT_ROUTER.value: (
         PromptSlot("classify", "档位判定", "判断需求复杂度并建议生成档位，只降不升。"),
