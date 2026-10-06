@@ -262,7 +262,13 @@ def image_model_profile(model: str) -> ImageModelProfile | None:
 # evolink.ai), since DMXAPI's own page only demonstrated the ambiguous
 # `"size": "1K"` bare-tier form without a full ratio table. Every entry's
 # total pixel count sits inside this model's documented
-# `[921600, 4194304]` window.
+# `[921600, 4624220]` window (Ark doc 82379/1541523, 2026-09-22).
+#
+# `2:1` (scene panoramas, AC-7) is not in the vendor's table; Ark documents a
+# custom `WxH` as valid when its pixel count and ratio (1/16–16) fit, and
+# cites `2048x1024` as a 2:1 example. These sizes are multiples of 16, sized
+# like the neighbouring 1K / 2K entries. Without this row a 2:1 job silently
+# fell back to the bare tier (a square image).
 _SEEDREAM_SIZE_BY_ASPECT: dict[str, dict[str, str]] = {
     "1:1": {"1K": "1024x1024", "2K": "2048x2048"},
     "16:9": {"1K": "1424x800", "2K": "2816x1584"},
@@ -272,6 +278,7 @@ _SEEDREAM_SIZE_BY_ASPECT: dict[str, dict[str, str]] = {
     "3:2": {"1K": "1248x832", "2K": "2496x1664"},
     "2:3": {"1K": "832x1248", "2K": "1664x2496"},
     "21:9": {"1K": "1568x672", "2K": "3136x1344"},
+    "2:1": {"1K": "1440x720", "2K": "2880x1440"},
 }
 
 

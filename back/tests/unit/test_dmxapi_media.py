@@ -323,6 +323,23 @@ def test_seedream_cinematic_tier_uses_2k_pixel_size() -> None:
     assert body["size"] == "2816x1584"
 
 
+@pytest.mark.parametrize(
+    ("quality_tier", "size"), [("standard", "1440x720"), ("cinematic", "2880x1440")]
+)
+def test_seedream_panorama_aspect_maps_to_an_exact_2_to_1_size(
+    quality_tier: str, size: str
+) -> None:
+    # A scene panorama (AC-7) is 2:1; a missing row used to fall back to the
+    # bare tier, which Seedream renders square.
+    body = _build_seedream_body(
+        _request(Operation.TEXT_TO_IMAGE.value, aspect_ratio="2:1", quality_tier=quality_tier)
+    )
+    assert body["size"] == size
+    width, height = (int(side) for side in size.split("x"))
+    assert width == 2 * height
+    assert 921_600 <= width * height <= 4_624_220
+
+
 def test_seedream_multi_image_fusion(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(s3, "presign_get", lambda key, **kwargs: f"https://signed.invalid/{key}")
     body = _build_seedream_body(
