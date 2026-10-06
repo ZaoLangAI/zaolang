@@ -372,8 +372,10 @@ export function ScriptBatchDialog({
                     </li>
                   );
                 })
-              : labels.map((label) => (
-                  <li key={label} className="truncate py-0.5">
+              : // One row per job: a scene split into two segments repeats its
+                // heading, so the label alone is not a key.
+                labels.map((label, index) => (
+                  <li key={`${index}:${label}`} className="truncate py-0.5">
                     {label}
                   </li>
                 ))}
