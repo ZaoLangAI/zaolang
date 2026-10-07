@@ -218,19 +218,43 @@ _QWEN_EDIT_MODEL_PATH = "qianfan/qwen-image-edit"
 # The documented image-to-image limit for this endpoint.
 _QWEN_EDIT_MAX_REFERENCES = 3
 
+# Models AiHubMix has moved off the OpenAI-compatible `/v1/images/generations`
+# ("legacy protocol"): since 2026-09 `qwen-image-3.0` answers it with
+# `400 protocol_not_supported` and must use the native media-task endpoint
+# (`docs.aihubmix.com/cn/api/async-tasks`; request schema at
+# `https://aihubmix.com/call/schema/models/qwen-image-3.0/endpoints`, which
+# lists only this path). Sent in its documented default *sync* mode — the call
+# waits and returns the finished task object — rather than `async: true` +
+# `AsyncProviderTask`: that suspend checkpoint only carries routing counters,
+# not the image graph's multi-view / asset-plan / scene-variant state, so a
+# suspended character pass would resume without it. Any other model that
+# starts rejecting `/v1` the same way is retried here once at runtime
+# (`_rejects_legacy_protocol`); add it to this set to skip the wasted call.
+QWEN_IMAGE_3_MODEL = "qwen-image-3.0"
+_AI_V1_IMAGE_MODELS = frozenset({QWEN_IMAGE_3_MODEL})
+AI_V1_IMAGE_PATH = "/ai/v1/images/generations"
+# Only used when the sync call comes back non-terminal (not expected per the
+# docs): poll `GET /ai/v1/images/{id}` until the endpoint timeout runs out.
+_IMAGE_TASK_POLL_INTERVAL_SECONDS = 3.0
+_AI_V1_SEED_MAX = 2_147_483_647
+
 
 def join_media_url(base_url: str, path: str) -> str:
     """Join a rooted media path onto a gateway base without doubling `/v1`.
 
     Operators often save chat-compatible bases as `https://host/v1`. httpx
     then turns `POST /v1/images/generations` into `/v1/v1/images/generations`
-    (404). MiniMax bases are the host root and paths start with `/ai/v1/…`.
+    (404). MiniMax bases are the host root and paths start with `/ai/v1/…`;
+    an `openai` endpoint saved as `…/v1` that calls a native `/ai/v1/…` path
+    (`AI_V1_IMAGE_PATH`) drops that `/v1` too instead of `/v1/ai/v1/…`.
     """
     base = httpx.URL(base_url)
     path = "/" + path.lstrip("/")
     base_path = (base.path or "").rstrip("/")
     if path.startswith("/v1/") and base_path.endswith("/v1"):
         merged = base_path + path[3:]
+    elif path.startswith("/ai/v1/") and base_path.endswith("/v1"):
+        merged = base_path[:-3] + path
     elif not base_path or base_path == "/":
         merged = path
     else:
@@ -313,15 +337,20 @@ class AiHubMixMediaProvider(GenerationProvider):
                 f"{type(exc).__name__} after {int(self._creds.timeout_s)}s",
             )
         except httpx.HTTPStatusError as exc:
+            # The body (truncated, key redacted) is what names the cause —
+            # `protocol_not_supported`, `schema_violation`, … — a bare status
+            # line hid a weeks-long qwen-image-3.0 outage.
+            detail = _http_error_detail(exc, self._creds.api_key)
             logger.warning(
-                "aihubmix %s call failed for job %s: HTTP %s",
+                "aihubmix %s call failed for job %s (model %s): %s",
                 self._capability_tag,
                 request.job_id,
-                exc.response.status_code,
+                self._model,
+                detail,
             )
             status = exc.response.status_code
             code = "PROVIDER_INVALID_RESPONSE" if status < 500 else "PROVIDER_TEMPORARY_FAILURE"
-            return self._failure(started, code, _http_error_detail(exc, self._creds.api_key))
+            return self._failure(started, code, detail)
         except httpx.HTTPError as exc:
             logger.warning(
                 "aihubmix %s call failed for job %s: %s", self._capability_tag, request.job_id, exc
@@ -336,6 +365,8 @@ class AiHubMixMediaProvider(GenerationProvider):
             return self._submit_qwen_image_edit(request, started, image_refs)
         if _image_reference_keys(request) and is_gpt_image_2(self._model):
             return self._submit_gpt_image_2_edit(request, started)
+        if uses_ai_v1_images(self._model):
+            return self._submit_ai_v1_image(request, started, image_refs)
 
         if is_gpt_image_2(self._model):
             size = _gpt_image_2_size(request.aspect_ratio)
@@ -353,15 +384,132 @@ class AiHubMixMediaProvider(GenerationProvider):
         if image_refs:
             body["image"] = image_refs[0] if len(image_refs) == 1 else image_refs
 
+        image_bytes: bytes | None = None
         with self._client() as client:
             response = client.post(
                 media_request_path(self._creds.base_url, "/v1/images/generations"), json=body
             )
-            response.raise_for_status()
-            payload = response.json()
-            image_bytes = _image_bytes_from_payload(payload, client)
+            legacy_rejected = not is_gpt_image_2(self._model) and _rejects_legacy_protocol(response)
+            if not legacy_rejected:
+                response.raise_for_status()
+                payload = response.json()
+                image_bytes = _image_bytes_from_payload(payload, client)
 
+        if legacy_rejected:
+            logger.warning(
+                "aihubmix model %s rejected the legacy /v1/images/generations protocol "
+                "for job %s; retrying on %s (add it to _AI_V1_IMAGE_MODELS)",
+                self._model,
+                request.job_id,
+                AI_V1_IMAGE_PATH,
+            )
+            return self._submit_ai_v1_image(request, started, image_refs)
         return self._store_image_result(request, started, image_bytes)
+
+    def _submit_ai_v1_image(
+        self, request: GenerationRequest, started: float, image_refs: list[str]
+    ) -> GenerationResult:
+        """`POST /ai/v1/images/generations`, sync — see `_AI_V1_IMAGE_MODELS`.
+
+        Answers with a media task object (`id`/`status`/`output[]`/`error`),
+        not OpenAI's `{"data": [...]}`. A Qwen model with a reference never
+        reaches this (it keeps `_submit_qwen_image_edit`); `image_refs` is only
+        non-empty for a non-Qwen model taking the `_rejects_legacy_protocol`
+        fallback.
+        """
+        body = build_ai_v1_image_body(
+            model=self._model,
+            prompt=request.prompt,
+            size=_size_for(request.aspect_ratio, request.quality_tier),
+            seed=request.seed,
+            negative_prompt=request.negative_prompt,
+            images=image_refs,
+        )
+        deadline = started + self._creds.timeout_s
+        with self._client() as client:
+            response = client.post(
+                media_request_path(self._creds.base_url, AI_V1_IMAGE_PATH), json=body
+            )
+            response.raise_for_status()
+            task = _json_object(response)
+            task = self._await_image_task(client, task, deadline)
+            task_id = str(task.get("id") or "")
+            status = str(task.get("status") or "").lower()
+            if not status and isinstance(task.get("data"), list):
+                # Unverified live (rule 5): tolerate an OpenAI `data[]` envelope
+                # in case the sync reply is not the documented task object.
+                image_bytes = _image_bytes_from_payload(task, client)
+                return self._store_image_result(
+                    request, started, image_bytes, extra_metadata={"endpoint": "ai-v1-images"}
+                )
+            if status in _TASK_FAILED_STATUSES:
+                return self._failure(started, "PROVIDER_TASK_FAILED", _task_error_detail(task))
+            if status != "completed":
+                return self._failure(
+                    started,
+                    "PROVIDER_TEMPORARY_FAILURE",
+                    f"image task {task_id or '?'} still {status or 'unknown'} "
+                    f"after {int(self._creds.timeout_s)}s",
+                )
+            image_bytes = self._ai_v1_image_bytes(client, task)
+
+        return self._store_image_result(
+            request,
+            started,
+            image_bytes,
+            extra_metadata={"endpoint": "ai-v1-images", "upstream_task_id": task_id},
+        )
+
+    def _await_image_task(
+        self, client: httpx.Client, task: dict[str, Any], deadline: float
+    ) -> dict[str, Any]:
+        """Polls `GET /ai/v1/images/{id}` while a task is still non-terminal.
+
+        The sync call is documented to return a finished task, so this loop
+        normally never runs; it exists so an early return degrades to a short
+        wait instead of a `missing_image` failure on a render that is fine.
+        """
+        task_id = task.get("id")
+        while task_id:
+            status = str(task.get("status") or "").lower()
+            if status == "completed" or status in _TASK_FAILED_STATUSES:
+                break
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                break
+            time.sleep(min(_IMAGE_TASK_POLL_INTERVAL_SECONDS, remaining))
+            response = client.get(
+                media_request_path(self._creds.base_url, f"/ai/v1/images/{task_id}")
+            )
+            response.raise_for_status()
+            task = _json_object(response)
+        return task
+
+    def _ai_v1_image_bytes(self, client: httpx.Client, task: dict[str, Any]) -> bytes | None:
+        """The first output's bytes: inline `b64_json`, else `content_url`.
+
+        `content_url` is an AiHubMix download (`/ai/v1/images/{id}/content/
+        {result_id}`) that needs the Bearer token, so it goes through the
+        authenticated client — unless it points off-site, where rule 1 (no
+        `Authorization` on presigned third-party storage) applies. httpx drops
+        `Authorization` on a cross-origin redirect, so following one to
+        object storage stays header-less too.
+        """
+        b64_json, content_url = _ai_v1_image_output(task)
+        if b64_json:
+            try:
+                return base64.b64decode(b64_json)
+            except (ValueError, TypeError):
+                return None
+        if not content_url:
+            return None
+        if _same_site(content_url, self._creds.base_url):
+            download = client.get(content_url, follow_redirects=True)
+        else:
+            with httpx.Client(timeout=self._creds.timeout_s) as download_client:
+                download = download_client.get(content_url, follow_redirects=True)
+        download.raise_for_status()
+        return download.content or None
 
     def _submit_gpt_image_2_edit(
         self, request: GenerationRequest, started: float
@@ -1313,6 +1461,101 @@ def _is_qwen_model(model: str) -> bool:
 
 def is_gpt_image_2(model: str) -> bool:
     return model.strip().lower() == GPT_IMAGE_2_MODEL
+
+
+def uses_ai_v1_images(model: str) -> bool:
+    return model.strip().lower() in _AI_V1_IMAGE_MODELS
+
+
+def build_ai_v1_image_body(
+    *,
+    model: str,
+    prompt: str,
+    size: str,
+    seed: int | None = None,
+    negative_prompt: str | None = None,
+    images: list[str] | tuple[str, ...] = (),
+) -> dict[str, object]:
+    """`/ai/v1/images/generations` body, shared by the adapter and the admin
+    probe. The model schemas are `additionalProperties: false`, so only
+    documented standard fields go in; no `async` (sync is the default) and no
+    `response_format` (qwen-image-3.0 only allows `url`, the default)."""
+    body: dict[str, object] = {"model": model, "prompt": prompt, "size": size, "n": 1}
+    if seed is not None and 0 <= seed <= _AI_V1_SEED_MAX:
+        body["seed"] = seed
+    if negative_prompt and negative_prompt.strip():
+        body["negative_prompt"] = negative_prompt.strip()
+    if len(images) == 1:
+        body["image"] = images[0]
+    elif images:
+        body["images"] = list(images)
+    return body
+
+
+def ai_v1_image_has_output(payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if not payload.get("status") and isinstance(payload.get("data"), list):
+        return bool(payload["data"])  # same envelope tolerance as `_submit_ai_v1_image`
+    if str(payload.get("status") or "").lower() != "completed":
+        return False
+    b64_json, content_url = _ai_v1_image_output(payload)
+    return bool(b64_json or content_url)
+
+
+def _ai_v1_image_output(task: dict[str, Any]) -> tuple[str | None, str | None]:
+    """(`b64_json`, `content_url`) of a media task's first `output` entry."""
+    outputs = task.get("output")
+    if not isinstance(outputs, list) or not outputs or not isinstance(outputs[0], dict):
+        return None, None
+    entry = outputs[0]
+    b64_json = entry.get("b64_json")
+    content_url = entry.get("content_url") or entry.get("url")
+    return (
+        b64_json if isinstance(b64_json, str) and b64_json else None,
+        content_url if isinstance(content_url, str) and content_url else None,
+    )
+
+
+def _task_error_detail(task: dict[str, Any]) -> str:
+    error = task.get("error")
+    if isinstance(error, dict):
+        code = error.get("code")
+        message = error.get("message")
+        text = ": ".join(str(part) for part in (code, message) if part)
+    else:
+        text = str(error or "")
+    return (text or str(task.get("status") or "failed"))[:300]
+
+
+def _rejects_legacy_protocol(response: httpx.Response) -> bool:
+    """`400 {"error": {"code": "protocol_not_supported"}}` — AiHubMix's
+    answer when a model only speaks `/ai/v1/images/generations`."""
+    if response.status_code != 400:
+        return False
+    error = _json_object(response).get("error")
+    return isinstance(error, dict) and error.get("code") == "protocol_not_supported"
+
+
+def _json_object(response: httpx.Response) -> dict[str, Any]:
+    try:
+        payload = response.json()
+    except ValueError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _same_site(url: str, base_url: str) -> bool:
+    """Whether `url` is relative or on the gateway's own domain (a subdomain
+    either way counts: `api.aihubmix.com` vs `aihubmix.com`)."""
+    host = httpx.URL(url).host
+    base_host = httpx.URL(base_url).host
+    if not host:
+        return True
+    if host == base_host or host.endswith(f".{base_host}"):
+        return True
+    # Gateway saved as a subdomain, download on the apex — never a bare TLD.
+    return "." in host and base_host.endswith(f".{host}")
 
 
 def _gpt_image_2_quality(quality_tier: str) -> str:

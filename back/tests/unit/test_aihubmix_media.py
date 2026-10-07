@@ -1060,6 +1060,13 @@ def test_join_media_url_does_not_double_v1() -> None:
     assert media_request_path("https://proxy.example/openai/v1", "/v1/images/generations") == (
         "/openai/v1/images/generations"
     )
+    # A native path on a `/v1`-suffixed openai base must not become `/v1/ai/v1/…`.
+    assert media_request_path("https://aihubmix.com/v1", "/ai/v1/images/generations") == (
+        "/ai/v1/images/generations"
+    )
+    assert media_request_path("https://aihubmix.com/v1/", "/ai/v1/images/task_1") == (
+        "/ai/v1/images/task_1"
+    )
 
 
 def test_image_submit_strips_v1_from_client_base(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1076,7 +1083,7 @@ def test_image_submit_strips_v1_from_client_base(monkeypatch: pytest.MonkeyPatch
     provider = AiHubMixMediaProvider(
         endpoint_id="ep-test",
         capability_tag=Operation.TEXT_TO_IMAGE.value,
-        model="qwen-image-3.0",
+        model="doubao-seedream-4-0",
         base_url="https://aihubmix.com/v1",
         api_key="test-key",
         timeout_ms=5_000,
@@ -1086,6 +1093,37 @@ def test_image_submit_strips_v1_from_client_base(monkeypatch: pytest.MonkeyPatch
     assert result.succeeded is True
     assert captured["base"] == "https://aihubmix.com"
     assert captured["url"] == "/v1/images/generations"
+    assert captured["size"] == "1024x576"
+
+
+def test_qwen_image_3_on_a_v1_suffixed_base_posts_to_the_host_root_ai_v1_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str] = {}
+    b64 = _png_b64()
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        captured["base"] = str(self.base_url).rstrip("/")
+        captured["url"] = url
+        captured["size"] = kwargs["json"]["size"]
+        return _FakeResponse(
+            json_body={"id": "task_1", "status": "completed", "output": [{"b64_json": b64}]}
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = AiHubMixMediaProvider(
+        endpoint_id="ep-test",
+        capability_tag=Operation.TEXT_TO_IMAGE.value,
+        model="qwen-image-3.0",
+        base_url="https://aihubmix.com/v1",
+        api_key="test-key",
+        timeout_ms=5_000,
+    )
+    result = provider.submit(_request(Operation.TEXT_TO_IMAGE.value, quality_tier="preview"))
+
+    assert result.succeeded is True
+    assert captured["base"] == "https://aihubmix.com"
+    assert captured["url"] == "/ai/v1/images/generations"
     assert captured["size"] == "1024x576"
 
 
@@ -1112,6 +1150,284 @@ def test_http_status_error_includes_status_and_redacted_body(
     assert "endpoint_not_found" in detail
     assert "test-key" not in detail
     assert "[redacted]" in detail
+
+
+def test_http_4xx_logs_the_redacted_upstream_body(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        request = httpx.Request("POST", "https://aihubmix.invalid/v1/images/generations")
+        return httpx.Response(
+            400,
+            text='{"error":{"code":"schema_violation","message":"bad size; key test-key"}}',
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    with caplog.at_level("WARNING", logger="app.providers.aihubmix_media"):
+        _provider(Operation.TEXT_TO_IMAGE.value).submit(_request(Operation.TEXT_TO_IMAGE.value))
+
+    assert "HTTP 400" in caplog.text
+    assert "schema_violation" in caplog.text
+    assert "test-key" not in caplog.text
+
+
+# -- qwen-image-3.0: native `/ai/v1/images/generations` media task (sync) --
+
+
+def _image_task(status: str = "completed", **fields: object) -> dict[str, object]:
+    task: dict[str, object] = {
+        "id": "task_img_1",
+        "object": "image",
+        "model": "qwen-image-3.0",
+        "status": status,
+        "output": [],
+        "error": None,
+    }
+    task.update(fields)
+    return task
+
+
+def test_qwen_image_3_text_to_image_uses_the_ai_v1_media_task_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    png = base64.b64decode(_png_b64(size=(40, 30)))
+    content_url = "https://aihubmix.invalid/ai/v1/images/task_img_1/content/result_1"
+    posts: list[tuple[str, dict[str, object]]] = []
+    gets: list[tuple[str, str | None, dict[str, object]]] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        posts.append((url, kwargs))
+        return _FakeResponse(
+            json_body=_image_task(output=[{"index": 0, "type": "file", "content_url": content_url}])
+        )
+
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        gets.append((url, self.headers.get("Authorization"), kwargs))
+        return _FakeResponse(content=png)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    result = _provider(Operation.TEXT_TO_IMAGE.value, model="qwen-image-3.0").submit(
+        _request(
+            Operation.TEXT_TO_IMAGE.value,
+            aspect_ratio="9:16",
+            seed=42,
+            negative_prompt="模糊, 水印",
+        )
+    )
+
+    assert result.succeeded is True
+    assert result.pending is False
+    assert (result.width, result.height) == (40, 30)
+    assert s3.get_object(result.object_key) == png
+    assert result.metadata["endpoint"] == "ai-v1-images"
+    assert result.metadata["upstream_task_id"] == "task_img_1"
+    assert [url for url, _ in posts] == ["/ai/v1/images/generations"]
+    assert posts[0][1]["json"] == {
+        "model": "qwen-image-3.0",
+        "prompt": "一只在雨夜霓虹街道上奔跑的机械狐狸",
+        "size": "576x1024",
+        "n": 1,
+        "seed": 42,
+        "negative_prompt": "模糊, 水印",
+    }
+    # AiHubMix's own content URL needs the Bearer token.
+    assert gets == [(content_url, "Bearer test-key", {"follow_redirects": True})]
+
+
+def test_qwen_image_3_decodes_inline_b64_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    b64 = _png_b64()
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeResponse(json_body=_image_task(output=[{"index": 0, "b64_json": b64}]))
+
+    def fail_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("inline b64 output must not trigger a download")
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(httpx.Client, "get", fail_get)
+    result = _provider(Operation.TEXT_TO_IMAGE.value, model="qwen-image-3.0").submit(
+        _request(Operation.TEXT_TO_IMAGE.value)
+    )
+
+    assert result.succeeded is True
+    assert s3.get_object(result.object_key) == base64.b64decode(b64)
+
+
+def test_qwen_image_3_tolerates_an_openai_data_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
+    b64 = _png_b64()
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeResponse(json_body={"created": 1, "data": [{"b64_json": b64}]})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = _provider(Operation.TEXT_TO_IMAGE.value, model="qwen-image-3.0").submit(
+        _request(Operation.TEXT_TO_IMAGE.value)
+    )
+
+    assert result.succeeded is True
+    assert s3.get_object(result.object_key) == base64.b64decode(b64)
+
+
+def test_qwen_image_3_offsite_content_url_is_downloaded_without_the_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    png = base64.b64decode(_png_b64())
+    auth_headers: list[str | None] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeResponse(
+            json_body=_image_task(output=[{"content_url": "https://oss.invalid/out.png?sig=1"}])
+        )
+
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        auth_headers.append(self.headers.get("Authorization"))
+        return _FakeResponse(content=png)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    result = _provider(Operation.TEXT_TO_IMAGE.value, model="qwen-image-3.0").submit(
+        _request(Operation.TEXT_TO_IMAGE.value)
+    )
+
+    assert result.succeeded is True
+    assert auth_headers == [None]
+
+
+def test_qwen_image_3_failed_task_is_a_terminal_provider_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeResponse(
+            json_body=_image_task(
+                "failed",
+                error={"code": "output_blocked", "message": "The model provider blocked it."},
+            )
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = _provider(Operation.TEXT_TO_IMAGE.value, model="qwen-image-3.0").submit(
+        _request(Operation.TEXT_TO_IMAGE.value)
+    )
+
+    assert result.succeeded is False
+    assert result.pending is False
+    assert result.failure_code == "PROVIDER_TASK_FAILED"
+    assert result.metadata["detail"] == "output_blocked: The model provider blocked it."
+
+
+def test_qwen_image_3_polls_the_image_task_when_the_sync_call_returns_early(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.providers import aihubmix_media
+
+    b64 = _png_b64()
+    gets: list[str] = []
+    replies = iter(
+        [
+            _image_task("in_progress"),
+            _image_task(output=[{"b64_json": b64}]),
+        ]
+    )
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeResponse(json_body=_image_task("pending"))
+
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        gets.append(url)
+        return _FakeResponse(json_body=next(replies))
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    monkeypatch.setattr(aihubmix_media.time, "sleep", lambda seconds: None)
+    result = _provider(Operation.TEXT_TO_IMAGE.value, model="qwen-image-3.0").submit(
+        _request(Operation.TEXT_TO_IMAGE.value)
+    )
+
+    assert result.succeeded is True
+    assert gets == ["/ai/v1/images/task_img_1", "/ai/v1/images/task_img_1"]
+
+
+def test_qwen_image_3_unfinished_task_past_the_timeout_is_a_temporary_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeResponse(json_body=_image_task("in_progress"))
+
+    def fail_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("no budget left to poll")
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(httpx.Client, "get", fail_get)
+    provider = AiHubMixMediaProvider(
+        endpoint_id="ep-test",
+        capability_tag=Operation.TEXT_TO_IMAGE.value,
+        model="qwen-image-3.0",
+        base_url="https://aihubmix.invalid",
+        api_key="test-key",
+        timeout_ms=0,
+    )
+    result = provider.submit(_request(Operation.TEXT_TO_IMAGE.value))
+
+    assert result.succeeded is False
+    assert result.failure_code == "PROVIDER_TEMPORARY_FAILURE"
+    assert "task_img_1 still in_progress" in result.metadata["detail"]
+
+
+def test_a_legacy_protocol_rejection_retries_once_on_the_ai_v1_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A model AiHubMix migrates later must not silently fail for weeks the
+    way qwen-image-3.0 did: the documented rejection switches protocols."""
+    b64 = _png_b64()
+    posts: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        posts.append((url, kwargs))
+        if url == "/v1/images/generations":
+            return httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "code": "protocol_not_supported",
+                        "message": "This model does not support the legacy protocol. "
+                        "Use POST /ai/v1/images/generations.",
+                    }
+                },
+                request=httpx.Request("POST", f"https://aihubmix.invalid{url}"),
+            )
+        return _FakeResponse(json_body=_image_task(output=[{"b64_json": b64}]))
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = _provider(Operation.TEXT_TO_IMAGE.value, model="qwen-image-9.0").submit(
+        _request(Operation.TEXT_TO_IMAGE.value)
+    )
+
+    assert result.succeeded is True
+    assert [url for url, _ in posts] == ["/v1/images/generations", "/ai/v1/images/generations"]
+    assert posts[1][1]["json"]["model"] == "qwen-image-9.0"
+    assert result.metadata["endpoint"] == "ai-v1-images"
+
+
+def test_gpt_image_2_never_takes_the_ai_v1_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    posts: list[str] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        posts.append(url)
+        return httpx.Response(
+            400,
+            json={"error": {"code": "protocol_not_supported", "message": "legacy"}},
+            request=httpx.Request("POST", f"https://aihubmix.invalid{url}"),
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = _provider(Operation.TEXT_TO_IMAGE.value, model="gpt-image-2").submit(
+        _request(Operation.TEXT_TO_IMAGE.value)
+    )
+
+    assert result.failure_code == "PROVIDER_INVALID_RESPONSE"
+    assert posts == ["/v1/images/generations"]
 
 
 # -- doubao-seedance-2-5-260628: auto-duration, generate_audio, inline poll --
