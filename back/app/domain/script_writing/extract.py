@@ -3,8 +3,12 @@
 txt / docx / (best-effort) doc are parsed locally. jpg / png go through the
 copy agent's LLM binding as a one-shot vision call so a photographed
 screenplay can become the same `idea` string `prepare_new_script` already
-accepts. The original bytes are not persisted — only the extracted text
-is, later, on `DramaEpisode.source_idea`.
+accepts. The call only runs on endpoints that declare `"image"` input: a
+copy agent pinned to text-only endpoints falls back to the capable shared
+pool, and with none configured the upload fails with `NoCapableEndpoint`
+("未配置支持图像输入的端点") instead of reaching a model that cannot see
+it. The original bytes are not persisted — only the extracted text is,
+later, on `DramaEpisode.source_idea`.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from PIL import Image, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from app.agents.base import GATEWAY_MODE, _record_agent_run, effective_binding
+from app.agents.slots import SCRIPT_EXTRACT_SLOT
 from app.domain.agent_skills import service as agent_skills_service
 from app.domain.errors import ProviderTemporaryFailure, ValidationFailed
 from app.llm import client as llm_client
@@ -29,7 +34,6 @@ MAX_SOURCE_TEXT_LEN = 20_000
 # Distinctive marker so `tests/fake_llm_gateway.py` can dispatch this call
 # without sniffing image bytes.
 SCRIPT_EXTRACT_MARKER = "script_source_extract"
-SCRIPT_EXTRACT_SLOT = "script_extract"
 SCRIPT_EXTRACT_SYSTEM_PROMPT = (
     f"[{SCRIPT_EXTRACT_MARKER}] 你是造浪平台的剧本原文提取助手。"
     "从用户给出的图片中识别全部可读文字。"
@@ -221,7 +225,9 @@ def _extract_image(
         agent_id=agent_id,
         slot=SCRIPT_EXTRACT_SLOT,
     )
-    binding = effective_binding(session, AgentName.COPY.value, resolved.profile)
+    binding = effective_binding(
+        session, AgentName.COPY.value, resolved.profile, required_modalities={"image"}
+    )
     try:
         result = llm_client.complete(
             session=session,

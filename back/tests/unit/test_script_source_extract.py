@@ -158,3 +158,89 @@ def test_png_uses_fake_gateway_ocr(db: Session, author: User) -> None:
     run = db.scalars(select(AgentRun).where(AgentRun.user_id == author.id)).one()
     assert run.prompt_slot == "script_extract"
     assert run.status == AgentRunStatus.SUCCEEDED
+
+
+def _seed_extract_endpoints(db: Session, *, vision: bool) -> None:
+    """Copy's default agent pinned to a text-only endpoint; optionally an
+    image-capable backup elsewhere in the pool."""
+    from app.domain.agent_skills import service as agent_skills_service
+    from app.platform_config import service as config_service
+
+    endpoints: dict = {
+        "text-ep": {
+            "name": "文本端点",
+            "base_url": "https://text.invalid",
+            "api_key": "k",
+            "kind": "general",
+            "model": "text-model",
+            "role": "primary",
+            "input_modalities": ["text"],
+        }
+    }
+    if vision:
+        endpoints["vision-ep"] = {
+            "name": "识图端点",
+            "base_url": "https://vision.invalid",
+            "api_key": "k",
+            "kind": "general",
+            "model": "vision-model",
+            "role": "backup",
+            "input_modalities": ["text", "image"],
+        }
+    config_service.set_value(
+        db, "llm_providers", {"endpoints": endpoints}, actor_user_id=None, note="test"
+    )
+    agent_skills_service.ensure_default_nodes(db)
+    agent_skills_service.ensure_default_profiles(db)
+    copy_default = agent_skills_service.default_profile(db, "copy")
+    assert copy_default is not None
+    agent_skills_service.update_profile(db, copy_default.id, default_endpoint_id="text-ep")
+
+
+@pytest.mark.real_gateway_seams
+def test_image_extract_skips_the_text_only_copy_binding(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.llm import client as llm_client
+
+    _seed_extract_endpoints(db, vision=True)
+    served: list[str] = []
+
+    def _gateway(**kw):  # type: ignore[no-untyped-def]
+        served.append(kw["model"])
+        return {
+            "model": kw["model"],
+            "choices": [{"message": {"content": "第一场 便利店"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        }
+
+    monkeypatch.setattr(llm_client, "_call_gateway", _gateway)
+
+    result = extract_script_source(
+        db, user_id=author.id, filename="page.png", payload=_png_bytes(), mime_type="image/png"
+    )
+
+    assert result.text == "第一场 便利店"
+    assert served == ["vision-model"]
+    run = db.scalars(select(AgentRun).where(AgentRun.user_id == author.id)).one()
+    assert run.endpoint_id == "vision-ep"
+
+
+@pytest.mark.real_gateway_seams
+def test_image_extract_without_an_image_endpoint_says_so(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.domain.errors import NoCapableEndpoint
+    from app.llm import client as llm_client
+
+    _seed_extract_endpoints(db, vision=False)
+
+    def _gateway(**_kw):  # type: ignore[no-untyped-def]
+        raise AssertionError("a text-only endpoint must not receive the image")
+
+    monkeypatch.setattr(llm_client, "_call_gateway", _gateway)
+
+    with pytest.raises(NoCapableEndpoint, match="未配置支持图像输入的端点"):
+        extract_script_source(
+            db, user_id=author.id, filename="page.png", payload=_png_bytes(), mime_type="image/png"
+        )

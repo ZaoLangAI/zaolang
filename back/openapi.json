@@ -27060,6 +27060,13 @@
             "type": "array",
             "title": "Used By Operations"
           },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",

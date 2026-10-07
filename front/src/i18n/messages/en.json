@@ -211,6 +211,7 @@
     "backupModel": "Backup model",
     "backupProvider": "Backup model provider",
     "backupModelHint": "Used when the default is unavailable. Only selectable once a default is pinned.",
+    "visionTag": "Vision",
     "backupModelNone": "No backup",
     "model": "Model",
     "modelDerived": "Calls run on {model}, falling back to {backup}.",

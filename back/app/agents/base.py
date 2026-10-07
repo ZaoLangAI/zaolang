@@ -8,7 +8,7 @@ an agent returns is a fact until a caller persists it through a domain service.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Collection, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -69,7 +69,11 @@ class EffectiveBinding:
 
 
 def effective_binding(
-    session: Session, agent_name: str, profile: AgentProfile | None
+    session: Session,
+    agent_name: str,
+    profile: AgentProfile | None,
+    *,
+    required_modalities: Collection[str] = frozenset(),
 ) -> EffectiveBinding:
     """Resolves provider selection from AgentProfile.
 
@@ -78,6 +82,14 @@ def effective_binding(
     exactly one model, so the name follows from the provider and the two can no
     longer drift apart. A pin that drifted off the catalog is treated as
     unbound rather than guessed.
+
+    `required_modalities` is what the call will send besides text (`{"image"}`
+    for a vision call). A binding where neither the default nor the backup
+    endpoint declares them is treated as unbound for this call — the same
+    rule as a pin that left the catalog — and starts on the first capable
+    endpoint of the shared pool instead. When the pool has none either, the
+    binding comes back empty and `llm_client.complete` raises
+    `NoCapableEndpoint`.
     """
     role_default = agent_skills_service.default_profile(session, agent_name)
     inherited = (
@@ -96,8 +108,22 @@ def effective_binding(
     preferred = tuple(
         endpoint_id for endpoint_id in (default_endpoint_id, backup_endpoint_id) if endpoint_id
     )
+    required = frozenset(required_modalities)
+    if required and preferred and not _capable_ids(config, preferred, required):
+        logger.warning(
+            "llm_binding_modality_fallback agent=%s profile=%s endpoints=%s required=%s",
+            agent_name,
+            profile.id if profile is not None else None,
+            ",".join(preferred),
+            ",".join(sorted(required)),
+        )
+        preferred = ()
+    elif required:
+        # The failover filter would drop the text-only pin anyway; dropping
+        # it here too keeps the starting model on a capable endpoint.
+        preferred = _capable_ids(config, preferred, required)
 
-    endpoint = _bound_endpoint(config, preferred)
+    endpoint = _bound_endpoint(config, preferred, required)
     return EffectiveBinding(
         model=endpoint.model if endpoint is not None else "",
         max_tokens=_binding_max_tokens(value("max_tokens"), endpoint),
@@ -111,8 +137,21 @@ def effective_binding(
     )
 
 
+def _capable_ids(
+    config: LlmProviderConfig, endpoint_ids: tuple[str, ...], required: frozenset[str]
+) -> tuple[str, ...]:
+    """The pinned general endpoints, in pin order, that declare `required`."""
+    capable = {
+        endpoint_id
+        for endpoint_id, _ in failover.general_candidates(config, required_modalities=required)
+    }
+    return tuple(endpoint_id for endpoint_id in endpoint_ids if endpoint_id in capable)
+
+
 def _bound_endpoint(
-    config: LlmProviderConfig, preferred: tuple[str, ...]
+    config: LlmProviderConfig,
+    preferred: tuple[str, ...],
+    required: frozenset[str] = frozenset(),
 ) -> LlmProviderEndpoint | None:
     """The general endpoint this binding starts on.
 
@@ -127,10 +166,45 @@ def _bound_endpoint(
             if endpoint is not None and endpoint.kind == "general" and endpoint.model:
                 return endpoint
         return None
-    for _, endpoint in failover.general_candidates(config):
+    for _, endpoint in failover.general_candidates(config, required_modalities=required):
         if endpoint.model:
             return endpoint
     return None
+
+
+def image_binding_warnings(
+    session: Session,
+    profile: AgentProfile,
+    slot_labels: list[str],
+    config: LlmProviderConfig,
+) -> list[str]:
+    """Advisory notes for an agent that serves image-input calls
+    (`slot_labels`, from `agent_skills.service.image_slot_labels`) but whose
+    endpoints cannot all read images. Never blocks a save — the call still
+    routes around a text-only pin (see `effective_binding`) — it only tells
+    the operator where the request will really go.
+    """
+    if not slot_labels:
+        return []
+    calls = "、".join(f"「{label}」" for label in slot_labels)
+    required = frozenset({"image"})
+    if not failover.general_candidates(config, required_modalities=required):
+        return [f"{calls}需要图像输入，但没有已启用的端点支持图像，这类请求会直接报错。"]
+    preferred = effective_binding(session, profile.role, profile).preferred_endpoint_ids
+    text_only = [
+        endpoint_id
+        for endpoint_id in preferred
+        if (endpoint := config.endpoints.get(endpoint_id)) is not None
+        and not failover.supports_modalities(endpoint, required)
+    ]
+    if not text_only:
+        return []
+    if not _capable_ids(config, preferred, required):
+        return [
+            f"{calls}需要图像输入，但绑定的端点都不支持，这类请求会改用共享池中支持图像的端点。"
+        ]
+    names = "、".join(f"「{config.endpoints[endpoint_id].name}」" for endpoint_id in text_only)
+    return [f"{calls}需要图像输入，绑定的端点{names}不支持，这类请求会跳过它。"]
 
 
 def _binding_max_tokens(profile_max: int | None, endpoint: LlmProviderEndpoint | None) -> int:

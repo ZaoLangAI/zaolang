@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from collections.abc import Iterator, Sequence
+from collections.abc import Collection, Iterator, Sequence
 from dataclasses import dataclass
 
 import redis
@@ -34,17 +34,31 @@ _CONCURRENCY_LEASE_TTL_SECONDS = 120
 _STATS_WINDOW_SECONDS = 3600
 
 
-def general_candidates(config: LlmProviderConfig) -> list[tuple[str, LlmProviderEndpoint]]:
+def supports_modalities(endpoint: LlmProviderEndpoint, required: Collection[str]) -> bool:
+    """Whether `endpoint` declares every modality in `required` (text is
+    always implied — the schema validator injects it)."""
+    return set(required) <= set(endpoint.input_modalities)
+
+
+def general_candidates(
+    config: LlmProviderConfig, *, required_modalities: Collection[str] = frozenset()
+) -> list[tuple[str, LlmProviderEndpoint]]:
     """Enabled `kind="general"` endpoints: the primary first, then backups in
     `backup_order`.
 
     Every agent role (safety/planner/quality/copy) draws from this single
     shared pool — there is no per-role scenario tag any more.
+
+    `required_modalities` keeps only endpoints whose `input_modalities`
+    include all of them — a request carrying an image never fails over onto
+    a text-only model. The order among the survivors is unchanged.
     """
     matches = [
         (endpoint_id, endpoint)
         for endpoint_id, endpoint in config.endpoints.items()
-        if endpoint.enabled and endpoint.kind == "general"
+        if endpoint.enabled
+        and endpoint.kind == "general"
+        and supports_modalities(endpoint, required_modalities)
     ]
     matches.sort(key=lambda pair: _role_sort_key(pair[1], pair[0]))
     return matches
@@ -56,7 +70,10 @@ def _role_sort_key(endpoint: LlmProviderEndpoint, endpoint_id: str) -> tuple[int
 
 
 def eligible_candidates(
-    config: LlmProviderConfig, *, preferred_ids: Sequence[str] = ()
+    config: LlmProviderConfig,
+    *,
+    preferred_ids: Sequence[str] = (),
+    required_modalities: Collection[str] = frozenset(),
 ) -> list[tuple[str, LlmProviderEndpoint]]:
     """Candidates with a free concurrency slot and a closed circuit breaker.
 
@@ -68,18 +85,26 @@ def eligible_candidates(
     `preferred_ids` is an AgentProfile's explicit provider binding (default,
     then backup). When present it restricts routing to those providers; only
     an unbound profile draws from the whole compatible shared pool.
+
+    `required_modalities` drops endpoints that cannot read the request (see
+    `general_candidates`). A binding whose endpoints are all dropped is not
+    widened here — `app.agents.base.effective_binding` already treats such a
+    binding as unbound before the call starts.
     """
     client = get_redis()
     return [
         (endpoint_id, endpoint)
-        for endpoint_id, endpoint in _bound_candidates(config, preferred_ids)
+        for endpoint_id, endpoint in _bound_candidates(config, preferred_ids, required_modalities)
         if not is_breaker_open(client, endpoint_id)
         and current_concurrency(client, endpoint_id) < endpoint.max_concurrency
     ]
 
 
 def saturated_candidates(
-    config: LlmProviderConfig, *, preferred_ids: Sequence[str] = ()
+    config: LlmProviderConfig,
+    *,
+    preferred_ids: Sequence[str] = (),
+    required_modalities: Collection[str] = frozenset(),
 ) -> list[tuple[str, LlmProviderEndpoint]]:
     """Healthy candidates (breaker closed) whose every slot is taken: busy,
     not broken — a caller that can afford to wait gets a slot once one of
@@ -87,16 +112,18 @@ def saturated_candidates(
     client = get_redis()
     return [
         (endpoint_id, endpoint)
-        for endpoint_id, endpoint in _bound_candidates(config, preferred_ids)
+        for endpoint_id, endpoint in _bound_candidates(config, preferred_ids, required_modalities)
         if not is_breaker_open(client, endpoint_id)
         and current_concurrency(client, endpoint_id) >= endpoint.max_concurrency
     ]
 
 
 def _bound_candidates(
-    config: LlmProviderConfig, preferred_ids: Sequence[str]
+    config: LlmProviderConfig,
+    preferred_ids: Sequence[str],
+    required_modalities: Collection[str] = frozenset(),
 ) -> list[tuple[str, LlmProviderEndpoint]]:
-    ordered = general_candidates(config)
+    ordered = general_candidates(config, required_modalities=required_modalities)
     if preferred_ids:
         rank = {endpoint_id: index for index, endpoint_id in enumerate(preferred_ids)}
         ordered = [pair for pair in ordered if pair[0] in rank]

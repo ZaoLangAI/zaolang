@@ -7,6 +7,7 @@ Copy coaches, asset-kind prompt rules, scene skill packs, follow-up questions. S
 - What runs is the published `AgentSkill` for `(agent, slot)` via `agent_skills.service.resolve_prompt`; module constants are only seed + fallback. Changing a constant does nothing in an env whose operator edited that prompt.
 - `sync_seeded_copy_agent_prompts` (`back/app/scripts/seed.py`) republishes constants onto the seeded copy agents (role default + `enhance-character`/`enhance-scene`, created by `ensure_default_enhance_asset_agents`) only while their draft still looks factory; custom wording is left alone.
 - Copy requests choose an agent by `resolve_copy_agent_id` using `AgentProfile.default_for_asset_kind` (`character`/`scene`, else the `copy` bucket; a historic `cover` binding still reads but no longer resolves — cover images are retired, AC-8).
+- Script image extract (`back/app/domain/script_writing/extract.py`, slot `script_extract`, code constant only) runs on that `copy` bucket agent; `agent_skills.service.image_slot_labels` resolves the same agent so `/admin/agents` warns on it alone.
 - `SKILL_TEMPLATES` (`back/app/domain/agent_skills/templates.py`) seed the admin editor's "fill from template"; copy templates carry `asset_kind` so a dedicated agent only offers its own kind. Opening the editor never overwrites a published prompt.
 
 ## Copy coaches (`back/app/agents/copywriter.py`)

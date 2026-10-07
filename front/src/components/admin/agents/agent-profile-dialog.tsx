@@ -18,6 +18,7 @@ import type {
   RolePreset,
 } from '@/lib/api/admin-types';
 import { ApiError } from '@/lib/api/errors';
+import { endpointBindingLabel } from '@/lib/admin/endpoint-binding-label';
 import { OPERATIONS, operationLabelKey } from '@/lib/admin/operations';
 
 /**
@@ -104,6 +105,8 @@ export function AgentProfileDialog({
   const generalEndpoints = (endpoints ?? []).filter(
     (endpoint) => endpoint.kind === 'general' && endpoint.enabled,
   );
+  const endpointLabel = (endpoint: LlmProviderEndpoint) =>
+    endpointBindingLabel(endpoint, t('visionTag'));
   const selectedDefault = generalEndpoints.find((endpoint) => endpoint.id === defaultEndpointId);
   const selectedBackup = generalEndpoints.find((endpoint) => endpoint.id === backupEndpointId);
 
@@ -138,8 +141,9 @@ export function AgentProfileDialog({
     setBusy(true);
     setError(null);
     try {
+      let saved: AgentProfile;
       if (isEdit) {
-        await adminApi.patch<AgentProfile>(`/v1/admin/agent-profiles/${profile.id}`, {
+        saved = await adminApi.patch<AgentProfile>(`/v1/admin/agent-profiles/${profile.id}`, {
           display_name: displayName,
           description,
           operations,
@@ -150,7 +154,7 @@ export function AgentProfileDialog({
           ...(role === 'copy' ? { default_for_asset_kind: assetKindDefault || null } : {}),
         });
       } else {
-        await adminApi.post<AgentProfile>('/v1/admin/agent-profiles', {
+        saved = await adminApi.post<AgentProfile>('/v1/admin/agent-profiles', {
           role,
           key,
           display_name: displayName,
@@ -161,6 +165,8 @@ export function AgentProfileDialog({
         });
       }
       notify(isEdit ? t('agentSaved') : t('agentCreated'), 'success');
+      // Advisory only — the save went through; the card keeps showing them.
+      for (const warning of saved.warnings ?? []) notify(warning, 'info');
       onSaved();
       onClose();
     } catch (caught) {
@@ -263,7 +269,7 @@ export function AgentProfileDialog({
               { value: '', label: t('modelInherit') },
               ...generalEndpoints.map((endpoint) => ({
                 value: endpoint.id,
-                label: endpoint.model ? `${endpoint.name} · ${endpoint.model}` : endpoint.name,
+                label: endpointLabel(endpoint),
               })),
             ]}
           />
@@ -279,7 +285,7 @@ export function AgentProfileDialog({
                 .filter((endpoint) => endpoint.id !== defaultEndpointId)
                 .map((endpoint) => ({
                   value: endpoint.id,
-                  label: endpoint.model ? `${endpoint.name} · ${endpoint.model}` : endpoint.name,
+                  label: endpointLabel(endpoint),
                 })),
             ]}
           />
@@ -291,6 +297,11 @@ export function AgentProfileDialog({
               })}
             </p>
           ) : null}
+          {(profile?.warnings ?? []).map((warning) => (
+            <p key={warning} className="text-xs text-amber">
+              {warning}
+            </p>
+          ))}
           <p className="text-xs text-muted">{t('samplingInherited')}</p>
           <Select
             label={t('reasoningModel')}

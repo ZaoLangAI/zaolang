@@ -29,7 +29,7 @@ from typing import Any
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.agents.slots import DEFAULT_SLOT, is_known_slot
+from app.agents.slots import DEFAULT_SLOT, IMAGE_INPUT_SLOTS, is_known_slot
 from app.domain.agent_skills import presets
 from app.domain.errors import NotFound, ValidationFailed
 from app.models import AgentNode, AgentProfile, AgentSkill
@@ -438,6 +438,23 @@ def resolve_copy_agent_id(
         session, ASSET_KIND_AGENT_ROLE, COPY_REQUEST_BUCKET
     )
     return copy_default.id if copy_default is not None else None
+
+
+def image_slot_labels(session: Session) -> dict[str, list[str]]:
+    """Which agent currently serves each image-input call, keyed by profile id.
+
+    Resolved the way the call itself resolves its agent (the copy request
+    bucket, then the role default — `resolve_prompt`), so the console warns
+    on the agent that would actually send the image, not on every agent
+    that shares its role.
+    """
+    labels: dict[str, list[str]] = {}
+    for (role, slot), label in IMAGE_INPUT_SLOTS.items():
+        agent_id = resolve_copy_agent_id(session) if role == ASSET_KIND_AGENT_ROLE else None
+        profile = resolve_prompt(session, role, "", agent_id=agent_id, slot=slot).profile
+        if profile is not None:
+            labels.setdefault(profile.id, []).append(label)
+    return labels
 
 
 def _validated_asset_kind_bucket(role: str, kind: str) -> str:

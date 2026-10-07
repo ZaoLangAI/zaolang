@@ -18,6 +18,7 @@ from collections.abc import Iterator
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
 
 from app.agents import base as agent_base
 from app.agents import slots as agent_slots
@@ -53,6 +54,7 @@ from app.domain.agent_skills import service as agent_skills_service
 from app.domain.agent_skills import templates as skill_templates
 from app.domain.audit import service as audit
 from app.domain.workflow_templates import service as workflow_templates_service
+from app.models import AgentProfile
 from app.platform_config import service as config_service
 from app.platform_config.schemas import LlmProviderConfig
 
@@ -96,9 +98,7 @@ def list_agent_profiles(
     session: DbSession, user: Viewer, _: AdminRead, role: str | None = None
 ) -> Page[AgentProfileView]:
     profiles = agent_skills_service.list_profiles(session, role=role)
-    usage = workflow_templates_service.agent_usage(session)
-    provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
-    return Page(items=[_profile_view(p, usage, provider_config) for p in profiles])
+    return Page(items=_profile_views(session, profiles))
 
 
 @router.get("/agent-skill-tools", response_model=Page[AgentSkillToolView])
@@ -152,11 +152,7 @@ def create_agent_profile(
         request=request,
     )
     session.commit()
-    return _profile_view(
-        row,
-        workflow_templates_service.agent_usage(session),
-        config_service.get_typed(session, "llm_providers", LlmProviderConfig),
-    )
+    return _profile_views(session, [row])[0]
 
 
 @router.patch("/agent-profiles/{profile_id}", response_model=AgentProfileView)
@@ -212,11 +208,7 @@ def update_agent_profile(
         request=request,
     )
     session.commit()
-    return _profile_view(
-        row,
-        workflow_templates_service.agent_usage(session),
-        config_service.get_typed(session, "llm_providers", LlmProviderConfig),
-    )
+    return _profile_views(session, [row])[0]
 
 
 @router.post("/agent-profiles/{profile_id}/disable", response_model=AgentProfileView)
@@ -247,11 +239,7 @@ def disable_agent_profile(
         request=request,
     )
     session.commit()
-    return _profile_view(
-        row,
-        workflow_templates_service.agent_usage(session),
-        config_service.get_typed(session, "llm_providers", LlmProviderConfig),
-    )
+    return _profile_views(session, [row])[0]
 
 
 @router.post("/agent-profiles/{profile_id}/delete", status_code=204)
@@ -475,10 +463,31 @@ def _node_view(node, provider_config: LlmProviderConfig) -> AgentNodeView:  # ty
     )
 
 
-def _profile_view(  # type: ignore[no-untyped-def]
-    profile,
+def _profile_views(session: Session, profiles: list[AgentProfile]) -> list[AgentProfileView]:
+    """Views plus everything they derive from the rest of the system, read
+    once per request rather than once per agent."""
+    usage = workflow_templates_service.agent_usage(session)
+    provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
+    slot_labels = agent_skills_service.image_slot_labels(session)
+    return [
+        _profile_view(
+            profile,
+            usage,
+            provider_config,
+            warnings=agent_base.image_binding_warnings(
+                session, profile, slot_labels.get(profile.id, []), provider_config
+            ),
+        )
+        for profile in profiles
+    ]
+
+
+def _profile_view(
+    profile: AgentProfile,
     usage: dict[str, list[str]],
     provider_config: LlmProviderConfig,
+    *,
+    warnings: list[str],
 ) -> AgentProfileView:
     # Read-only: the agent binds a provider, and the provider names the model.
     bound = provider_config.endpoints.get(profile.default_endpoint_id or "")
@@ -502,6 +511,7 @@ def _profile_view(  # type: ignore[no-untyped-def]
         ),
         reasoning_model=profile.reasoning_model,
         used_by_operations=usage.get(profile.id, []),
+        warnings=warnings,
         created_at=profile.created_at,
     )
 
