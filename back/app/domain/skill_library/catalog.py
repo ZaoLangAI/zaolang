@@ -319,13 +319,6 @@ COVERS_PENDING: frozenset[str] = frozenset(
         # a 「雨夜追逐」tile is a real still — but generating eighty covers is
         # a live-provider operator run, so they land in the same queue as the
         # format rows above rather than blocking the entries themselves.
-        "drama-scene-hospital-standoff",
-        "drama-scene-rooftop-negotiation",
-        "drama-scene-car-argument",
-        "drama-scene-dinner-showdown",
-        "drama-scene-office-humiliation",
-        "drama-scene-doorway-refusal",
-        "drama-scene-elevator-trap",
         "drama-scene-parking-lot-block",
         "drama-scene-courtroom-reversal",
         "drama-scene-family-verdict",
