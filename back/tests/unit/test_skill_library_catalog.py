@@ -586,9 +586,40 @@ def test_apply_matching_format_skills_respects_the_dimension_order_and_limit(
 
     assert skill_library_service.MAX_AUTO_APPLIED_FORMAT_SKILLS == 2
     assert [item["title"] for item in applied] == [
-        _first_title("fmt-frame-"),
         _first_title("fmt-action-"),
+        _first_title("fmt-camera-"),
     ]
+
+
+def test_apply_matching_format_skills_never_appends_a_prompt_layout_rule(
+    db: Session, catalog_owner: User
+) -> None:
+    """`fmt-frame-*` rows describe how the prompt text is laid out (sentence
+    quotas, word budgets, block structure). Appended after the coach's
+    rewrite they cannot change it, only contradict it — a live polish came
+    back as ~1,100 characters ending in "kept to three sentences and under
+    eighty words". A weak `subject` therefore attaches nothing."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
+    db.commit()
+
+    frame_titles = {
+        item.title for item in skill_catalog.CATALOG if item.key.startswith("fmt-frame-")
+    }
+    prompt, applied = skill_library_service.apply_matching_format_skills(
+        db,
+        operation="text_to_video",
+        dimensions=[
+            {"key": dimension, "status": "missing", "hint": "x"}
+            for dimension in ("subject", "scene", "action", "camera", "lighting", "mood", "pacing")
+        ],
+        prompt="她推开门",
+        max_length=4096,
+        limit=10,
+    )
+
+    assert applied
+    assert not {item["title"] for item in applied} & frame_titles
+    assert "eighty words" not in prompt
 
 
 def test_apply_matching_format_skills_is_a_noop_for_an_image_operation(

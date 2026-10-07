@@ -642,8 +642,15 @@ def _deduped_operations(operations: list[Operation] | None) -> list[str]:
 # and `mood` have no entry: `format` rows constrain *how a shot is written*,
 # not what the scene contains or how it feels, so neither dimension maps
 # onto a single writing axis in the catalogue.
+#
+# `subject` has no entry either. Its natural rows, `fmt-frame-*`, are rules
+# for laying out the prompt itself (三句配额 "each beat under eighty words",
+# 三要素最小式 "and that is the whole of it", key-value blocks). The coach has
+# already written the text by the time this runs, so a layout rule appended
+# after it cannot change the layout — it only contradicts it, e.g. an
+# eighty-word quota stapled onto a 1,000-character rewrite. Those rows stay
+# in the library for an author to apply by hand before writing.
 _FORMAT_SKILL_KEY_PREFIXES_BY_DIMENSION: dict[str, str] = {
-    "subject": "fmt-frame-",
     "camera": "fmt-camera-",
     "action": "fmt-action-",
     "lighting": "fmt-light-",
