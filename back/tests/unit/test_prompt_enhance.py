@@ -758,6 +758,13 @@ def test_a_video_to_video_polish_gets_the_edit_coach() -> None:
     assert "生效区间" in edit
     assert "保持与原片一致" in edit
     assert "透视、光线和遮挡关系" in edit
+    # A remix always has the source video, so `has_reference` is true even
+    # with no image uploaded; a live polish then wrote 「参考图只用于……」 for
+    # an image that did not exist. Reference wording now follows the
+    # author's own text, never the flag.
+    assert "has_reference 为 true 时，其余参考图" not in edit
+    assert "通常只说明有源视频本身" in edit
+    assert "描述里没提到参考图时" in edit
     assert copywriter._ENHANCE_VIDEO_DETAIL_RULES not in edit
 
     select = copywriter._enhance_system_prompt
