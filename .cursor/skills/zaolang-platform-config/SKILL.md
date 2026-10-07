@@ -12,13 +12,13 @@ Not here → `zaolang-agent-gateway` (providers, routing), `zaolang-admin-consol
 
 | Path | What |
 |---|---|
-| `back/app/platform_config/schemas.py` | `CONFIG_SCHEMAS` (`pricing`, `royalty`, `marketplace`, `feature_flags`, `content`/`learning`/`skill_moderation`, `shortform`, `llm_providers`), `DEFAULT_CONFIGS`, `FeatureFlags`/`FEATURE_FLAG_NAMES`, `LlmProviderEndpoint`, `MediaPricing`, `VIDEO_RESOLUTIONS` |
+| `back/app/platform_config/schemas.py` | `CONFIG_SCHEMAS` (`pricing`, `royalty`, `marketplace`, `feature_flags`, `content`/`learning`/`skill_moderation`, `shortform`, `llm_providers`, `asset_consistency`), `DEFAULT_CONFIGS`, `FeatureFlags`/`FEATURE_FLAG_NAMES`, `LlmProviderEndpoint`, `MediaPricing`, `VIDEO_RESOLUTIONS` |
 | `back/app/platform_config/service.py` | `get_typed` / `get_raw` / `set_value` / `rollback` / `history` / `invalidate` / `is_enabled` |
 | `back/app/api/v1/admin/config.py` | generic config API (read `Viewer`+`AdminRead`; `PUT` `Admin`+`AdminWrite`, audit `config.update`; rollback `Admin`+`AdminDangerous`, audit `config.rollback`); `FLAG_DESCRIPTIONS`; `GENERIC_CONFIG_KEYS` excludes `llm_providers` |
 | `back/app/api/v1/admin/llm_providers.py` | masked endpoint CRUD, validate, `GET /v1/admin/llm-providers/catalog` |
 | `back/app/domain/costs/service.py` | per-call vendor cost in micro-USD; `SEEDANCE_TOKENS_BILLING_PROFILE` |
 | `back/app/providers/model_catalog.py` | per-vendor `price_items` for the admin model picker |
-| `front/src/components/admin/config/runtime-config-panel.tsx` | hand-built forms (flags, shortform, pricing, royalty, marketplace, moderation) + Advanced JSON |
+| `front/src/components/admin/config/runtime-config-panel.tsx` | hand-built forms (flags, shortform, pricing, royalty, marketplace, moderation, asset consistency — helpers in `front/src/lib/admin/asset-consistency.ts`) + Advanced JSON |
 | `front/src/components/admin/models/llm-providers-panel.tsx` | `/admin/models`; `VendorModelPicker`, `priceItemsToFormPatch` |
 | `front/src/lib/admin/micro-usd.ts` | USD/CNY string ↔ micro-USD integer conversion for admin pricing and statistics |
 
@@ -40,6 +40,7 @@ Not here → `zaolang-agent-gateway` (providers, routing), `zaolang-admin-consol
 14. `billing_profile` is metadata; only `SEEDANCE_TOKENS_BILLING_PROFILE` changes cost math.
 15. `kind="general"` `input_modalities` (`text` always injected) are routing filters, not labels: an `image_url` request only fails over among endpoints that list `image` (`zaolang-agent-gateway` › invariant 20). Production needs at least two image-capable general endpoints for a vision backup.
 16. No routing-weight config — provider choice is the LLM's (see `zaolang-agent-gateway` › routing). `AgentModelBinding` in `schemas.py` is dead; don't wire it up.
+17. `asset_consistency` (P3-2, `back/app/platform_config/schemas.py:AssetConsistencyConfig`) drives the vision consistency judge: `mode` `off` (default) / `shadow` / `enforce`, `kinds`, `thresholds` `{kind: {entry_type | "*": 0–100}}` (unknown kind / entry type, or a scene `panorama`, is a 422), `max_image_px` 512–2048, `max_outputs_per_job` 1–8. Look a threshold up with `threshold_for(kind, entry_type)` (own type, then `"*"`, else `None` = never below). Edited on `/admin/config` (form: mode, kinds, per-kind `"*"`; per-type thresholds in Advanced JSON).
 
 ## Recipes
 

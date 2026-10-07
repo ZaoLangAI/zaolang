@@ -13,7 +13,16 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models.enums import AudioGenerationKind, MediaGenerationKind, Operation, QualityTier
+from app.models.enums import (
+    CHARACTER_ENTRY_TYPES,
+    PROP_ENTRY_TYPES,
+    SCENE_ENTRY_TYPES,
+    AssetEntryType,
+    AudioGenerationKind,
+    MediaGenerationKind,
+    Operation,
+    QualityTier,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -246,6 +255,66 @@ class LearningModerationConfig(KeywordModerationConfig):
 
 class SkillModerationConfig(KeywordModerationConfig):
     pass
+
+
+AssetConsistencyMode = Literal["off", "shadow", "enforce"]
+AssetConsistencyKind = Literal["character", "scene", "prop"]
+ASSET_CONSISTENCY_KINDS: tuple[AssetConsistencyKind, ...] = ("character", "scene", "prop")
+# The `thresholds` key that applies to every entry type of a kind without
+# its own threshold.
+ANY_ENTRY_TYPE = "*"
+_CONSISTENCY_ENTRY_TYPES: dict[str, frozenset[str]] = {
+    "character": CHARACTER_ENTRY_TYPES,
+    # A panorama is never scored (CL 20), so a threshold for it means nothing.
+    "scene": SCENE_ENTRY_TYPES - {AssetEntryType.PANORAMA},
+    "prop": PROP_ENTRY_TYPES,
+}
+
+
+class AssetConsistencyConfig(ConfigSection):
+    """Vision consistency scoring of generated card images (P3,
+    `app.domain.image_assets.consistency`).
+
+    `off` scores nothing; `shadow` scores and stores without changing how an
+    image is filed or shown; `enforce` files an image below its threshold as
+    a candidate and flags it. A `(kind, entry_type)` with no threshold —
+    neither its own nor the kind's `"*"` — is never below.
+    """
+
+    mode: AssetConsistencyMode = "off"
+    kinds: list[AssetConsistencyKind] = Field(default_factory=lambda: list(ASSET_CONSISTENCY_KINDS))
+    # `{kind: {entry_type | "*": 0–100}}`; kinds and entry types are checked
+    # below so a typo is a 422, not a threshold that silently never applies.
+    thresholds: dict[str, dict[str, int]] = Field(default_factory=dict)
+    max_image_px: int = Field(default=1024, ge=512, le=2048)
+    # One multi-angle job carries at most 8 camera poses.
+    max_outputs_per_job: int = Field(default=8, ge=1, le=8)
+
+    @field_validator("kinds")
+    @classmethod
+    def _unique_kinds(cls, kinds: list[str]) -> list[str]:
+        return list(dict.fromkeys(kinds))
+
+    @field_validator("thresholds")
+    @classmethod
+    def _known_entry_types(cls, thresholds: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
+        for kind, by_type in thresholds.items():
+            allowed = _CONSISTENCY_ENTRY_TYPES.get(kind)
+            if allowed is None:
+                raise ValueError(f"未知的卡片类型：{kind}。")
+            unknown = sorted(key for key in by_type if key != ANY_ENTRY_TYPE and key not in allowed)
+            if unknown:
+                raise ValueError(f"{kind} 没有这些可打分的图片类型：{'、'.join(unknown)}。")
+            out_of_range = sorted(key for key, value in by_type.items() if not 0 <= value <= 100)
+            if out_of_range:
+                raise ValueError(f"{kind} 的阈值必须在 0–100 之间：{'、'.join(out_of_range)}。")
+        return thresholds
+
+    def threshold_for(self, kind: str, entry_type: str) -> int | None:
+        """The entry type's own threshold, else the kind's `"*"`, else none."""
+        by_type = self.thresholds.get(kind, {})
+        own = by_type.get(entry_type)
+        return own if own is not None else by_type.get(ANY_ENTRY_TYPE)
 
 
 # The six media generation capabilities a provider endpoint may declare,
@@ -1058,6 +1127,7 @@ CONFIG_SCHEMAS: dict[str, type[ConfigSection]] = {
     "skill_moderation": SkillModerationConfig,
     "shortform": ShortformConfig,
     "llm_providers": LlmProviderConfig,
+    "asset_consistency": AssetConsistencyConfig,
 }
 
 
@@ -1151,5 +1221,14 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
     # `.env` for local development; see `app/scripts/seed.py`.
     "llm_providers": {
         "endpoints": {},
+    },
+    # Off until an operator binds a vision endpoint to `vision-consistency`
+    # and switches to `shadow`; thresholds come from P3-5's calibration.
+    "asset_consistency": {
+        "mode": "off",
+        "kinds": list(ASSET_CONSISTENCY_KINDS),
+        "thresholds": {},
+        "max_image_px": 1024,
+        "max_outputs_per_job": 8,
     },
 }
