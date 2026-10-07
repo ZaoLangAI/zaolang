@@ -16,7 +16,7 @@ description: Test system — pytest layers (unit/hypothesis/integration/concurre
 | `back/tests/concurrency/` | real threads + independent connections; `conftest.py` has `race()` / `run_in_parallel()` |
 | `back/tests/conftest.py` | fixtures `db` (rollback), `committed_db` (commit + `truncate_all`), `client`, `author`/`remixer`/`admin`/`reviewer`/`operator`/`catalog_owner`, `make_user`, `fake_media_catalog`; autouse guards |
 | `back/tests/factories.py` | thin builders `make_work` / `make_job` |
-| `back/tests/fake_llm_gateway.py` | deterministic LLM fake |
+| `back/tests/fake_llm_gateway.py` | deterministic LLM fake; the `quality` consistency judge gives every requested dimension `FAKE_CONSISTENCY_SCORE` (monkeypatch it for low scores) |
 | `back/tests/fake_providers.py` | deterministic media providers; injected by `fake_provider_catalog.py` |
 | `back/tests/llm_catalog.py` | `seed_test_llm_catalog` — endpoint + default agent bindings |
 | `back/tests/network_guard.py` | loopback-only network guard |

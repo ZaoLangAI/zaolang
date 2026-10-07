@@ -26,10 +26,16 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.domain.image_assets.consistency import DIMENSION_KEYS_PREFIX
 from app.domain.script_writing.extract import SCRIPT_EXTRACT_MARKER
 from app.llm.client import NO_ENDPOINT_ID, LlmCallResult, StreamChunk, StreamResult
 from app.llm.normalize import NormalizedResponse
 from app.models.enums import AgentName
+
+# What the consistency judge (`quality` / `consistency`) gives every
+# requested dimension. A test that needs a low score, a missing key or an
+# unparseable reply monkeypatches this (or `fake_complete`) for itself.
+FAKE_CONSISTENCY_SCORE = 82
 
 # Deterministic OCR stand-in for `script_source_extract` vision calls.
 FAKE_EXTRACTED_SCRIPT = "第一场 便利店 夜\n林夏：（自语）今天，会是最后一天吗。"
@@ -565,7 +571,19 @@ def _planner_asset_plan(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _consistency(prompt: str) -> dict[str, Any]:
+    line = next(line for line in prompt.splitlines() if line.startswith(DIMENSION_KEYS_PREFIX))
+    keys = [key for key in line.removeprefix(DIMENSION_KEYS_PREFIX).split(",") if key]
+    return {
+        "dimensions": dict.fromkeys(keys, FAKE_CONSISTENCY_SCORE),
+        "issues": [],
+        "notes": "与锚点一致",
+    }
+
+
 def _quality(prompt: str) -> dict[str, Any]:
+    if DIMENSION_KEYS_PREFIX in prompt:
+        return _consistency(prompt)
     failed = "损坏" in prompt or "corrupt" in prompt.lower()
     return {
         "verdict": "fail" if failed else "pass",

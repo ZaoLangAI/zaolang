@@ -29,7 +29,7 @@ from app.agents import (
     quality,
     safety,
 )
-from app.agents.slots import DEFAULT_SLOT
+from app.agents.slots import CONSISTENCY_SLOT, DEFAULT_SLOT
 from app.domain.agent_skills.presets import ASSIST, JUDGMENT, AgentCategory
 
 
@@ -122,6 +122,18 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
         category=JUDGMENT,
         prompt_template=quality.SYSTEM_PROMPT,
         role="quality",
+    ),
+    SkillTemplate(
+        key="quality-consistency",
+        label="质量评估 · 一致性评审",
+        description=(
+            "比对生成图与角色/场景/道具卡锚点，逐维 0–100 打分；"
+            "维度与忽略项由每次调用给出，总分在服务端加权计算。"
+        ),
+        category=JUDGMENT,
+        prompt_template=quality.CONSISTENCY_SYSTEM_PROMPT,
+        role="quality",
+        slot=CONSISTENCY_SLOT,
     ),
     SkillTemplate(
         key="copy-suggest",

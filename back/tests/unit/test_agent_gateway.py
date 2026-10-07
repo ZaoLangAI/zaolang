@@ -1107,7 +1107,7 @@ def test_every_prompt_slot_is_reachable_from_some_agent_call() -> None:
             planner.ASSET_PLAN_SLOT,
             planner.VIDEO_ASSET_PLAN_SLOT,
         },
-        AgentName.QUALITY.value: {"default"},
+        AgentName.QUALITY.value: {"default", agent_slots.CONSISTENCY_SLOT},
         AgentName.COPY.value: {
             copywriter.SUGGEST_SLOT,
             copywriter.ENHANCE_SLOT,
@@ -1664,11 +1664,18 @@ def test_no_capable_endpoint_leaves_the_image_binding_empty(db: Session) -> None
     assert binding.model == ""
 
 
+def _labels_with(db: Session, label: str) -> dict[str, list[str]]:
+    return {
+        profile_id: labels
+        for profile_id, labels in agent_skills_service.image_slot_labels(db).items()
+        if label in labels
+    }
+
+
 def _script_extract_agent(db: Session):  # type: ignore[no-untyped-def]
-    labels = agent_skills_service.image_slot_labels(db)
     copy_default = agent_skills_service.default_profile(db, AgentName.COPY.value)
     assert copy_default is not None
-    assert labels == {copy_default.id: ["剧本识图"]}
+    assert _labels_with(db, "剧本识图") == {copy_default.id: ["剧本识图"]}
     return copy_default
 
 
@@ -1680,7 +1687,7 @@ def test_image_slot_labels_name_the_agent_that_would_send_the_image(db: Session)
     agent_skills_service.update_profile(
         db, bucket.id, default_for_asset_kind=agent_skills_service.COPY_REQUEST_BUCKET
     )
-    assert agent_skills_service.image_slot_labels(db) == {bucket.id: ["剧本识图"]}
+    assert _labels_with(db, "剧本识图") == {bucket.id: ["剧本识图"]}
     assert copy_default.id != bucket.id
 
 
