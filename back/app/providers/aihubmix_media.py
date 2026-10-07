@@ -338,8 +338,8 @@ class AiHubMixMediaProvider(GenerationProvider):
             )
         except httpx.HTTPStatusError as exc:
             # The body (truncated, key redacted) is what names the cause —
-            # `protocol_not_supported`, `schema_violation`, … — a bare status
-            # line hid a weeks-long qwen-image-3.0 outage.
+            # `protocol_not_supported`, `schema_violation`, … — the log used to carry
+            # only the status line, so qwen-image-3.0's 400 went unexplained.
             detail = _http_error_detail(exc, self._creds.api_key)
             logger.warning(
                 "aihubmix %s call failed for job %s (model %s): %s",
