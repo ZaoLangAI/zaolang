@@ -1,6 +1,6 @@
 # 角色 / 场景 / 道具图片资产：P3 一致性打分设计
 
-> 状态：**已批准（2026-10-06），实施中**：P3-0 已实现（`feature/p3-modality-endpoint-selection`，见第 4.5 节），P3-1 起未开始。前置：P2-0 ~ P2-8 已上线；角色库改造 P0–P10 与资产创作 AC-1 ~ AC-10 已合入 `dev` 并上线（`dev` @ `8f95596`）。P2 设计见 [P2 生产线](asset-variants-p2.md)，数据模型见 [P1 设计](asset-variants-p1.md)。
+> 状态：**已批准（2026-10-06），实施中**：P3-0 已合入 `dev` 并上线（2026-10-07，`dev` @ `a287b9c`，见第 4.5 节）；P3-1 已实现（`feature/p3-consistency-judge`，见第 5.7 节）；P3-2 起未开始。前置：P2-0 ~ P2-8 已上线；角色库改造 P0–P10 与资产创作 AC-1 ~ AC-10 已合入 `dev` 并上线（`dev` @ `8f95596`）。P2 设计见 [P2 生产线](asset-variants-p2.md)，数据模型见 [P1 设计](asset-variants-p1.md)。
 >
 > 本文涉及的不变量编号沿用 P1 / P2，另加一项：
 >
@@ -193,6 +193,36 @@ P3-2 存储与配置 ───┴───────────────�
 - JSON 缺键或非法时的降级；
 - 调用失败返回 `failed`；
 - `prepare_image` 的尺寸上限与格式。
+
+### 5.7 实施记录（P3-1，2026-10-07）
+
+与上文设计的出入和补充：
+
+- **常量位置**：`CONSISTENCY_SLOT`、`VISION_CONSISTENCY_AGENT_KEY` 放在 `back/app/agents/slots.py`（`agent_skills.service` 也要用，放在智能体模块里会循环导入）；`CONSISTENCY_SYSTEM_PROMPT` 放在 `back/app/agents/quality.py`。另加后台「从模板填充」用的模板 `quality-consistency`。系统提示词只写通用评审规则；维度、权重、忽略项和 JSON 键都由每次调用的 user 消息给出，运营改提示词不会改掉评分细则。
+- **智能体解析**：`agent_skills.service.resolve_consistency_agent_id` 只在 `vision-consistency` 存在且**启用**时返回它，否则返回 `None`，由 `resolve_prompt` 落到 `quality` 的默认智能体。`image_slot_labels` 用同一个函数：有 `vision-consistency` 时「一致性评审」警告只挂在它上面，默认的元数据质检智能体不再误报；停用它后警告回到默认智能体（因为评审确实会改走那里）。
+- **种子**：`ensure_default_vision_agents` 返回新建数量；`quality` 角色还没有默认智能体时跳过（否则 `create_profile` 会把它提成默认）。只增不改：已存在就不碰绑定和提示词，也不做 copy 智能体那种出厂提示词同步。**生产接入**：生产禁止运行 `app.scripts.seed`，所以 `app.scripts.ensure_catalog`（生产允许的补增脚本）也调用它，返回值新增 `agents` 计数。上线后需要执行一次 `docker compose … exec -T api python -m app.scripts.ensure_catalog`，再到 `/admin/agents` 给「视觉一致性评审」绑定支持图像的端点。
+- **`run_agent(user_content=)`**：`user_content` 是 `user_prompt` 之后追加的片段。`run_agent` 用 `llm_client._required_modalities` 从这条 user 消息推导模态并传给 `effective_binding`，所以视觉调用自动走 P3-0 的兜底与 `NoCapableEndpoint`。`AgentRun.input_json` 多记一个 `user_content`，图片片段只记 `{"type": "image_url", "omitted": true}`，不存 base64。`AgentOutcome` 新增 `endpoint_id`。
+- **`score` 的入参**：`context` 是 `ConsistencyContext(entry_type, variant, params, is_video, job_id, user_id, max_image_px)`。锚点由新函数 `resolve_anchor(card, variant)` 计算（角色：已定稿定妆照，否则卡片锚点；场景 / 道具：`master_or_anchor`；全景一律不算），P3-3 在写回开始时调用一次再传给 `score`。
+- **`ConsistencyResult` 多三个字段**：`error`（`failed` 的原因：`image_unreadable` / `llm_error` / `parse_failed` / `internal_error`，不含上游报错原文）、`degraded`、`agent_run_id`；`as_dict()` 供 P3-2 落库。
+- **维度键**：角色 `face` / `hair` / `body` / `medium` / `outfit`；场景 `layout` / `furnishings` / `material` / `medium`；道具 `silhouette` / `material` / `palette` / `details`。权重用整数百分比；总分 = 加权平均四舍五入（half up）取整，换装去掉 `outfit` 后按剩余权重（85）归一。
+- **忽略项的判定**：
+    - 换装 = 目标造型（`context.variant`）不是锚点所在造型；没传 `variant` 时不算换装。
+    - 场景：目标变体的预设叠加任务参数 `scene_*`，与锚点所在变体的预设逐轴比较；只有一边设了值也算"不同"，该轴写进「不比较」。
+    - 道具：`prop_state`（任务参数优先，否则目标变体预设）与锚点所在变体不同即忽略状态差异。
+    - 表情合集按第 5.4 节处理；**另加**：多分区设定图（`character_sheet`，无论是图 1 还是图 2）也按整张评、忽略分区布局和色板。
+- **跳过顺序**：视频（`context.is_video`，或产出资产 `media_type=video`）→ 全景 → 无锚点（锚点是全景也算）→ 待评图就是锚点。另有 `no_vision_endpoint`（捕获 `NoCapableEndpoint`）。读图失败直接 `failed: image_unreadable`，不调用模型。
+- **解析**：数字字符串和小数也接受（四舍五入），布尔值不算；超出 0–100 的截断；缺键或非数字按 0 分并记 `degraded`，多余的键丢弃；模型自报的总分一律忽略。没有 `dimensions` 对象（含整段非 JSON）记 `failed: parse_failed`。`issues` 最多 5 条、每条最多 60 字（提示词要求 30 字以内）。
+- **采样**：`temperature` 固定 0.0（`JUDGE_TEMPERATURE`，同剧本识图），`max_tokens` 下限 1024。
+- **事务**：`run_agent` 包在 `session.begin_nested()` 里，调用后出错也不会弄坏调用方的事务。这只是数据库 savepoint，不改变第 7.1 节"先打分、后写回"的顺序。
+- **测试假网关**：`tests/fake_llm_gateway.py` 读 user 消息里的 `维度键：` 行，给每个维度返回 `FAKE_CONSISTENCY_SCORE`（82）；要低分或坏回复的测试自行 monkeypatch。
+- 没有接口或表结构变更，不需要 `make openapi`；后台的槽位页签和警告都由接口数据驱动，前端不用改。每个 `quality` 智能体都会多一个「一致性评审」页签，只有 `vision-consistency` 实际被调用。
+- **未处理**（留给 P3-5 校准时再看）：目标造型改了 `age_stage`（如童年造型对成年锚点）时五官分会偏低，目前不放进忽略项；`master_or_anchor` 在目标变体没有主图时直接退到卡片锚点，不先找默认变体的主图（锚点通常就是它）。
+
+**给 P3-2 / P3-3 的说明**
+
+- P3-3 的调用方式：写回开始时 `anchor = resolve_anchor(card, target_variant)`；每张产出 `score(session, card=card, anchor_entry=anchor, output_asset_id=…, context=ConsistencyContext(entry_type=…, variant=target_variant, params=ctx.params, job_id=…, user_id=…, max_image_px=config.max_image_px))`；视频任务传 `is_video=True`。`score` 不抛异常，每次至多一次 LLM 调用，读图在调用前完成。
+- `consistency_json` 可以直接从 `result.as_dict()` 取 `status` / `score` / `dimensions` / `issues` / `anchor_*` / `model` / `rubric_version` / `skip_reason`，再加 `v`、`threshold`、`below`、`mode`、`demoted`、`scored_at`。`error` / `degraded` / `agent_run_id` 是否落库由 P3-2 决定（`agent_run_id` 便于从后台调用记录回查）。
+- `AgentRun.job_id` 来自 `context.job_id`，`prompt_slot="consistency"`，费用在 `cost_micro_usd`。
 
 ## 6. P3-2 存储与配置
 

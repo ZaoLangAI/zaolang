@@ -88,6 +88,7 @@ def test_ensure_catalog_does_not_rotate_an_existing_studio_password(
         "skills": 0,
         "learn_posts": 0,
         "workflow_templates": 0,
+        "agents": 0,
     }
 
 

@@ -37,6 +37,8 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.agents import copywriter as copywriter_agent
+from app.agents import quality as quality_agent
+from app.agents.slots import CONSISTENCY_SLOT, VISION_CONSISTENCY_AGENT_KEY
 from app.config import get_settings
 from app.db import session_scope
 from app.domain.agent_skills import service as agent_skills_service
@@ -287,6 +289,7 @@ def run(*, reset: bool = False) -> dict[str, int]:
         agent_skills_service.ensure_default_profiles(session)
         ensure_default_copy_request_agent(session)
         ensure_default_enhance_asset_agents(session)
+        ensure_default_vision_agents(session)
         workflow_templates_service.ensure_default_templates(session)
         _seed_llm_providers(session)
         _seed_editor_flags(session)
@@ -442,6 +445,48 @@ def ensure_default_enhance_asset_agents(session: Session) -> None:
             reason=f"seed: {bucket} 资产的润色专属智能体",
         )
     sync_seeded_copy_agent_prompts(session)
+
+
+def ensure_default_vision_agents(session: Session) -> int:
+    """Gives the image-consistency judge (P3-1) its own `quality` agent.
+
+    Idempotent and additive, like `ensure_default_enhance_asset_agents`:
+    once `vision-consistency` exists nothing about it is touched, so an
+    operator's binding and prompt edits survive every re-run. (A deleted one
+    comes back on the next run; disable it instead to send the judge to the
+    role default.) The agent publishes
+    `quality.CONSISTENCY_SYSTEM_PROMPT` to the `consistency` slot. It never
+    becomes the role default (the metadata QC agent stays that), so a
+    database whose `quality` role has no default yet is skipped until
+    `ensure_default_profiles` has run. Also called by the production-safe
+    `app.scripts.ensure_catalog`. Returns how many agents it created.
+    """
+    if agent_skills_service.find_profile(session, "quality", VISION_CONSISTENCY_AGENT_KEY):
+        return 0
+    if agent_skills_service.default_profile(session, "quality") is None:
+        logger.warning("vision agent not seeded: the quality role has no default agent yet")
+        return 0
+    profile = agent_skills_service.create_profile(
+        session,
+        role="quality",
+        key=VISION_CONSISTENCY_AGENT_KEY,
+        display_name="视觉一致性评审",
+        description=(
+            "比对角色/场景/道具卡的生成图与锚点并打分。需要绑定支持图像输入的端点；"
+            "元数据质检仍走质量评估的默认智能体。"
+        ),
+        operations=[],
+    )
+    agent_skills_service.publish(
+        session,
+        profile_id=profile.id,
+        slot=CONSISTENCY_SLOT,
+        prompt_template=quality_agent.CONSISTENCY_SYSTEM_PROMPT,
+        tool_grants=[],
+        actor_user_id=None,
+        reason="seed: 视觉一致性评审智能体",
+    )
+    return 1
 
 
 # First sentences of every factory draft we have shipped for these agents.

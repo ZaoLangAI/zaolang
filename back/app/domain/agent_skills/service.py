@@ -29,7 +29,13 @@ from typing import Any
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.agents.slots import DEFAULT_SLOT, IMAGE_INPUT_SLOTS, is_known_slot
+from app.agents.slots import (
+    CONSISTENCY_SLOT,
+    DEFAULT_SLOT,
+    IMAGE_INPUT_SLOTS,
+    VISION_CONSISTENCY_AGENT_KEY,
+    is_known_slot,
+)
 from app.domain.agent_skills import presets
 from app.domain.errors import NotFound, ValidationFailed
 from app.models import AgentNode, AgentProfile, AgentSkill
@@ -440,17 +446,36 @@ def resolve_copy_agent_id(
     return copy_default.id if copy_default is not None else None
 
 
+def resolve_consistency_agent_id(session: Session) -> str | None:
+    """Which `quality` agent runs the image-consistency judge.
+
+    The seeded `vision-consistency` agent while it exists and is enabled;
+    `None` otherwise, which lets `resolve_prompt` fall through to the role's
+    `is_default` agent (the metadata QC one).
+    """
+    profile = find_profile(session, "quality", VISION_CONSISTENCY_AGENT_KEY)
+    return profile.id if profile is not None and profile.enabled else None
+
+
+def _image_call_agent_id(session: Session, role: str, slot: str) -> str | None:
+    if role == ASSET_KIND_AGENT_ROLE:
+        return resolve_copy_agent_id(session)
+    if (role, slot) == ("quality", CONSISTENCY_SLOT):
+        return resolve_consistency_agent_id(session)
+    return None
+
+
 def image_slot_labels(session: Session) -> dict[str, list[str]]:
     """Which agent currently serves each image-input call, keyed by profile id.
 
     Resolved the way the call itself resolves its agent (the copy request
-    bucket, then the role default — `resolve_prompt`), so the console warns
-    on the agent that would actually send the image, not on every agent
-    that shares its role.
+    bucket, `vision-consistency`, then the role default — `resolve_prompt`),
+    so the console warns on the agent that would actually send the image,
+    not on every agent that shares its role.
     """
     labels: dict[str, list[str]] = {}
     for (role, slot), label in IMAGE_INPUT_SLOTS.items():
-        agent_id = resolve_copy_agent_id(session) if role == ASSET_KIND_AGENT_ROLE else None
+        agent_id = _image_call_agent_id(session, role, slot)
         profile = resolve_prompt(session, role, "", agent_id=agent_id, slot=slot).profile
         if profile is not None:
             labels.setdefault(profile.id, []).append(label)

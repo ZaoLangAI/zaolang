@@ -27,14 +27,21 @@ DEFAULT_SLOT = "default"
 # prompt is a code constant, never published from the console.
 SCRIPT_EXTRACT_SLOT = "script_extract"
 
+# `quality`'s vision call (P3-1): compares a generated card image with the
+# card's anchor (`app.domain.image_assets.consistency`). It runs on the
+# dedicated `vision-consistency` agent when that exists, so an operator can
+# bind a vision endpoint there and leave metadata QC on a cheap text model.
+CONSISTENCY_SLOT = "consistency"
+VISION_CONSISTENCY_AGENT_KEY = "vision-consistency"
+
 # `(role, slot)` pairs whose calls send image parts, so their agent needs an
 # endpoint whose `input_modalities` include `"image"` — mapped to how the
 # console names the call. Routing does not read this (`llm_client` derives
 # modalities from the messages themselves); it only drives the binding
 # `warnings` on `/admin/agents` (`agent_skills.service.image_slot_labels`).
-# P3-1 adds `("quality", "consistency")` together with that slot.
 IMAGE_INPUT_SLOTS: dict[tuple[str, str], str] = {
     (AgentName.COPY.value, SCRIPT_EXTRACT_SLOT): "剧本识图",
+    (AgentName.QUALITY.value, CONSISTENCY_SLOT): "一致性评审",
 }
 
 
@@ -65,6 +72,11 @@ PROMPT_SLOTS: dict[str, tuple[PromptSlot, ...]] = {
     ),
     AgentName.QUALITY.value: (
         PromptSlot(DEFAULT_SLOT, "质量评估", "判断生成结果是否达标、是否值得重试。"),
+        PromptSlot(
+            CONSISTENCY_SLOT,
+            "一致性评审",
+            "比对生成图与角色/场景/道具卡锚点的一致程度并打分。",
+        ),
     ),
     AgentName.CANVAS_PLANNER.value: (
         PromptSlot(

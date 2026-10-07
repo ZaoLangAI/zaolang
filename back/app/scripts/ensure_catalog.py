@@ -4,7 +4,8 @@
 the allowed production path: it never resets tables, never plants demo
 accounts, and never overwrites an existing `zaolang_studio` password. It also
 publishes any missing default workflow template, so a new library kind gets
-its graph on an existing database.
+its graph on an existing database, and plants any missing seeded agent that
+a feature needs to run (the `vision-consistency` judge, P3-1).
 
 Matched by `(owner, title)` inside `ensure_catalog_skills` /
 `ensure_catalog_posts`, so an operator edit to a previously planted row
@@ -28,6 +29,7 @@ from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import GenerationWorkflowTemplate, Profile, User
 from app.models.base import utcnow
 from app.models.enums import Locale, Region, ThemePreference, UserRole, UserStatus
+from app.scripts.seed import ensure_default_vision_agents
 from app.security.passwords import hash_password
 from app.storage import s3
 
@@ -57,13 +59,15 @@ def _plant(session: Session) -> dict[str, int]:
     skills = skill_library_service.ensure_catalog_skills(session, owner_user_id=owner.id)
     posts = learning_service.ensure_catalog_posts(session, author_user_id=owner.id)
     templates = _ensure_workflow_templates(session)
+    agents = ensure_default_vision_agents(session)
     logger.info(
         "catalog backfill: studio_created=%s skills=%s learn_posts=%s "
-        "workflow_templates=%s owner=%s",
+        "workflow_templates=%s agents=%s owner=%s",
         created,
         len(skills),
         len(posts),
         templates,
+        agents,
         owner.id,
     )
     return {
@@ -71,6 +75,7 @@ def _plant(session: Session) -> dict[str, int]:
         "skills": len(skills),
         "learn_posts": len(posts),
         "workflow_templates": templates,
+        "agents": agents,
     }
 
 

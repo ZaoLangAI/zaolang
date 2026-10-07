@@ -53,6 +53,8 @@ class AgentOutcome:
     model: str
     agent_run_id: str
     thinking: str = ""
+    # The catalog endpoint that served the call (`AgentRun.endpoint_id`).
+    endpoint_id: str = ""
 
 
 @dataclass(slots=True, frozen=True)
@@ -309,6 +311,21 @@ def _record_agent_run(
     return run
 
 
+def _run_input_json(
+    system_prompt: str, user_prompt: str, user_content: list[dict[str, Any]] | None
+) -> dict[str, Any]:
+    """What `AgentRun.input_json` keeps of one turn. Media parts are recorded
+    by type only: an inline base64 image would bloat the row and is not
+    something the invocation list can show anyway."""
+    payload: dict[str, Any] = {"system_prompt": system_prompt, "user_prompt": user_prompt}
+    if user_content:
+        payload["user_content"] = [
+            part if part.get("type") == "text" else {"type": part.get("type"), "omitted": True}
+            for part in user_content
+        ]
+    return payload
+
+
 def run_agent(
     session: Session,
     *,
@@ -323,6 +340,7 @@ def run_agent(
     max_tokens: int | None = None,
     temperature: float | None = None,
     on_chunk: Callable[[llm_client.StreamChunk], None] | None = None,
+    user_content: list[dict[str, Any]] | None = None,
 ) -> AgentOutcome:
     """Runs one agent turn and always returns usable structured data.
 
@@ -351,21 +369,36 @@ def run_agent(
     outside the graph, which gets the role's default), and `slot` picks
     between the several system prompts one role may own — a role with two
     prompts must never resolve them by role alone.
+
+    `user_content` makes the user turn multimodal: `user_prompt` becomes its
+    first text part, followed by these parts (`{"type": "image_url", ...}`).
+    The binding is then resolved for the modalities those parts need, so a
+    text-only pin falls back to the capable pool and a pool with no capable
+    endpoint raises `NoCapableEndpoint` from `llm_client.complete`. The
+    `AgentRun` records the text and a placeholder per media part, never the
+    inline image bytes.
     """
     resolved = agent_skills_service.resolve_prompt(
         session, agent_name, system_prompt, agent_id=agent_id, slot=slot
     )
     profile = resolved.profile
     profile_id = profile.id if profile is not None else None
-    binding = effective_binding(session, agent_name, profile)
+    user_message: dict[str, Any] = (
+        {"role": "user", "content": [{"type": "text", "text": user_prompt}, *user_content]}
+        if user_content
+        else {"role": "user", "content": user_prompt}
+    )
+    binding = effective_binding(
+        session,
+        agent_name,
+        profile,
+        required_modalities=llm_client._required_modalities([user_message]),
+    )
     result = llm_client.complete(
         session=session,
         agent_name=agent_name,
         model=binding.model or "",
-        messages=[
-            {"role": "system", "content": resolved.text},
-            {"role": "user", "content": user_prompt},
-        ],
+        messages=[{"role": "system", "content": resolved.text}, user_message],
         max_tokens=(
             max(max_tokens, binding.max_tokens) if max_tokens is not None else binding.max_tokens
         ),
@@ -401,7 +434,7 @@ def run_agent(
         completion_tokens=result.response.completion_tokens,
         latency_ms=result.latency_ms,
         endpoint_id=result.endpoint_id,
-        input_json={"system_prompt": resolved.text, "user_prompt": user_prompt},
+        input_json=_run_input_json(resolved.text, user_prompt, user_content),
         output_json=data,
         thinking_text=result.thinking,
     )
@@ -413,6 +446,7 @@ def run_agent(
         model=run.model or binding.model or "",
         agent_run_id=run.id,
         thinking=result.thinking,
+        endpoint_id=result.endpoint_id,
     )
 
 
