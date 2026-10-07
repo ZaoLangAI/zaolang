@@ -626,6 +626,10 @@ def _build_seedream_body(request: GenerationRequest) -> dict[str, Any]:
         "model": SEEDREAM_5_PRO_MODEL,
         "input": request.prompt,
         "output_format": "png",
+        # Vendor default is `true`: a visible 「AI生成」 mark bottom-right
+        # (doc.dmxapi.cn Seedream 5.0 Pro text/image-to-image pages, top-level
+        # boolean). Off for user output, as AiHubMix's Qwen edit already is.
+        "watermark": False,
     }
     image_refs = _image_reference_urls(request)
     if request.output_count > 1:

@@ -318,6 +318,24 @@ def test_seedream_text_to_image_body() -> None:
     assert body["size"] == "1424x800"  # 16:9 at the default (non-cinematic) 1K tier
 
 
+def test_seedream_body_turns_the_vendor_watermark_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Seedream's `watermark` defaults to true (a visible 「AI生成」 bottom-right).
+    monkeypatch.setattr(s3, "presign_get", lambda key, **kwargs: f"https://signed.invalid/{key}")
+    single = _build_seedream_body(_request(Operation.TEXT_TO_IMAGE.value))
+    with_refs = _build_seedream_body(
+        _request(
+            Operation.IMAGE_TO_IMAGE.value,
+            references=[
+                ProviderReference(object_key="a.png", media_type="image"),
+                ProviderReference(object_key="b.png", media_type="image"),
+            ],
+        )
+    )
+    group = _build_seedream_body(_request(Operation.TEXT_TO_IMAGE.value, output_count=3))
+    for body in (single, with_refs, group):
+        assert body["watermark"] is False
+
+
 def test_seedream_cinematic_tier_uses_2k_pixel_size() -> None:
     body = _build_seedream_body(_request(Operation.TEXT_TO_IMAGE.value, quality_tier="cinematic"))
     assert body["size"] == "2816x1584"
