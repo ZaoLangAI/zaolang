@@ -1378,8 +1378,8 @@ def test_qwen_image_3_unfinished_task_past_the_timeout_is_a_temporary_failure(
 def test_a_legacy_protocol_rejection_retries_once_on_the_ai_v1_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A model AiHubMix migrates later must not silently fail for weeks the
-    way qwen-image-3.0 did: the documented rejection switches protocols."""
+    """A model AiHubMix migrates later must not fail every call the way
+    qwen-image-3.0 did on `/v1`: the documented rejection switches protocols."""
     b64 = _png_b64()
     posts: list[tuple[str, dict[str, object]]] = []
 
