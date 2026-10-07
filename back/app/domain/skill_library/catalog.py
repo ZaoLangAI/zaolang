@@ -369,6 +369,9 @@ COVERS_PENDING: frozenset[str] = frozenset(
         "drama-scene-locked-room-opened",
         "drama-scene-followed-at-night",
         "drama-scene-midnight-message",
+        "drama-scene-shot-reverse-dialogue",
+        "drama-scene-variety-obstacle-live",
+        "drama-scene-physical-impact",
         "drama-emotion-held-back",
         "drama-emotion-outburst",
         "drama-emotion-feigned-weakness",
@@ -399,6 +402,8 @@ COVERS_PENDING: frozenset[str] = frozenset(
         "drama-emotion-nostalgia",
         "drama-emotion-dread-waiting",
         "drama-emotion-numb-acceptance",
+        "drama-emotion-laugh-breaks-through",
+        "drama-emotion-torn-two-impulses",
     }
 )
 
@@ -3552,6 +3557,56 @@ CATALOG: tuple[CatalogSkill, ...] = (
         ),
     ),
     CatalogSkill(
+        key="drama-scene-shot-reverse-dialogue",
+        title="两人对坐长谈·正反打守住一条线",
+        description=(
+            "两个人隔着桌子说一场决定关系走向的话。四拍——带两人和桌面的建立镜头"
+            "交代谁坐左谁坐右、说话人的单人镜头、切到听的人停够一两秒、听者的回应。"
+            "所有单人镜头的机位都留在两人连线的同一侧，视线一个朝左一个朝右；最重的"
+            "那一拍往往是听完之后的沉默。"
+        ),
+        category=CreationSkillCategory.DRAMA,
+        prompt_suffix=(
+            "two people across a table, one establishing shot fixing who sits left "
+            "and who sits right, then clean singles from the same side of the line, "
+            "eyelines meeting left and right, a cut to the listener after each heavy "
+            "line and a held beat before the reply"
+        ),
+    ),
+    CatalogSkill(
+        key="drama-scene-variety-obstacle-live",
+        title="闯关综艺直播·每个机位只看一件事",
+        description=(
+            "水上或户外闯关节目的直播式拍法，每个机位只承担一个用途。四拍——高位全景"
+            "交代赛道走向和下一道关卡、长焦盯住起跳前的准备、侧向跟拍奔跑与起跳、"
+            "低机位贴近水面拍落水溅起的水花。切换落在动作节点上，解说和欢呼跟在画面"
+            "里的事件之后响起。"
+        ),
+        category=CreationSkillCategory.DRAMA,
+        prompt_suffix=(
+            "live obstacle-course coverage, a high wide showing the course and the "
+            "next obstacle, a long lens on the run-up, a side tracking shot on the "
+            "sprint, a low camera at the waterline for the splash, cuts landing on "
+            "each jump and landing, commentary and cheers reacting after each event"
+        ),
+    ),
+    CatalogSkill(
+        key="drama-scene-physical-impact",
+        title="失足跌落·先有原因再有落地",
+        description=(
+            "滑倒、被撞、从台阶上踩空，可信来自顺序。四拍——先让观众看见原因（湿滑的"
+            "地面、迎面冲来的人、松动的台阶）、接触的那一下和受力方向、身体顺着力的"
+            "方向倒下而手本能地撑地、停在倒地后的新状态里，喘息和疼痛留够时间。"
+        ),
+        category=CreationSkillCategory.DRAMA,
+        prompt_suffix=(
+            "a fall built in causal order, the slick floor or loose step shown "
+            "first, the moment of contact, the body following the direction of the "
+            "force, a hand thrown out to catch the ground, then a held beat on the "
+            "new position with breath and pain"
+        ),
+    ),
+    CatalogSkill(
         key="drama-emotion-held-back",
         title="隐忍·全身都在用力不哭",
         description=(
@@ -4020,6 +4075,37 @@ CATALOG: tuple[CatalogSkill, ...] = (
             "bad news met with a response too flat for it, one short nod, a quiet "
             "acknowledgement, the interrupted task simply picked back up, leaving the "
             "wrongness for the audience to notice"
+        ),
+    ),
+    CatalogSkill(
+        key="drama-emotion-laugh-breaks-through",
+        title="憋笑破功·越忍越忍不住",
+        description=(
+            "不该笑的场合偏偏想笑。笑要先被压住：嘴角绷紧、低头、咬住下唇，肩膀"
+            "开始轻轻抖；然后某个小刺激让它破功，笑声漏出来；收住时不是一键归零，"
+            "还留着喘息、抹眼角和一两下余震。三拍——压、破、收。"
+        ),
+        category=CreationSkillCategory.DRAMA,
+        prompt_suffix=(
+            "laughter held down first, lips pressed tight, head dipping, shoulders "
+            "starting to shake, a small trigger breaking it open, then a slow "
+            "recovery with leftover breath, a wiped eye and one last aftershock"
+        ),
+    ),
+    CatalogSkill(
+        key="drama-emotion-torn-two-impulses",
+        title="两难·手松开又握紧",
+        description=(
+            "心里有两个方向在拉扯，用一个身体动作同时演出来：握着行李箱拉杆的手"
+            "松开又重新握紧，往前迈了半步又退回原地，张嘴要答应、视线一垂换了"
+            "另一句话。三拍——伸出、迟疑、收回。证据是动作做到一半被收回，而不是"
+            "脸上同时挂两种表情。"
+        ),
+        category=CreationSkillCategory.DRAMA,
+        prompt_suffix=(
+            "two impulses shown in one body, a hand loosening on a suitcase handle "
+            "and gripping it again, half a step forward and back to the same spot, "
+            "lips parting to agree before the gaze drops and a different answer comes"
         ),
     ),
     # ---------------------------------------------------------------- 图片风格 image style
