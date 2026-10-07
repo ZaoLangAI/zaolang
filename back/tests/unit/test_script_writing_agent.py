@@ -461,6 +461,9 @@ def test_the_short_drama_craft_rules_reach_both_turns() -> None:
     assert "主要角色控制在 3 人以内" in rules
     assert "双人不要左右并排" in rules
     assert "优先中近景与特写" in rules
+    assert "刺激 → 一瞬停顿 → 下意识反应" in rules
+    assert "给听的人一个反应镜头" in rules
+    assert "守住同一条轴线" in rules
 
     assert rules in copywriter.SCRIPT_DRAFT_SYSTEM_PROMPT
     assert rules in copywriter.SCRIPT_REVISE_SYSTEM_PROMPT

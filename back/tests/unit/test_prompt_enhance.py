@@ -784,6 +784,38 @@ def test_every_video_coach_carries_the_same_detail_and_continuity_budget() -> No
     )
 
 
+def test_coaches_with_people_in_frame_carry_the_reaction_and_causality_rules() -> None:
+    """A prompt that names only the end state ("她哭了", "他摔倒了") gets an
+    emotion switched on like a light and a body reacting before the impact.
+    The rules ride the video coaches that put people on screen; a transition
+    is an empty plate, and `_ENHANCE_CONTRACT` is shared with the image
+    coaches, where a reaction chain means nothing."""
+    rules = copywriter._VIDEO_PERFORMANCE_RULES
+    assert "刺激" in rules and "下意识反应" in rules and "余韵" in rules
+    assert "起因 → 接近 → 接触 → 受力方向" in rules
+    assert "给听的人留镜头" in rules
+
+    for prompt in (
+        copywriter.ENHANCE_SYSTEM_PROMPT,
+        copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION,
+    ):
+        assert rules in prompt
+    for prompt in (
+        copywriter.ENHANCE_SYSTEM_PROMPT_TRANSITION_VIDEO,
+        *copywriter._ENHANCE_SYSTEM_PROMPTS.values(),
+    ):
+        assert rules not in prompt
+    assert rules not in copywriter._ENHANCE_CONTRACT
+
+
+def test_video_only_mutually_exclusive_pairs_stay_out_of_the_image_coaches() -> None:
+    detail = copywriter._ENHANCE_VIDEO_DETAIL_RULES
+    assert "一镜到底与切镜" in detail and "两人不同框" in detail
+    assert "每秒 3 到 4 个字" in detail
+    assert "一镜到底" not in copywriter._ENHANCE_CONTRACT
+    assert "一镜到底" not in copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER
+
+
 def test_the_enhance_contract_frames_reference_skills_as_reference_only() -> None:
     """`reference_skills` is the one payload field the model must *not* copy
     from. `applied_format_skills` is appended verbatim by Python after the
