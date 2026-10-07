@@ -416,6 +416,13 @@ function AgentCard({
         </p>
       ) : null}
 
+      {/* A vision call bound to text-only endpoints: advisory, from the API. */}
+      {(profile.warnings ?? []).map((warning) => (
+        <p key={warning} className="text-[11px] text-amber">
+          {warning}
+        </p>
+      ))}
+
       {actionError ? <ErrorNotice title={actionError} /> : null}
 
       <div className="mt-auto flex items-center gap-1.5 border-t border-border pt-2">

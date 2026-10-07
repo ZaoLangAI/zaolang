@@ -23,7 +23,7 @@ from typing import Any, Literal
 from openai import BadRequestError, OpenAI, OpenAIError
 from sqlalchemy.orm import Session
 
-from app.domain.errors import ProviderTemporaryFailure
+from app.domain.errors import NoCapableEndpoint, ProviderTemporaryFailure
 from app.llm import capabilities, failover
 from app.llm.normalize import (
     NormalizedResponse,
@@ -161,9 +161,43 @@ def reset_client_cache() -> None:
 
 
 # A chat message. `content` is usually a string; script-source image
-# extract sends an OpenAI-style list of text / image_url parts. Failover
-# and timing are unchanged — only the type is widened.
+# extract sends an OpenAI-style list of text / image_url parts. Such parts
+# narrow failover to endpoints that declare the modality (see
+# `_required_modalities`); timing is unchanged.
 LlmMessage = dict[str, Any]
+
+# Which `input_modalities` value an OpenAI-style content part needs.
+_PART_MODALITIES: dict[str, str] = {"image_url": "image", "video_url": "video"}
+
+# Flat prompt-size charge per image part. The real count depends on the
+# provider's tiling and the image size, neither of which is known here; a
+# ~1k-pixel image lands near this on the common VLMs, and counting nothing
+# (the old behaviour) let `output_budget` promise context the image had
+# already used.
+IMAGE_PART_TOKEN_ESTIMATE = 1024
+
+
+def _content_parts(messages: list[LlmMessage]) -> Iterator[dict[str, Any]]:
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict):
+                    yield part
+
+
+def _required_modalities(messages: list[LlmMessage]) -> frozenset[str]:
+    """Input modalities beyond text that `messages` carry.
+
+    Derived from the parts themselves rather than a new call argument, so a
+    caller that sends an `image_url` part (script image extract) is routed
+    to image-capable endpoints without changing how it calls `complete()`.
+    """
+    return frozenset(
+        _PART_MODALITIES[part_type]
+        for part in _content_parts(messages)
+        if (part_type := part.get("type")) in _PART_MODALITIES
+    )
 
 
 def _content_char_len(content: object) -> int:
@@ -187,7 +221,29 @@ def _prompt_tokens(messages: list[LlmMessage]) -> int:
     `complete()` and `stream_complete()` use the same estimate to decide
     how much of `endpoint.context_length` is left for the completion.
     """
-    return sum(_content_char_len(m.get("content")) for m in messages) // 4
+    text_tokens = sum(_content_char_len(m.get("content")) for m in messages) // 4
+    image_parts = sum(1 for part in _content_parts(messages) if part.get("type") == "image_url")
+    return text_tokens + image_parts * IMAGE_PART_TOKEN_ESTIMATE
+
+
+def _check_capable(
+    config: LlmProviderConfig, preferred_ids: Sequence[str], required: frozenset[str]
+) -> None:
+    """Raises `NoCapableEndpoint` when no configured endpoint this call may
+    use can read `required` — health and capacity aside, so a busy image
+    endpoint still waits rather than reporting "none configured".
+
+    `app.agents.base.effective_binding` already re-routes a binding whose
+    endpoints all lack the modality to the capable shared pool; reaching the
+    second branch means a caller pinned endpoints without going through it.
+    """
+    if not required:
+        return
+    capable = failover.general_candidates(config, required_modalities=required)
+    if not capable:
+        raise NoCapableEndpoint(required)
+    if preferred_ids and not {endpoint_id for endpoint_id, _ in capable} & set(preferred_ids):
+        raise NoCapableEndpoint(required)
 
 
 _chunk_sink: ContextVar[Callable[[StreamChunk], None] | None] = ContextVar(
@@ -246,6 +302,10 @@ def complete(
     thinking/content as they arrive; once a chunk has been handed over,
     failover and transport retry both stop.
 
+    Messages carrying `image_url` / `video_url` parts only go to endpoints
+    whose `input_modalities` declare that modality; when none is configured
+    the call raises `NoCapableEndpoint` instead of trying a text-only model.
+
     Raises `ProviderTemporaryFailure` (never returns a fabricated result) when
     no model is bound, no endpoint is configured, or every eligible endpoint's
     call failed — the caller (an operator, or a job's own retry) needs an
@@ -254,15 +314,22 @@ def complete(
     started = time.perf_counter()
     chosen = (model or "").strip()
     prompt_tokens = _prompt_tokens(messages)
+    required = _required_modalities(messages)
     handler = on_chunk or _chunk_sink.get()
+
+    provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
+    # Before the model check: a vision call with no capable endpoint gets an
+    # empty binding, and "no image endpoint" is the message that is true.
+    _check_capable(provider_config, preferred_endpoint_ids, required)
 
     if not chosen:
         raise ProviderTemporaryFailure(f"智能体「{agent_name}」尚未在后台配置模型，无法调用。")
 
-    provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
-    endpoints = failover.eligible_candidates(provider_config, preferred_ids=preferred_endpoint_ids)
+    endpoints = failover.eligible_candidates(
+        provider_config, preferred_ids=preferred_endpoint_ids, required_modalities=required
+    )
     if not endpoints:
-        endpoints = _wait_for_capacity(provider_config, preferred_endpoint_ids)
+        endpoints = _wait_for_capacity(provider_config, preferred_endpoint_ids, required)
 
     last_error: Exception | None = None
     tried_endpoint = False
@@ -313,7 +380,9 @@ def complete(
         # candidate is breaker-open/at capacity). There is no env-level
         # endpoint to fall back to any more — an operator has to configure one
         # at `/admin/models`.
-        if failover.saturated_candidates(provider_config, preferred_ids=preferred_endpoint_ids):
+        if failover.saturated_candidates(
+            provider_config, preferred_ids=preferred_endpoint_ids, required_modalities=required
+        ):
             raise ProviderTemporaryFailure("LLM 网关繁忙（并发已满），请稍后重试。")
         raise ProviderTemporaryFailure("未配置任何可用的 LLM 网关端点。")
 
@@ -322,20 +391,30 @@ def complete(
 
 
 def _wait_for_capacity(
-    config: LlmProviderConfig, preferred_ids: Sequence[str]
+    config: LlmProviderConfig,
+    preferred_ids: Sequence[str],
+    required_modalities: frozenset[str] = frozenset(),
 ) -> list[tuple[str, LlmProviderEndpoint]]:
     """Waits up to `CAPACITY_WAIT_SECONDS` for a slot on a healthy endpoint
     that is only busy. Returns at once (empty) when nothing is merely busy —
     an empty pool or open breakers will not heal by waiting here."""
     deadline = time.monotonic() + CAPACITY_WAIT_SECONDS
-    while failover.saturated_candidates(config, preferred_ids=preferred_ids):
+
+    def eligible() -> list[tuple[str, LlmProviderEndpoint]]:
+        return failover.eligible_candidates(
+            config, preferred_ids=preferred_ids, required_modalities=required_modalities
+        )
+
+    while failover.saturated_candidates(
+        config, preferred_ids=preferred_ids, required_modalities=required_modalities
+    ):
         if time.monotonic() >= deadline:
             return []
         time.sleep(random.uniform(*CAPACITY_POLL_SECONDS))
-        endpoints = failover.eligible_candidates(config, preferred_ids=preferred_ids)
+        endpoints = eligible()
         if endpoints:
             return endpoints
-    return failover.eligible_candidates(config, preferred_ids=preferred_ids)
+    return eligible()
 
 
 def _attempt_endpoint(
@@ -688,6 +767,8 @@ def stream_complete(
     connection that fails before yielding anything still moves on to the
     next candidate, same as `complete()`.
 
+    Input-modality routing and `NoCapableEndpoint` work as in `complete()`.
+
     Raises `ProviderTemporaryFailure` under the same conditions `complete()`
     does — no model bound, no endpoint configured, or every candidate failed
     before yielding anything — rather than ever yielding fabricated text.
@@ -695,15 +776,18 @@ def stream_complete(
     started = time.perf_counter()
     chosen = (model or "").strip()
     prompt_tokens = _prompt_tokens(messages)
+    required = _required_modalities(messages)
+
+    provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
+    _check_capable(provider_config, preferred_endpoint_ids, required)
 
     if not chosen:
         raise ProviderTemporaryFailure(f"智能体「{agent_name}」尚未在后台配置模型，无法调用。")
 
-    provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
     endpoints = [
         (endpoint_id, endpoint)
         for endpoint_id, endpoint in failover.eligible_candidates(
-            provider_config, preferred_ids=preferred_endpoint_ids
+            provider_config, preferred_ids=preferred_endpoint_ids, required_modalities=required
         )
         if endpoint.model
     ]

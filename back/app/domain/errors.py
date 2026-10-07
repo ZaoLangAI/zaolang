@@ -121,6 +121,28 @@ class ProviderTemporaryFailure(DomainError):
     default_message = "生成服务暂时不可用，请稍后重试。"
 
 
+# How each non-text `LlmProviderEndpoint.input_modalities` value reads in a
+# user-facing message.
+INPUT_MODALITY_LABELS: dict[str, str] = {"image": "图像", "video": "视频"}
+
+
+class NoCapableEndpoint(ProviderTemporaryFailure):
+    """No enabled general LLM endpoint declares every input modality a
+    request carries (an `image_url` part needs `"image"`).
+
+    Raised instead of sending the request to a text-only model and waiting
+    for the upstream to reject it. A `ProviderTemporaryFailure` subclass, so
+    existing handling (HTTP 503, same error code, job-level retry) applies
+    unchanged; a caller that should skip rather than fail — consistency
+    scoring — catches this type on its own.
+    """
+
+    def __init__(self, modalities: frozenset[str] | set[str]) -> None:
+        labels = "、".join(INPUT_MODALITY_LABELS.get(m, m) for m in sorted(modalities))
+        super().__init__(f"未配置支持{labels}输入的端点。")
+        self.modalities = frozenset(modalities)
+
+
 class ValidationFailed(DomainError):
     code = "VALIDATION_FAILED"
     http_status = 422

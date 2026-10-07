@@ -6805,6 +6805,8 @@ export interface components {
             reasoning_model?: boolean | null;
             /** Used By Operations */
             used_by_operations?: string[];
+            /** Warnings */
+            warnings?: string[];
             /**
              * Created At
              * Format: date-time

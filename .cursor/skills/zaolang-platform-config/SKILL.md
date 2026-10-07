@@ -38,7 +38,8 @@ Not here → `zaolang-agent-gateway` (providers, routing), `zaolang-admin-consol
 12. Vendor prices are per `(vendor, model)`, never shared across vendors for one upstream model; vendors = `VENDOR_IDS` (aihubmix/dmxapi/metaso/fal); an entry with `price_items` needs an entry-level `pricing_doc_url`; DMXAPI items carry `markup_note`, Metaso's don't. `back/tests/unit/test_model_catalog.py`
 13. Catalog prices pre-fill only when an operator picks a model; reopening never overwrites saved prices.
 14. `billing_profile` is metadata; only `SEEDANCE_TOKENS_BILLING_PROFILE` changes cost math.
-15. No routing-weight config — provider choice is the LLM's (see `zaolang-agent-gateway` › routing). `AgentModelBinding` in `schemas.py` is dead; don't wire it up.
+15. `kind="general"` `input_modalities` (`text` always injected) are routing filters, not labels: an `image_url` request only fails over among endpoints that list `image` (`zaolang-agent-gateway` › invariant 20). Production needs at least two image-capable general endpoints for a vision backup.
+16. No routing-weight config — provider choice is the LLM's (see `zaolang-agent-gateway` › routing). `AgentModelBinding` in `schemas.py` is dead; don't wire it up.
 
 ## Recipes
 

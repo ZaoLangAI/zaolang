@@ -211,6 +211,7 @@
     "backupModel": "备用模型",
     "backupProvider": "备用模型供应商",
     "backupModelHint": "默认模型不可用时改用它。仅在指定了默认模型后可选。",
+    "visionTag": "识图",
     "backupModelNone": "不设备用模型",
     "model": "模型",
     "modelDerived": "实际调用模型：{model}；失败后回落到 {backup}。",

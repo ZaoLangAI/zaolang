@@ -211,6 +211,7 @@
     "backupModel": "Backup model",
     "backupProvider": "バックアップモデルプロバイダー",
     "backupModelHint": "Used when the default is unavailable. Only selectable once a default is pinned.",
+    "visionTag": "画像認識",
     "backupModelNone": "No backup",
     "model": "モデル",
     "modelDerived": "実際に呼び出すモデルは {model} で、失敗時は {backup} に切り替わります。",

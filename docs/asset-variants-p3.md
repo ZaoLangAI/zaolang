@@ -1,6 +1,6 @@
 # 角色 / 场景 / 道具图片资产：P3 一致性打分设计
 
-> 状态：**规划，待评审（2026-10-06）**。前置：P2-0 ~ P2-8 已上线；角色库改造 P0–P10 与资产创作 AC-1 ~ AC-10 已合入 `dev` 并上线（`dev` @ `8f95596`）。P2 设计见 [P2 生产线](asset-variants-p2.md)，数据模型见 [P1 设计](asset-variants-p1.md)。
+> 状态：**已批准（2026-10-06），实施中**：P3-0 已实现（`feature/p3-modality-endpoint-selection`，见第 4.5 节），P3-1 起未开始。前置：P2-0 ~ P2-8 已上线；角色库改造 P0–P10 与资产创作 AC-1 ~ AC-10 已合入 `dev` 并上线（`dev` @ `8f95596`）。P2 设计见 [P2 生产线](asset-variants-p2.md)，数据模型见 [P1 设计](asset-variants-p1.md)。
 >
 > 本文涉及的不变量编号沿用 P1 / P2，另加一项：
 >
@@ -105,6 +105,23 @@ P3-2 存储与配置 ───┴───────────────�
 - `tests/unit/test_llm_gateway_failover.py`：模态筛选；绑定不满足时退回共享池；全池都不满足时抛 `NoCapableEndpoint`；带 `image_url` 的消息只路由到图像端点；token 估算计入图片。
 - `tests/unit/test_agent_gateway.py`：`effective_binding` 的模态兜底。
 - `tests/unit/test_script_source_extract.py`：剧本识图跳过只读文本的端点。
+
+### 4.5 实施记录与发布说明（P3-0，2026-10-06）
+
+与上文设计的出入：
+
+- **`NoCapableEndpoint` 放在 `app/domain/errors.py`**，与 `ProviderTemporaryFailure` 并列；沿用父类的错误码 `PROVIDER_TEMPORARY_FAILURE` 和 HTTP 503，前端与任务重试逻辑不用改。消息为"未配置支持图像输入的端点。"（按模态拼出，视频为"视频"）。
+- **抛出位置在 `llm_client.complete` / `stream_complete`，不在 `effective_binding`**。`effective_binding` 只做兜底：全池都没有图像端点时返回空绑定（`model=""`），由客户端在"未配置模型"检查之前抛 `NoCapableEndpoint`。这样离线假网关下的测试不受影响，所有调用方（包括以后直接调 `complete` 的）都走同一处判断。调用方显式钉了只读文本的端点、又没经过 `effective_binding` 兜底时，客户端同样抛 `NoCapableEndpoint`。
+- **`video_url` 片段也参与筛选**（要求 `video`）；token 估算只给 `image_url` 计 `IMAGE_PART_TOKEN_ESTIMATE`。
+- **`IMAGE_INPUT_SLOTS` 是带显示名的 dict，P3-0 只含 `("copy", "script_extract")`**。`quality / consistency` 槽位在 P3-1 才存在，届时一并加入；提前加入会让 `quality` 的默认智能体（目前只做元数据质检）误报。`SCRIPT_EXTRACT_SLOT` 移到 `app/agents/slots.py`。
+- **警告只挂在实际发图的智能体上**：`agent_skills.service.image_slot_labels` 按调用本身的解析规则（`copy` 请求桶，否则角色默认）找到该智能体，不对同角色的其他 `copy` 智能体报警。警告有三种：部分绑定端点不支持图像（请求会跳过它）、全部不支持（改用共享池）、整个池都没有图像端点（会直接报错）。前端在智能体卡片和编辑框显示警告，保存成功后以提示条再报一次；绑定下拉框给支持图像的端点加"识图"标记（`front/src/lib/admin/endpoint-binding-label.ts`）。
+- 新增集成测试 `tests/integration/test_vision_endpoint_routing.py`：剧本识图接口的路由与 503 消息、后台智能体视图的 `warnings`。
+
+**发布说明**
+
+- 剧本识图（上传 jpg / png）只会发往 `input_modalities` 含 `image` 的 general 端点。生产当前（2026-10-06）只有主端点 `glm-5.3-flash` 支持图像，备用 `qwen3.8-flash` 只读文本：主端点故障时识图直接报"未配置支持图像输入的端点"（HTTP 503），不再退到文本模型。**运营应在 `/admin/models` 再添加一个支持图像的 general 端点作为识图备用。**
+- `/admin/agents` 的智能体卡片可能出现识图相关的黄色提示，只是提示，不影响保存。
+- 接口变更：`AgentProfileView.warnings`（新增字段，默认空数组）。先后端、后前端部署。
 
 ## 5. P3-1 视觉评审智能体
 
@@ -471,12 +488,12 @@ P3-2 存储与配置 ───┴───────────────�
     - 按 `kind × entry_type` 分别设阈值，没有阈值的组合永不降级。
 - **评审对风格化画面不稳**：动漫和低多边形风格下五官维度可能失真。离线集要覆盖这些画风；必要时按画面媒介分阈值，这需要扩展配置键。
 - **平台成本**：每张图一次调用（两张图约 2k 输入 token）。影子期报告会给出实际成本，超出预期就收窄 `kinds` 或降低 `max_image_px`。
-- **剧本识图的路由变化**：P3-0 之后，没有任何支持图像的端点时，剧本识图直接报"未配置支持图像输入的端点"，不再碰运气发给文本端点。上线前要确认生产已有图像端点，否则这个功能会从"偶尔可用"变成"明确不可用"。发布说明里要写明。
+- **剧本识图的路由变化**：P3-0 之后，没有任何支持图像的端点时，剧本识图直接报"未配置支持图像输入的端点"，不再碰运气发给文本端点。2026-10-06 只读核对生产（见第 14 节问题 1）：主端点 `glm-5.3-flash` 支持图像，所以上线后识图仍可用；但备用 `qwen3.8-flash` 只读文本，**识图没有备用**，主端点故障时会直接报错，而不是退到文本模型。发布说明已写明（第 4.5 节），运营应再加一个支持图像的端点。
 - **删除信号丢失**：`remove_entry` 硬删除，不留事件，所以"低分后被删"的信号无法用于校准。暂时接受，见第 14 节问题 2。
 
 ## 14. 开放问题
 
-1. 生产当前的 general 端点里有没有支持图像的？需要只读查看 prod 的 `llm_providers`（需要权限放行）。它决定 P3-0 上线时剧本识图会不会受影响。
+1. ~~生产当前的 general 端点里有没有支持图像的？~~ **已答（2026-10-06 只读查看 prod `platform_configs.llm_providers` v27，kind=general）**：`glm-5.3-flash`（主，输入 `text`/`image`/`video`，启用）；`qwen3.8-flash`（备用，输入仅 `text`，启用）。P3-0 上线后剧本识图仍有一个可用端点，但没有支持图像的备用；见第 13 节和第 4.5 节的发布说明。
 2. 校准时是否需要"删除"信号？如果需要，可以在 `remove_entry` 打一条结构化日志，或者加一张轻量的条目事件表。默认不做。
 3. 影子期是否要对内部账号提前显示分数（例如按 feature flag），方便人工核对？默认不做，用报告脚本加后台浏览。
 

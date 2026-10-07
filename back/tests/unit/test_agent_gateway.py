@@ -1568,3 +1568,154 @@ def test_every_agent_binding_names_a_real_role_field_and_slot() -> None:
             assert agent_slots.is_known_slot(binding.role, binding.slot), (
                 f"{node_type} 绑定了 {binding.role} 不存在的槽位 {binding.slot}"
             )
+
+
+# --------------------------------------------------------------------------
+# Image-input bindings (P3-0)
+# --------------------------------------------------------------------------
+
+
+def _seed_text_and_vision_endpoints(db: Session, *, vision: bool = True) -> None:
+    endpoints: dict = {
+        "text-ep": {
+            "name": "文本端点",
+            "base_url": "https://text.invalid",
+            "api_key": "k",
+            "kind": "general",
+            "model": "text-model",
+            "role": "primary",
+            "input_modalities": ["text"],
+        },
+        "text-backup-ep": {
+            "name": "文本备用端点",
+            "base_url": "https://text-backup.invalid",
+            "api_key": "k",
+            "kind": "general",
+            "model": "text-backup-model",
+            "role": "backup",
+            "backup_order": 10,
+            "input_modalities": ["text"],
+        },
+    }
+    if vision:
+        endpoints["vision-ep"] = {
+            "name": "识图端点",
+            "base_url": "https://vision.invalid",
+            "api_key": "k",
+            "kind": "general",
+            "model": "vision-model",
+            "role": "backup",
+            "backup_order": 20,
+            "input_modalities": ["text", "image"],
+        }
+    config_service.set_value(
+        db, "llm_providers", {"endpoints": endpoints}, actor_user_id=None, note="test bootstrap"
+    )
+
+
+def _copy_profile(db: Session, **bindings: str) -> object:
+    return agent_skills_service.create_profile(
+        db, role="copy", key="vision-test", display_name="识图测试", **bindings
+    )
+
+
+def test_a_text_only_binding_falls_back_to_the_capable_pool_for_images(
+    db: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    _seeded(db)
+    _seed_text_and_vision_endpoints(db)
+    profile = _copy_profile(db, default_endpoint_id="text-ep", backup_endpoint_id="text-backup-ep")
+
+    text_binding = agent_base.effective_binding(db, AgentName.COPY.value, profile)
+    assert text_binding.preferred_endpoint_ids == ("text-ep", "text-backup-ep")
+
+    with caplog.at_level("WARNING", logger="app.agents.base"):
+        binding = agent_base.effective_binding(
+            db, AgentName.COPY.value, profile, required_modalities={"image"}
+        )
+    assert binding.preferred_endpoint_ids == ()
+    assert binding.model == "vision-model"
+    assert "llm_binding_modality_fallback" in caplog.text
+
+
+def test_a_binding_with_a_capable_backup_keeps_only_that_backup(db: Session) -> None:
+    _seeded(db)
+    _seed_text_and_vision_endpoints(db)
+    profile = _copy_profile(db, default_endpoint_id="text-ep", backup_endpoint_id="vision-ep")
+
+    binding = agent_base.effective_binding(
+        db, AgentName.COPY.value, profile, required_modalities={"image"}
+    )
+    assert binding.preferred_endpoint_ids == ("vision-ep",)
+    assert binding.model == "vision-model"
+
+
+def test_no_capable_endpoint_leaves_the_image_binding_empty(db: Session) -> None:
+    """`effective_binding` does not raise — `llm_client.complete` turns the
+    empty binding into `NoCapableEndpoint` (covered in the failover tests)."""
+    _seeded(db)
+    _seed_text_and_vision_endpoints(db, vision=False)
+    profile = _copy_profile(db, default_endpoint_id="text-ep")
+
+    binding = agent_base.effective_binding(
+        db, AgentName.COPY.value, profile, required_modalities={"image"}
+    )
+    assert binding.preferred_endpoint_ids == ()
+    assert binding.model == ""
+
+
+def _script_extract_agent(db: Session):  # type: ignore[no-untyped-def]
+    labels = agent_skills_service.image_slot_labels(db)
+    copy_default = agent_skills_service.default_profile(db, AgentName.COPY.value)
+    assert copy_default is not None
+    assert labels == {copy_default.id: ["剧本识图"]}
+    return copy_default
+
+
+def test_image_slot_labels_name_the_agent_that_would_send_the_image(db: Session) -> None:
+    _seeded(db)
+    copy_default = _script_extract_agent(db)
+
+    bucket = _copy_profile(db)
+    agent_skills_service.update_profile(
+        db, bucket.id, default_for_asset_kind=agent_skills_service.COPY_REQUEST_BUCKET
+    )
+    assert agent_skills_service.image_slot_labels(db) == {bucket.id: ["剧本识图"]}
+    assert copy_default.id != bucket.id
+
+
+def test_image_binding_warnings(db: Session) -> None:
+    _seeded(db)
+    _seed_text_and_vision_endpoints(db)
+    agent = _script_extract_agent(db)
+    config = config_service.get_typed(db, "llm_providers", LlmProviderConfig)
+
+    def warnings() -> list[str]:
+        return agent_base.image_binding_warnings(db, agent, ["剧本识图"], config)
+
+    # Unbound: draws on the pool, which has an image endpoint.
+    assert warnings() == []
+    assert agent_base.image_binding_warnings(db, agent, [], config) == []
+
+    agent_skills_service.update_profile(
+        db, agent.id, default_endpoint_id="text-ep", backup_endpoint_id="vision-ep"
+    )
+    assert warnings() == [
+        "「剧本识图」需要图像输入，绑定的端点「文本端点」不支持，这类请求会跳过它。"
+    ]
+
+    agent_skills_service.update_profile(db, agent.id, backup_endpoint_id="text-backup-ep")
+    assert warnings() == [
+        "「剧本识图」需要图像输入，但绑定的端点都不支持，这类请求会改用共享池中支持图像的端点。"
+    ]
+
+    agent_skills_service.update_profile(
+        db, agent.id, default_endpoint_id="vision-ep", backup_endpoint_id=""
+    )
+    assert warnings() == []
+
+    _seed_text_and_vision_endpoints(db, vision=False)
+    config = config_service.get_typed(db, "llm_providers", LlmProviderConfig)
+    assert agent_base.image_binding_warnings(db, agent, ["剧本识图"], config) == [
+        "「剧本识图」需要图像输入，但没有已启用的端点支持图像，这类请求会直接报错。"
+    ]

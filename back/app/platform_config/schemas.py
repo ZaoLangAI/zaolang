@@ -747,8 +747,10 @@ class LlmProviderEndpoint(ConfigSection):
     # `kind="media"`: subsets of `MEDIA_INPUT_MODALITIES`/`_OUTPUT_MODALITIES`.
     # `kind="general"`: subset of `{"text","image","video"}` — what the model
     # can read besides plain text. `"text"` is always present (auto-injected
-    # by the validator below); `"image"` is a declarative label only (no
-    # capability derives from it yet); `"video"` makes the endpoint a
+    # by the validator below); `"image"` is a routing filter — a request
+    # carrying `image_url` parts only fails over among endpoints that declare
+    # it (`llm.failover.general_candidates`, `NoCapableEndpoint`); `"video"`
+    # filters `video_url` parts the same way and also makes the endpoint a
     # `video_analysis` candidate — see `capabilities` and
     # `media_endpoints.dynamic_capabilities`.
     input_modalities: list[str] = Field(default_factory=list)

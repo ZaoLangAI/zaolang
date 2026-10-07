@@ -23,6 +23,20 @@ from app.models.enums import AgentName
 
 DEFAULT_SLOT = "default"
 
+# `copy`'s photographed-screenplay OCR call. Not in `PROMPT_SLOTS`: the
+# prompt is a code constant, never published from the console.
+SCRIPT_EXTRACT_SLOT = "script_extract"
+
+# `(role, slot)` pairs whose calls send image parts, so their agent needs an
+# endpoint whose `input_modalities` include `"image"` — mapped to how the
+# console names the call. Routing does not read this (`llm_client` derives
+# modalities from the messages themselves); it only drives the binding
+# `warnings` on `/admin/agents` (`agent_skills.service.image_slot_labels`).
+# P3-1 adds `("quality", "consistency")` together with that slot.
+IMAGE_INPUT_SLOTS: dict[tuple[str, str], str] = {
+    (AgentName.COPY.value, SCRIPT_EXTRACT_SLOT): "剧本识图",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class PromptSlot:

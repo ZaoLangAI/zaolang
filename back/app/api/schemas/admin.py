@@ -1099,6 +1099,10 @@ class AgentProfileView(ApiModel):
     temperature: float | None = None
     reasoning_model: bool | None = None
     used_by_operations: list[str] = Field(default_factory=list)
+    # Advisory only, never blocks a save: set when this agent serves an
+    # image-input call (`app.agents.slots.IMAGE_INPUT_SLOTS`) but its
+    # endpoints, or the whole pool, cannot read images.
+    warnings: list[str] = Field(default_factory=list)
     created_at: dt.datetime
 
 

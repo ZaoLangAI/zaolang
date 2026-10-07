@@ -19,7 +19,7 @@ from openai import APITimeoutError, BadRequestError
 from sqlalchemy.orm import Session
 
 from app.api.rate_limit import get_redis
-from app.domain.errors import ProviderTemporaryFailure
+from app.domain.errors import NoCapableEndpoint, ProviderTemporaryFailure
 from app.llm import client as llm_client
 from app.llm import failover
 from app.models import User
@@ -52,6 +52,7 @@ def _seed_endpoint(
     backup_order: int = 100,
     context_length: int = 0,
     max_output_tokens: int = 0,
+    input_modalities: tuple[str, ...] = ("text",),
 ) -> None:
     current = config_service.get_typed(db, "llm_providers", LlmProviderConfig)
     endpoints = {
@@ -68,6 +69,7 @@ def _seed_endpoint(
         "backup_order": backup_order,
         "context_length": context_length,
         "max_output_tokens": max_output_tokens,
+        "input_modalities": list(input_modalities),
     }
     config_service.set_value(
         db, "llm_providers", {"endpoints": endpoints}, actor_user_id=None, note="test bootstrap"
@@ -1036,3 +1038,207 @@ def test_complete_retries_without_include_usage_when_the_gateway_rejects_it(
     )
     assert attempts == [True, False]
     assert result.response.data == {"ok": True}
+
+
+# --------------------------------------------------------------------------
+# Input-modality routing (P3-0)
+# --------------------------------------------------------------------------
+
+_IMAGE_PART = {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
+
+
+def _vision_messages() -> list[dict]:
+    return [
+        {"role": "system", "content": "读图"},
+        {"role": "user", "content": [{"type": "text", "text": "这是什么"}, _IMAGE_PART]},
+    ]
+
+
+def _seed_text_primary_and_vision_backup(db: Session) -> None:
+    _seed_endpoint(db, endpoint_id="text-primary", model="text-llm", role="primary")
+    _seed_endpoint(
+        db,
+        endpoint_id="vision-backup",
+        model="vision-llm",
+        role="backup",
+        input_modalities=("text", "image"),
+    )
+
+
+def test_general_candidates_keep_only_endpoints_that_read_the_modality(db: Session) -> None:
+    _seed_text_primary_and_vision_backup(db)
+    config = config_service.get_typed(db, "llm_providers", LlmProviderConfig)
+
+    assert [pair[0] for pair in failover.general_candidates(config)] == [
+        "text-primary",
+        "vision-backup",
+    ]
+    assert [
+        pair[0] for pair in failover.general_candidates(config, required_modalities={"image"})
+    ] == ["vision-backup"]
+    assert failover.general_candidates(config, required_modalities={"image", "video"}) == []
+    assert [
+        pair[0]
+        for pair in failover.eligible_candidates(
+            config, preferred_ids=("text-primary", "vision-backup"), required_modalities={"image"}
+        )
+    ] == ["vision-backup"]
+
+
+def test_required_modalities_come_from_the_message_parts() -> None:
+    assert llm_client._required_modalities([{"role": "user", "content": "x"}]) == frozenset()
+    assert llm_client._required_modalities(_vision_messages()) == {"image"}
+    video = [{"role": "user", "content": [{"type": "video_url", "video_url": {"url": "u"}}]}]
+    assert llm_client._required_modalities(video) == {"video"}
+
+
+def test_image_parts_count_toward_the_prompt_estimate() -> None:
+    text_only = [{"role": "user", "content": [{"type": "text", "text": "abcd" * 10}]}]
+    with_images = [
+        {
+            "role": "user",
+            "content": [{"type": "text", "text": "abcd" * 10}, _IMAGE_PART, _IMAGE_PART],
+        }
+    ]
+
+    assert llm_client._prompt_tokens(text_only) == 10
+    assert llm_client._prompt_tokens(with_images) == 10 + 2 * llm_client.IMAGE_PART_TOKEN_ESTIMATE
+
+
+def test_an_image_request_skips_the_text_only_primary(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_text_primary_and_vision_backup(db)
+    served: list[str] = []
+
+    def _gateway(**kw):  # type: ignore[no-untyped-def]
+        served.append(kw["model"])
+        return _completion_payload(kw["model"], {"ok": True})
+
+    monkeypatch.setattr(llm_client, "_call_gateway", _gateway)
+
+    result = llm_client.complete(
+        session=db, agent_name="copy", model="text-llm", messages=_vision_messages()
+    )
+
+    assert result.endpoint_id == "vision-backup"
+    assert served == ["vision-llm"]
+
+
+def test_a_text_request_still_starts_on_the_primary(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_text_primary_and_vision_backup(db)
+    monkeypatch.setattr(
+        llm_client, "_call_gateway", lambda **kw: _completion_payload(kw["model"], {"ok": True})
+    )
+
+    result = llm_client.complete(
+        session=db,
+        agent_name="copy",
+        model="text-llm",
+        messages=[{"role": "user", "content": "x"}],
+    )
+
+    assert result.endpoint_id == "text-primary"
+
+
+def test_an_image_request_never_fails_over_onto_a_text_endpoint(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The vision endpoint failing must surface as a failure, not as a
+    retry on a model that cannot see the image."""
+    _seed_text_primary_and_vision_backup(db)
+    served: list[str] = []
+
+    def _gateway(**kw):  # type: ignore[no-untyped-def]
+        served.append(kw["model"])
+        raise APITimeoutError(request=None)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(llm_client, "_call_gateway", _gateway)
+
+    with pytest.raises(ProviderTemporaryFailure) as excinfo:
+        llm_client.complete(
+            session=db, agent_name="copy", model="vision-llm", messages=_vision_messages()
+        )
+
+    assert not isinstance(excinfo.value, NoCapableEndpoint)
+    assert set(served) == {"vision-llm"}
+
+
+def test_no_image_endpoint_raises_no_capable_endpoint_without_calling_out(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_endpoint(db, endpoint_id="text-primary", model="text-llm")
+    monkeypatch.setattr(llm_client, "_call_gateway", _always_times_out)
+
+    with pytest.raises(NoCapableEndpoint, match="未配置支持图像输入的端点"):
+        llm_client.complete(
+            session=db, agent_name="copy", model="text-llm", messages=_vision_messages()
+        )
+
+
+def test_no_capable_endpoint_wins_over_the_unbound_model_message(db: Session) -> None:
+    """An empty binding is what a vision call gets when nothing can read
+    images; "no image endpoint" is the message that is actually true."""
+    _seed_endpoint(db, endpoint_id="text-primary", model="text-llm")
+
+    with pytest.raises(NoCapableEndpoint):
+        llm_client.complete(session=db, agent_name="copy", model="", messages=_vision_messages())
+
+
+def test_pinned_text_only_endpoints_raise_no_capable_endpoint(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A caller that pins endpoints without `effective_binding`'s fallback
+    gets a typed error, not a call to a model that cannot see the image."""
+    _seed_text_primary_and_vision_backup(db)
+    monkeypatch.setattr(llm_client, "_call_gateway", _always_times_out)
+
+    with pytest.raises(NoCapableEndpoint):
+        llm_client.complete(
+            session=db,
+            agent_name="copy",
+            model="text-llm",
+            messages=_vision_messages(),
+            preferred_endpoint_ids=("text-primary",),
+        )
+
+
+def test_streaming_an_image_request_uses_only_the_image_endpoint(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_text_primary_and_vision_backup(db)
+    served: list[str] = []
+
+    def _stream_gateway(**kwargs):  # type: ignore[no-untyped-def]
+        served.append(kwargs["model"])
+        yield llm_client.StreamDelta(content="看到了", finish_reason="stop")
+
+    monkeypatch.setattr(llm_client, "_stream_gateway", _stream_gateway)
+    result = llm_client.StreamResult()
+    list(
+        llm_client.stream_complete(
+            session=db,
+            agent_name="copy",
+            model="text-llm",
+            messages=_vision_messages(),
+            result=result,
+        )
+    )
+
+    assert served == ["vision-llm"]
+    assert result.endpoint_id == "vision-backup"
+
+
+def test_streaming_an_image_request_without_an_image_endpoint_raises(db: Session) -> None:
+    _seed_endpoint(db, endpoint_id="text-primary", model="text-llm")
+
+    with pytest.raises(NoCapableEndpoint):
+        llm_client.stream_complete(
+            session=db,
+            agent_name="copy",
+            model="text-llm",
+            messages=_vision_messages(),
+            result=llm_client.StreamResult(),
+        )
