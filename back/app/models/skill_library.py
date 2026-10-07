@@ -212,6 +212,12 @@ class SkillAssetEntry(Base):
     # `{azimuth, elevation, distance}` on `image_assets.camera`'s grid. `None`
     # for most entries — readers fall back to `view` (`camera.from_view`).
     camera_json: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
+    # The vision consistency verdict for a generated image (P3): score,
+    # dimensions, issues, anchor, how the write-back applied it, and
+    # `owner_approved_at` when the owner approved a below-threshold one.
+    # Owner-only — no public / unlocked / iOS projection carries it — and
+    # never copied to another entry (a derive or adjust is scored afresh).
+    consistency_json: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
     label: Mapped[str | None] = mapped_column(String(60), nullable=True)
     status: Mapped[str] = mapped_column(
         String(12),

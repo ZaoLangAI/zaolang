@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 from app.domain.errors import NotFound, ValidationFailed
 from app.domain.image_assets import camera as camera_vocab
 from app.models import Asset, CreationSkill, SkillAssetEntry, SkillAssetVariant
+from app.models.base import utcnow
 from app.models.enums import (
     CHARACTER_ENTRY_TYPES,
     PROP_ENTRY_TYPES,
@@ -710,12 +711,26 @@ def approve_entry(
     for mate in displaced:
         mate.status = AssetEntryStatus.CANDIDATE.value
     entry.status = AssetEntryStatus.APPROVED.value
+    _note_owner_approval(entry)
     session.flush()
     if moves_anchor:
         set_anchor(session, skill, entry)
     prefer_portrait_anchor(session, skill, entry)
     session.flush()
     return entry
+
+
+def _note_owner_approval(entry: SkillAssetEntry) -> None:
+    """Stamps `owner_approved_at` when the owner approves an image the
+    consistency judge scored below threshold — the "the judge was wrong"
+    signal P3-5's calibration reads. A new dict, never an in-place edit of
+    the JSON column (DM 11)."""
+    verdict = entry.consistency_json
+    if verdict and verdict.get("below"):
+        entry.consistency_json = {
+            **verdict,
+            "owner_approved_at": utcnow().isoformat(timespec="seconds"),
+        }
 
 
 def prefer_portrait_anchor(session: Session, skill: CreationSkill, entry: SkillAssetEntry) -> None:
@@ -851,6 +866,7 @@ def set_members(session: Session, skill: CreationSkill, asset_ids_in_order: list
         if entry.asset_id in wanted and not is_approved(entry):
             # Listing a candidate in the flat edit approves it.
             entry.status = AssetEntryStatus.APPROVED.value
+            _note_owner_approval(entry)
     for asset_id in wanted:
         if asset_id not in known:
             add_entry(

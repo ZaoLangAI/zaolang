@@ -29,6 +29,13 @@ export default async function AdminConfigPage() {
         kind="shortform"
         title={t('shortformProfiles')}
       />
+      {byKey.asset_consistency ? (
+        <RuntimeConfigPanel
+          initial={byKey.asset_consistency}
+          kind="asset_consistency"
+          title={t('assetConsistency')}
+        />
+      ) : null}
     </div>
   );
 }

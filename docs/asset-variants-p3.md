@@ -1,6 +1,6 @@
 # 角色 / 场景 / 道具图片资产：P3 一致性打分设计
 
-> 状态：**已批准（2026-10-06），实施中**：P3-0 已合入 `dev` 并上线（2026-10-07，`dev` @ `a287b9c`，见第 4.5 节）；P3-1 已实现（`feature/p3-consistency-judge`，见第 5.7 节）；P3-2 起未开始。前置：P2-0 ~ P2-8 已上线；角色库改造 P0–P10 与资产创作 AC-1 ~ AC-10 已合入 `dev` 并上线（`dev` @ `8f95596`）。P2 设计见 [P2 生产线](asset-variants-p2.md)，数据模型见 [P1 设计](asset-variants-p1.md)。
+> 状态：**已批准（2026-10-06），实施中**：P3-0 已合入 `dev` 并上线（2026-10-07，`dev` @ `a287b9c`，见第 4.5 节）；P3-1 已合入 `dev` 并上线（2026-10-07，`dev` @ `3e92f4e`，见第 5.7 节）；P3-2 已实现（`feature/p3-consistency-storage`，见第 6.4 节）；P3-3 起未开始。前置：P2-0 ~ P2-8 已上线；角色库改造 P0–P10 与资产创作 AC-1 ~ AC-10 已合入 `dev` 并上线（`dev` @ `8f95596`）。P2 设计见 [P2 生产线](asset-variants-p2.md)，数据模型见 [P1 设计](asset-variants-p1.md)。
 >
 > 本文涉及的不变量编号沿用 P1 / P2，另加一项：
 >
@@ -280,6 +280,25 @@ P3-2 存储与配置 ───┴───────────────�
 - 公开投影不含 `consistency_json`；
 - `approve_entry` 写入 `owner_approved_at`；
 - 派生复制不带分数。
+
+### 6.4 实施记录（P3-2，2026-10-07）
+
+与上文设计的出入和补充：
+
+- **迁移文件名**：`20261008_1100_asset_entry_consistency.py`（revision `def2867d63c8`，接在 `3e9a7c5d1f20` 之后）。前一个迁移的文件名时间戳已经是 `20261008_1000`，按实施日 `20261007` 命名会排到它前面，所以取 `20261008_1100` 保持文件顺序。只加一列 JSONB，可空，没有数据迁移；`alembic check` 没有发现与这张表相关的差异（其余差异都是早已存在的）。
+- **配置**：`AssetConsistencyConfig`（`back/app/platform_config/schemas.py`），字段、默认值和范围同第 6.2 节。
+    - `thresholds` 的类型是 `{str: {str: int}}`，由校验器检查：未知卡片类型、该类型没有的 `entry_type`、场景的 `panorama`（全景从不打分）、超出 0–100 的值，都返回 422。
+    - `kinds` 去重，并保留原顺序。
+    - 新增 `threshold_for(kind, entry_type)`，查找顺序为先 `entry_type`、再 `"*"`，都没有返回 `None`（永不算低分）；阈值 0 是有效值。P3-3 直接用它。
+- **后台**：前端没有按 schema 通用渲染的配置页，所以在 `/admin/config` 加了「资产一致性打分」面板：模式、打分范围、每类的默认阈值（`"*"`）、送审图长边、单任务上限。按图片类型单独设阈值仍在「高级」JSON 里编辑。表单逻辑在 `front/src/lib/admin/asset-consistency.ts`，附 vitest。配置接口沿用通用的 `/v1/admin/config/asset_consistency`，没有接口变更，`make openapi-check` 通过。
+- **`owner_approved_at`**：所有者把 `below` 为真的条目定稿时写入（ISO 时间，精确到秒，UTC）。写入点在 `approve_entry`，PATCH `status=approved` 也经过它。**另加**：旧的平铺列表编辑（`set_members`）把候选列入时也算定稿，同样写入。每次写入都生成新 dict，不原地修改（DM 第 11 条）；再次定稿时取最近一次的时间。
+- **不公开、不复制**：现有的 `project()`、`variant_views`（含公开 / 解锁投影和所有者视图）、`entry_view` 都按字段显式构造，本来就不带这一列，P3-2 只补测试。所有者可见的 `consistency` 字段在 P3-4 加。调整 / 派生（`copy_from_entry_id`）和 `add_entry` 新建的条目一律为空；移动条目（`update_entry` 换造型）是同一行，分数保留。
+
+**给 P3-3 的说明**
+
+- 写库：`file_generated` / `add_entry` 还没有 `consistency` 参数，P3-3 加上后由写回段赋值。注意 `add_entry` 对同一变体里已存在的资产会**更新**原条目而不是新建，P3-3 要决定这时是否覆盖旧分数。
+- 落库内容：建议 `{"v": RUBRIC_VERSION, **result.as_dict(), "threshold": …, "below": …, "mode": …, "demoted": …, "scored_at": …, "owner_approved_at": None}`；`below` 只在 `mode=enforce` 且 `status=scored` 时可能为真（第 8.1 节的 P3-4 只看 enforce 写入的记录）。
+- 读配置：`config_service.get_typed(session, "asset_consistency", AssetConsistencyConfig)`；`card_kind(card) not in config.kinds` 时整张卡不打分。
 
 ## 7. P3-3 写回前同步打分
 

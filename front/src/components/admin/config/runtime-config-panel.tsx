@@ -11,6 +11,14 @@ import { Select, Switch, TextArea, TextInput } from '@/components/ui/field';
 import { Badge } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import type { Locale } from '@/i18n/routing';
+import {
+  ANY_ENTRY_TYPE,
+  CONSISTENCY_KINDS,
+  type ConsistencyKind,
+  type ConsistencyThresholds,
+  toggledKinds,
+  withDefaultThreshold,
+} from '@/lib/admin/asset-consistency';
 import { atLeast } from '@/lib/admin/rbac';
 import { OPERATIONS, operationLabelKey } from '@/lib/admin/operations';
 import { adminApi } from '@/lib/api/admin-client';
@@ -19,7 +27,13 @@ import { ApiError } from '@/lib/api/errors';
 import { formatDateTime } from '@/lib/format';
 
 export type RuntimeConfigKind =
-  'feature_flags' | 'shortform' | 'pricing' | 'royalty' | 'marketplace' | 'moderation';
+  | 'feature_flags'
+  | 'shortform'
+  | 'pricing'
+  | 'royalty'
+  | 'marketplace'
+  | 'moderation'
+  | 'asset_consistency';
 
 // Runtime sections have different strongly validated server schemas; this
 // shared editor keeps the JSON-shaped draft while each form below owns its
@@ -321,6 +335,9 @@ function ConfigForm({
   if (kind === 'pricing') {
     return <PricingForm value={value} disabled={disabled} onChange={onChange} />;
   }
+  if (kind === 'asset_consistency') {
+    return <AssetConsistencyForm value={value} disabled={disabled} onChange={onChange} />;
+  }
   return <ShortformForm value={value} disabled={disabled} onChange={onChange} />;
 }
 
@@ -485,6 +502,95 @@ function MarketplaceForm({ value, disabled, onChange }: FormProps) {
         value={value.max_access_credits ?? 1}
         onChange={(event) => onChange({ ...value, max_access_credits: Number(event.target.value) })}
       />
+    </div>
+  );
+}
+
+/** Mode, scope, per-kind default (`"*"`) thresholds and budgets. A
+ * threshold per image type is rarer and stays in the Advanced JSON. */
+function AssetConsistencyForm({ value, disabled, onChange }: FormProps) {
+  const t = useTranslations('adminConfig');
+  const kinds = (value.kinds ?? []) as string[];
+  const thresholds = (value.thresholds ?? {}) as ConsistencyThresholds;
+  const kindLabel = (kind: ConsistencyKind) =>
+    kind === 'character'
+      ? t('consistencyKindCharacter')
+      : kind === 'scene'
+        ? t('consistencyKindScene')
+        : t('consistencyKindProp');
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Select
+        label={t('consistencyMode')}
+        hint={t('consistencyModeHint')}
+        disabled={disabled}
+        value={value.mode ?? 'off'}
+        onChange={(event) => onChange({ ...value, mode: event.target.value })}
+        options={[
+          { value: 'off', label: t('consistencyModeOff') },
+          { value: 'shadow', label: t('consistencyModeShadow') },
+          { value: 'enforce', label: t('consistencyModeEnforce') },
+        ]}
+      />
+      <FieldGroup title={t('consistencyKinds')}>
+        {CONSISTENCY_KINDS.map((kind) => (
+          <Switch
+            key={kind}
+            label={kindLabel(kind)}
+            checked={kinds.includes(kind)}
+            disabled={disabled}
+            onChange={(checked) =>
+              onChange({ ...value, kinds: toggledKinds(kinds, kind, checked) })
+            }
+          />
+        ))}
+      </FieldGroup>
+      <div>
+        <FieldGroup title={t('consistencyThresholds')}>
+          {CONSISTENCY_KINDS.map((kind) => (
+            <TextInput
+              key={kind}
+              label={kindLabel(kind)}
+              type="number"
+              min={0}
+              max={100}
+              disabled={disabled}
+              value={thresholds[kind]?.[ANY_ENTRY_TYPE] ?? ''}
+              onChange={(event) =>
+                onChange({
+                  ...value,
+                  thresholds: withDefaultThreshold(thresholds, kind, event.target.value),
+                })
+              }
+            />
+          ))}
+        </FieldGroup>
+        <p className="mt-2 text-xs text-muted">{t('consistencyThresholdsHint')}</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <TextInput
+          label={t('consistencyMaxImagePx')}
+          type="number"
+          min={512}
+          max={2048}
+          step={64}
+          disabled={disabled}
+          value={value.max_image_px ?? 1024}
+          onChange={(event) => onChange({ ...value, max_image_px: Number(event.target.value) })}
+        />
+        <TextInput
+          label={t('consistencyMaxOutputs')}
+          type="number"
+          min={1}
+          max={8}
+          disabled={disabled}
+          value={value.max_outputs_per_job ?? 8}
+          onChange={(event) =>
+            onChange({ ...value, max_outputs_per_job: Number(event.target.value) })
+          }
+        />
+      </div>
     </div>
   );
 }
