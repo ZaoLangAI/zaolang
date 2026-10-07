@@ -48,6 +48,7 @@ from app.models.enums import (
     CreationSkillCategory,
     MediaType,
 )
+from app.platform_config.schemas import AssetConsistencyConfig
 
 DEFAULT_LOOK_NAME = "默认造型"
 DEFAULT_SCENE_VARIANT_NAME = "主场景"
@@ -460,20 +461,34 @@ def find_or_create_variant(
     name: str | None = None,
     presets: dict[str, Any] | None = None,
 ) -> SkillAssetVariant:
-    """Write-back's lookup: by `presets` (exact match) when given, else by
-    name; `None`/blank for both means the default."""
+    """Write-back's lookup (`find_variant_matching`), creating the variant
+    when nothing matches."""
+    match = find_variant_matching(skill, name=name, presets=presets)
+    if match is not None:
+        return match
+    clean = (name or "").strip()[:MAX_VARIANT_NAME_LEN]
+    if not clean and not presets:
+        return ensure_default(session, skill)
+    return create_variant(session, skill, name=clean or "变体", presets=presets)
+
+
+def find_variant_matching(
+    skill: CreationSkill,
+    *,
+    name: str | None = None,
+    presets: dict[str, Any] | None = None,
+) -> SkillAssetVariant | None:
+    """Which variant the write-back would file into, without creating one:
+    by `presets` (exact match) when given, else by name; `None`/blank for
+    both means the default. `None` when the write-back would create it."""
     if presets:
         match = next((v for v in skill.asset_variants if v.presets_json == presets), None)
         if match is not None:
             return match
     clean = (name or "").strip()[:MAX_VARIANT_NAME_LEN]
     if not clean and not presets:
-        return ensure_default(session, skill)
-    if clean:
-        existing = find_by_name(skill, clean)
-        if existing is not None:
-            return existing
-    return create_variant(session, skill, name=clean or "变体", presets=presets)
+        return find_default(skill)
+    return find_by_name(skill, clean) if clean else None
 
 
 def update_variant(
@@ -638,6 +653,54 @@ def _check_approved_room(skill: CreationSkill, variant: SkillAssetVariant, field
         )
 
 
+@dataclass(slots=True)
+class PendingConsistency:
+    """A consistency verdict scored before the write-back (P3-3), applied
+    when the image is filed — only then are its entry type (which picks the
+    threshold) and whether its slot was empty (which decides a demotion)
+    known.
+
+    `verdict` is `ConsistencyResult.as_dict()` plus `v` / `scored_at`
+    (`app.domain.image_assets.consistency`); `config` is the
+    `asset_consistency` section read at scoring time. `applied` is what got
+    stored, for the job's `{scored, flagged}` counts.
+    """
+
+    verdict: dict[str, Any]
+    config: AssetConsistencyConfig
+    applied: dict[str, Any] | None = None
+
+    def stamp(
+        self, kind: str, entry_type: str, *, would_approve: bool
+    ) -> tuple[dict[str, Any], bool]:
+        """`(stored verdict, demote)`. `below` is recorded in shadow mode too
+        (calibration); only `enforce` demotes, and `demoted` is true only for
+        an image that would otherwise have been approved."""
+        threshold = self.config.threshold_for(kind, entry_type)
+        score = self.verdict.get("score")
+        below = (
+            self.verdict.get("status") == "scored"
+            and threshold is not None
+            and isinstance(score, int)
+            and score < threshold
+        )
+        demote = self.config.mode == "enforce" and below and would_approve
+        self.applied = {
+            **self.verdict,
+            "threshold": threshold,
+            "below": below,
+            "mode": self.config.mode,
+            "demoted": demote,
+            "owner_approved_at": None,
+        }
+        return self.applied, demote
+
+    @property
+    def flagged(self) -> bool:
+        """Shown to the owner as low consistency (`enforce` only)."""
+        return bool(self.applied and self.applied["mode"] == "enforce" and self.applied["below"])
+
+
 def file_generated(
     session: Session,
     skill: CreationSkill,
@@ -651,11 +714,16 @@ def file_generated(
     source_job_id: str | None = None,
     candidate: bool = False,
     camera: dict[str, Any] | None = None,
+    consistency: PendingConsistency | None = None,
 ) -> SkillAssetEntry:
     """Files a generated image: approved when its slot holds no approved
     image yet (and the caps leave room), otherwise a candidate beside it.
     Never replaces or evicts anything. `candidate` always files a candidate
-    — a new version of an existing image (调整修改, P6) waits for 定稿."""
+    — a new version of an existing image (调整修改, P6) waits for 定稿.
+
+    `consistency` (P3-3) is stored on the entry; under `enforce` a score
+    below its threshold files the image as a candidate even into an empty
+    slot, so it never takes the anchor (only approved entries can, CL 14)."""
     mates = slot_mates(
         skill, variant, entry_type=entry_type, view=view, expressions=expressions, camera=camera
     )
@@ -664,10 +732,14 @@ def file_generated(
         not is_character(skill) or in_skill < MAX_ENTRIES_PER_SKILL
     )
     taken = any(is_approved(m) and m.asset_id != asset_id for m in mates)
+    would_approve = room and not taken and not candidate
+    verdict, demote = (
+        consistency.stamp(card_kind(skill), entry_type, would_approve=would_approve)
+        if consistency is not None
+        else (None, False)
+    )
     status = (
-        AssetEntryStatus.APPROVED
-        if room and not taken and not candidate
-        else AssetEntryStatus.CANDIDATE
+        AssetEntryStatus.APPROVED if would_approve and not demote else AssetEntryStatus.CANDIDATE
     )
     return add_entry(
         session,
@@ -681,6 +753,7 @@ def file_generated(
         source_job_id=source_job_id,
         status=status.value,
         camera=camera,
+        consistency=verdict,
     )
 
 
@@ -783,11 +856,13 @@ def add_entry(
     source_job_id: str | None = None,
     status: str = AssetEntryStatus.APPROVED.value,
     camera: dict[str, Any] | None = None,
+    consistency: dict[str, Any] | None = None,
 ) -> SkillAssetEntry:
     """Files `asset_id` under `variant`. Re-adding an asset already in that
     variant updates the existing entry instead of duplicating it (keeping
     its status). Over an approved-entry limit is a 422 — never a silent
-    eviction; a candidate never counts against it."""
+    eviction; a candidate never counts against it. A given `consistency`
+    verdict replaces the entry's (P3-3); `None` leaves it alone."""
     _check_entry_type(skill, entry_type)
     existing = next((e for e in variant.entries if e.asset_id == asset_id), None)
     if existing is None:
@@ -810,6 +885,8 @@ def add_entry(
     existing.camera_json = check_camera(camera)
     if source_job_id:
         existing.source_job_id = source_job_id
+    if consistency is not None:
+        existing.consistency_json = consistency
     session.flush()
     return existing
 

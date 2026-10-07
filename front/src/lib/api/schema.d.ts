@@ -10343,6 +10343,11 @@ export interface components {
              * @default 0
              */
             candidate_entries: number;
+            /**
+             * Flagged Entries
+             * @default 0
+             */
+            flagged_entries: number;
             /** Draft Id */
             draft_id?: string | null;
             /** Prompt */

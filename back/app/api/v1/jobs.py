@@ -745,6 +745,7 @@ def _job_response(
         linked_scene_id=job.linked_scene_id,
         linked_prop_id=job.linked_prop_id,
         candidate_entries=_candidate_entries_of(session, job),
+        flagged_entries=_flagged_entries_of(session, job),
         draft_id=job.draft_id,
         prompt=_prompt_of(job),
         analysis=_analysis_of(job),
@@ -839,6 +840,28 @@ def _candidate_entries_of(session: Session, job: GenerationJob) -> int:
                 SkillAssetEntry.skill_id == card_id,
                 SkillAssetEntry.source_job_id == job.id,
                 SkillAssetEntry.status == AssetEntryStatus.CANDIDATE.value,
+            )
+        )
+        or 0
+    )
+
+
+def _flagged_entries_of(session: Session, job: GenerationJob) -> int:
+    """This job's images the consistency judge flagged under `enforce`
+    (`skill_asset_entries.consistency_json`, P3-3), counted on read."""
+    card_id = job.linked_character_id or job.linked_scene_id or job.linked_prop_id
+    if job.status != JobStatus.SUCCEEDED or not card_id:
+        return 0
+    verdict = SkillAssetEntry.consistency_json
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(SkillAssetEntry)
+            .where(
+                SkillAssetEntry.skill_id == card_id,
+                SkillAssetEntry.source_job_id == job.id,
+                verdict["below"].as_boolean().is_(True),
+                verdict["mode"].as_string() == "enforce",
             )
         )
         or 0

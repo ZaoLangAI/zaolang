@@ -72,6 +72,9 @@ SKIP_OUTPUT_IS_ANCHOR = "output_is_anchor"
 SKIP_PANORAMA = "panorama"
 SKIP_VIDEO = "video"
 SKIP_NO_VISION_ENDPOINT = "no_vision_endpoint"
+# Set by the write-back (P3-3): past `max_outputs_per_job`, or too little
+# of the task's time left for another call.
+SKIP_BUDGET = "budget"
 
 ERROR_IMAGE_UNREADABLE = "image_unreadable"
 ERROR_LLM = "llm_error"
@@ -140,6 +143,10 @@ class ConsistencyContext:
     entry_type: str
     variant: SkillAssetVariant | None = None
     params: Mapping[str, Any] = field(default_factory=dict)
+    # Character only: whether the target look differs from the anchor's.
+    # `None` derives it from `variant`; the write-back sets it when the
+    # image goes into a look it has yet to create (always a change).
+    outfit_change: bool | None = None
     is_video: bool = False
     job_id: str | None = None
     user_id: str | None = None
@@ -251,7 +258,12 @@ def rubric_for(
     dimensions = RUBRICS[kind]
     ignored = list(_ALWAYS_IGNORED[kind])
     if kind == "character":
-        if _is_outfit_change(anchor_entry, context.variant):
+        outfit_change = (
+            context.outfit_change
+            if context.outfit_change is not None
+            else _is_outfit_change(anchor_entry, context.variant)
+        )
+        if outfit_change:
             dimensions = tuple(d for d in dimensions if d.key != OUTFIT_DIMENSION)
             ignored.append("服装（本次为换装）")
     elif kind == "scene":

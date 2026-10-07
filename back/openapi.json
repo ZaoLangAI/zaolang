@@ -36597,6 +36597,11 @@
             "title": "Candidate Entries",
             "default": 0
           },
+          "flagged_entries": {
+            "type": "integer",
+            "title": "Flagged Entries",
+            "default": 0
+          },
           "draft_id": {
             "anyOf": [
               {

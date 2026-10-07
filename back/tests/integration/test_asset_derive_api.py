@@ -154,3 +154,84 @@ def test_someone_elses_image_is_a_404(
         headers=auth_header(remixer),
     )
     assert response.status_code == 404
+
+
+# ---- consistency scoring of derived images (P3-3) -------------------------
+
+
+def _stored_sheet_card(client: TestClient, db: Session, user: User) -> tuple[dict, str]:
+    """`_card_with_sheet`, with real image bytes so the judge can read it."""
+    import io
+
+    from PIL import Image
+
+    from app.storage import s3
+
+    card, entry_id = _card_with_sheet(client, db, user)
+    entry = av.find_entry(db.get(CreationSkill, card["id"]), entry_id)
+    asset = db.get(Asset, entry.asset_id)
+    buffer = io.BytesIO()
+    Image.new("RGB", (64, 64), (200, 80, 40)).save(buffer, format="PNG")
+    s3.put_object(asset.object_key, buffer.getvalue(), content_type="image/png")
+    return card, entry_id
+
+
+def test_adjusted_derived_and_orbited_images_are_all_scored(
+    client: TestClient, db: Session, author: User, dispatched: list[str]
+) -> None:
+    from sqlalchemy import select
+
+    from app.domain.workflow_templates import service as workflow_templates_service
+    from app.models import AgentRun, SkillAssetEntry
+    from app.platform_config import service as config_service
+    from app.platform_config.schemas import DEFAULT_CONFIGS
+    from app.workers import pipeline
+
+    workflow_templates_service.ensure_default_templates(db)
+    credits_service.grant(db, author.id, 50_000, idempotency_key=new_id("grant"))
+    config_service.set_value(
+        db,
+        "asset_consistency",
+        {**DEFAULT_CONFIGS["asset_consistency"], "mode": "shadow"},
+        actor_user_id=None,
+        note="test",
+    )
+    card, entry_id = _stored_sheet_card(client, db, author)
+    base = f"/v1/characters/{card['id']}/entries/{entry_id}"
+    requests = [
+        (":adjust", {"instruction": "把外套换成红色", "dry_run": False}),
+        (
+            ":derive",
+            {
+                "output": "character_sheet",
+                "new_variant": {"name": "老年", "presets": {"age_stage": "elderly"}},
+                "dry_run": False,
+            },
+        ),
+        (":orbit", {"poses": [{"azimuth": 90}, {"azimuth": 180}], "dry_run": False}),
+    ]
+    for action, body in requests:
+        response = client.post(
+            f"{base}{action}",
+            json=body,
+            headers={**auth_header(author), "Idempotency-Key": f"score{action}"},
+        )
+        assert response.status_code == 200, response.text
+    assert len(dispatched) == 3
+
+    for job_id in dispatched:
+        assert pipeline.run_generation_pipeline(db, job_id).status == "succeeded"
+
+    entries = list(
+        db.scalars(select(SkillAssetEntry).where(SkillAssetEntry.source_job_id.in_(dispatched)))
+    )
+    assert entries
+    assert all(e.consistency_json and e.consistency_json["status"] == "scored" for e in entries)
+    assert {e.consistency_json["anchor_entry_id"] for e in entries} == {entry_id}
+    by_job = {
+        run.job_id: run.input_json["user_prompt"]
+        for run in db.scalars(select(AgentRun).where(AgentRun.prompt_slot == "consistency"))
+    }
+    # The derive goes into a new look: the outfit is not compared.
+    assert "outfit" not in by_job[dispatched[1]].split("维度键：")[1].splitlines()[0]
+    assert "outfit" in by_job[dispatched[0]].split("维度键：")[1].splitlines()[0]

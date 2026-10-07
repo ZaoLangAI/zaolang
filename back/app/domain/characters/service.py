@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 from sqlalchemy import select
@@ -421,6 +422,7 @@ def append_reference_asset(
     entry_type: str | None = None,
     copy_from_entry_id: str | None = None,
     camera: dict[str, Any] | None = None,
+    consistency: asset_variants_service.PendingConsistency | None = None,
 ) -> CharacterView:
     """Files one image under a look — the P0 `(view, label)` call shape,
     translated: a non-expression `label` names the look (created on first
@@ -503,10 +505,15 @@ def append_reference_asset(
             source_job_id=source_job_id,
             candidate=True,
             camera=source.camera_json,
+            consistency=consistency,
         )
         asset_variants_service.claim_anchor(session, skill, entry)
         return CharacterView(skill)
-    file = asset_variants_service.file_generated if generated else asset_variants_service.add_entry
+    file = (
+        partial(asset_variants_service.file_generated, consistency=consistency)
+        if generated
+        else asset_variants_service.add_entry
+    )
     entry = file(
         session,
         skill,

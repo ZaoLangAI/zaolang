@@ -767,3 +767,22 @@ def test_score_skips_on_the_real_client_without_a_vision_endpoint(
     card = _character(db, author)
     result = _score(db, author, card, _anchored(db, author, card, "identity_portrait"))
     assert result.skip_reason == consistency.SKIP_NO_VISION_ENDPOINT
+
+
+def test_the_write_back_can_declare_an_outfit_change_for_a_look_it_will_create(
+    db: Session, author: User
+) -> None:
+    card = _character(db, author)
+    anchor = _anchored(db, author, card, "identity_portrait")
+    rubric = consistency.rubric_for(
+        card, anchor, ConsistencyContext(entry_type="character_sheet", outfit_change=True)
+    )
+    assert "outfit" not in [d.key for d in rubric.dimensions]
+    same = consistency.rubric_for(
+        card,
+        anchor,
+        ConsistencyContext(
+            entry_type="character_sheet", variant=av.find_default(card), outfit_change=False
+        ),
+    )
+    assert "outfit" in [d.key for d in same.dimensions]
