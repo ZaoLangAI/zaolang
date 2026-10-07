@@ -71,6 +71,6 @@ Copy coaches, asset-kind prompt rules, scene skill packs, follow-up questions. S
 
 ## Reference skills in polish
 
-- `format` skills: rule text appended to `prompt` by Python (`skill_library.service.apply_matching_format_skills`), surfaced as `applied_format_skills`.
+- `format` skills: rule text appended to `prompt` by Python (`skill_library.service.apply_matching_format_skills`), surfaced as `applied_format_skills`. Skipped when the polish ran on `ENHANCE_SYSTEM_PROMPT_VIDEO_EDIT` — its dimensions mean edit target/operation/kept camera, not a new clip's.
 - `drama` skills: `skill_matcher.select_reference_skills` (cheap titles-only call) picks rows; the coach reads them as material (`referenced_skills`), nothing is appended. Video operations only (`VIDEO_OPERATIONS_FOR_ENHANCE`); any failure → empty list, polish proceeds.
 - The route runs matching before opening the stream and emits a `matched` SSE frame first (`back/app/api/v1/prompts.py`).

@@ -1236,7 +1236,12 @@ def _sanitize_enhance_outcome(
     outcome.data["dimensions"] = _sanitize_dimensions(outcome.data.get("dimensions"))
     outcome.data["additions"] = _sanitize_additions(outcome.data.get("additions"))
     outcome.data["questions"] = agent_questions.sanitize_questions(outcome.data.get("questions"))
-    if session is not None and operation:
+    # The edit coach redefines what the dimensions mean (action = the edit
+    # operation, camera = whether the source's camera is kept), so the
+    # dimension → format-rule map would staple new-clip rules such as "one
+    # continuous camera move" onto an instruction that keeps the source's.
+    edit_coach = _enhance_system_prompt(asset_kind, operation) is ENHANCE_SYSTEM_PROMPT_VIDEO_EDIT
+    if session is not None and operation and not edit_coach:
         updated_prompt, applied_format_skills = skill_library_service.apply_matching_format_skills(
             session,
             operation=operation,

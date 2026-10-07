@@ -129,6 +129,34 @@ def test_an_image_polish_never_attaches_a_format_skill_even_when_seeded(
     assert result.applied_format_skills == []
 
 
+def test_a_video_edit_polish_never_attaches_new_clip_format_skills(
+    db: Session, author: User, catalog_owner: User
+) -> None:
+    """The edit coach redefines the dimensions (action = add/remove/replace,
+    camera = keep the source's), so a weak `camera` there is not a missing
+    camera move. Auto-attaching the dimension's format rule appended "one
+    continuous camera move" to an instruction that keeps the source camera
+    (seen in a live polish). An author-picked video kind keeps the rules."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
+    db.commit()
+
+    edit = prompts.enhance(
+        db,
+        user_id=author.id,
+        prompt="把裙子换成衬衫",
+        context=prompts.PromptContext(operation="video_to_video"),
+    )
+    assert edit.applied_format_skills == []
+
+    action = prompts.enhance(
+        db,
+        user_id=author.id,
+        prompt="女孩在海边",
+        context=prompts.PromptContext(operation="video_to_video", asset_kind="character_action"),
+    )
+    assert action.applied_format_skills
+
+
 def test_a_video_polish_shows_the_coach_the_scenes_its_story_contains(
     db: Session, author: User, catalog_owner: User
 ) -> None:
