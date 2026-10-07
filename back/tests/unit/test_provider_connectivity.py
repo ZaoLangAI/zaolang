@@ -158,6 +158,45 @@ def test_media_text_to_image_probe_uses_generations_json(
     assert calls[0][1]["json"]["size"] == "1024x1024"  # type: ignore[index]
 
 
+def test_qwen_image_3_probe_uses_the_ai_v1_media_task_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((path, kwargs))
+        request = httpx.Request("POST", f"https://media.invalid{path}")
+        return httpx.Response(
+            200,
+            json={
+                "id": "task_img_1",
+                "status": "completed",
+                "output": [{"content_url": "https://media.invalid/ai/v1/images/task_img_1/c/r"}],
+            },
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = connectivity.validate_endpoint(
+        _media(
+            model="qwen-image-3.0",
+            protocol="openai",
+            input_modalities=["text"],
+            output_modalities=["image"],
+        )
+    )
+
+    assert result.probe_type == Operation.TEXT_TO_IMAGE.value
+    assert result.usable is True
+    assert [path for path, _ in calls] == ["/ai/v1/images/generations"]
+    assert calls[0][1]["json"] == {
+        "model": "qwen-image-3.0",
+        "prompt": "A plain blue square, connectivity test.",
+        "size": "1024x1024",
+        "n": 1,
+    }
+
+
 def test_gpt_image_2_probe_sends_low_quality(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, dict[str, object]]] = []
 

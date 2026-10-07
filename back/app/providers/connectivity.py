@@ -23,10 +23,14 @@ from app.models.enums import Operation
 from app.platform_config.schemas import LlmProviderEndpoint
 from app.providers import dmxapi_media, fal_media, minimax_v2_media
 from app.providers.aihubmix_media import (
+    AI_V1_IMAGE_PATH,
+    ai_v1_image_has_output,
+    build_ai_v1_image_body,
     build_video_payload,
     is_gpt_image_2,
     media_client_base,
     media_request_path,
+    uses_ai_v1_images,
 )
 
 _MEDIA_PROBE_PRIORITY = (
@@ -244,6 +248,33 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
                         probe_type,
                         response,
                         usable=_has_dmxapi_image_result(response),
+                        api_key=endpoint.api_key,
+                    )
+
+                if uses_ai_v1_images(endpoint.model):
+                    # Same builder as the adapter: this model 400s on the
+                    # legacy `/v1/images/generations` probe below.
+                    i2i = probe_type == Operation.IMAGE_TO_IMAGE.value
+                    response = client.post(
+                        media_request_path(endpoint.base_url, AI_V1_IMAGE_PATH),
+                        json=build_ai_v1_image_body(
+                            model=endpoint.model,
+                            prompt=(
+                                "Return this simple connectivity test image."
+                                if i2i
+                                else "A plain blue square, connectivity test."
+                            ),
+                            size="1024x1024",
+                            images=[_probe_png_data_uri()] if i2i else (),
+                        ),
+                    )
+                    return _media_response(
+                        started,
+                        endpoint.model,
+                        probe_type,
+                        response,
+                        usable=response.status_code < 400
+                        and ai_v1_image_has_output(_json_dict(response)),
                         api_key=endpoint.api_key,
                     )
 
