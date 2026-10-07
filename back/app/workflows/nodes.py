@@ -28,6 +28,7 @@ from app.domain.costs import service as costs_service
 from app.domain.credits.pricing import settlement_credits
 from app.domain.errors import NotFound, ValidationFailed
 from app.domain.image_assets import camera as camera_vocab
+from app.domain.image_assets import consistency as consistency_judge
 from app.domain.image_assets import prompt_builder
 from app.domain.image_assets.vocabulary import (
     EXPRESSION_PRESETS,
@@ -58,6 +59,7 @@ from app.models.enums import (
     IMAGE_ASSET_SKILL_CATEGORIES,
     AssetEntryType,
     CharacterViewAngle,
+    CreationSkillCategory,
     ImageAssetKind,
     JobEventType,
     JobStatus,
@@ -68,6 +70,8 @@ from app.models.enums import (
     QualityTier,
     VideoAssetKind,
 )
+from app.platform_config import service as config_service
+from app.platform_config.schemas import AssetConsistencyConfig
 from app.providers.base import (
     AdaptedResolution,
     GenerationProvider,
@@ -77,6 +81,7 @@ from app.providers.base import (
 )
 from app.realtime import publisher
 from app.storage import s3
+from app.workers import deadline as task_deadline
 from app.workflows.configs import (
     AssetOutputAdvanceConfig,
     AssetOutputLinkConfig,
@@ -1042,6 +1047,14 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
         ).strip()[:60]
         or default_subject_name
     )
+    # Scored before anything is filed (P3-3): every output is compared with
+    # the card's anchor as it stood when the write-back started, and no LLM
+    # call runs inside an output's savepoint.
+    verdicts = (
+        _score_asset_outputs(ctx, str(asset_kind), outputs, subject_name)
+        if media_axis == "image"
+        else {}
+    )
 
     try:
         if media_axis == "video":
@@ -1091,6 +1104,7 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                                 # one becomes a candidate (P2-1).
                                 "generated": True,
                                 "camera": entry.get("camera"),
+                                "consistency": verdicts.get(str(entry.get("asset_id"))),
                                 **_derive_filing(ctx.params),
                             },
                         )
@@ -1137,6 +1151,7 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                                 "source_job_id": ctx.job.id,
                                 "generated": True,
                                 "camera": entry.get("camera"),
+                                "consistency": verdicts.get(str(entry.get("asset_id"))),
                                 **_derive_filing(ctx.params),
                             },
                         )
@@ -1171,6 +1186,7 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                                 "source_job_id": ctx.job.id,
                                 "generated": True,
                                 "camera": entry.get("camera"),
+                                "consistency": verdicts.get(str(entry.get("asset_id"))),
                                 **_derive_filing(ctx.params),
                             },
                         )
@@ -1192,7 +1208,192 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
             media_axis,
             asset_kind,
         )
+    if verdicts:
+        ctx.state[CONSISTENCY_COUNTS_STATE_KEY] = {
+            "scored": sum(
+                1
+                for pending in verdicts.values()
+                if pending.applied and pending.applied["status"] == consistency_judge.STATUS_SCORED
+            ),
+            "flagged": sum(1 for pending in verdicts.values() if pending.flagged),
+        }
     return NodeResult(port="ok")
+
+
+# `{scored, flagged}` of this job's consistency scoring (P3-3), set by
+# `execute_asset_output_link` while `asset_consistency.mode` is not `off`
+# and reported in the SUCCEEDED event.
+CONSISTENCY_COUNTS_STATE_KEY = "_consistency_counts"
+# Time one judge call (with its failover) plus the write-back after it may
+# take; with less of the task left, the remaining outputs are skipped.
+_CONSISTENCY_CALL_RESERVE_SECONDS = 60
+_CONSISTENCY_CARD_CATEGORIES = {
+    ImageAssetKind.CHARACTER.value: CreationSkillCategory.CHARACTER,
+    ImageAssetKind.SCENE.value: CreationSkillCategory.SCENE_ASSET,
+    ImageAssetKind.PROP.value: CreationSkillCategory.PROP_ASSET,
+}
+
+
+def _score_asset_outputs(
+    ctx: WorkflowContext, asset_kind: str, outputs: list[dict[str, Any]], subject_name: str
+) -> dict[str, asset_variants_service.PendingConsistency]:
+    """Scores each output against its card's anchor, keyed by asset id.
+
+    Writes no entry: the verdicts are applied when each image is filed
+    (`asset_variants.service.file_generated`). Empty while
+    `asset_consistency.mode` is `off` or the card kind is not scored. A card
+    the write-back has yet to create has no anchor, so its outputs are
+    `skipped`; so are outputs past `max_outputs_per_job` or with too little
+    of the task left (`budget`). Never raises.
+    """
+    try:
+        config = config_service.get_typed(ctx.session, "asset_consistency", AssetConsistencyConfig)
+        if config.mode == "off" or asset_kind not in config.kinds:
+            return {}
+        card = _consistency_card(ctx, asset_kind, subject_name)
+    except Exception:
+        logger.exception("job %s could not start consistency scoring", ctx.job.id)
+        return {}
+
+    verdicts: dict[str, asset_variants_service.PendingConsistency] = {}
+    for index, entry in enumerate(outputs):
+        asset_id = str(entry.get("asset_id") or "")
+        if not asset_id:
+            continue
+        left = task_deadline.seconds_left()
+        if card is None:
+            result = consistency_judge.ConsistencyResult(
+                status=consistency_judge.STATUS_SKIPPED,
+                skip_reason=consistency_judge.SKIP_NO_ANCHOR,
+            )
+        elif index >= config.max_outputs_per_job or (
+            left is not None and left < _CONSISTENCY_CALL_RESERVE_SECONDS
+        ):
+            result = consistency_judge.ConsistencyResult(
+                status=consistency_judge.STATUS_SKIPPED,
+                skip_reason=consistency_judge.SKIP_BUDGET,
+            )
+        else:
+            context = _consistency_context(ctx, card, entry, config)
+            result = consistency_judge.score(
+                ctx.session,
+                card=card,
+                anchor_entry=consistency_judge.resolve_anchor(card, context.variant),
+                output_asset_id=asset_id,
+                context=context,
+            )
+        verdicts[asset_id] = asset_variants_service.PendingConsistency(
+            verdict={
+                "v": consistency_judge.RUBRIC_VERSION,
+                **result.as_dict(),
+                "scored_at": utcnow().isoformat(timespec="seconds"),
+            },
+            config=config,
+        )
+    return verdicts
+
+
+def _consistency_card(
+    ctx: WorkflowContext, asset_kind: str, subject_name: str
+) -> CreationSkill | None:
+    """The existing card the write-back will file into, read-only: the
+    owned target, else (characters only) the owner's same-name card. `None`
+    when the write-back will create one."""
+    target_id = ctx.params.get(f"target_{asset_kind}_id")
+    category = _CONSISTENCY_CARD_CATEGORIES[asset_kind]
+    if target_id:
+        card = ctx.session.get(CreationSkill, str(target_id))
+        if card is not None and card.owner_user_id == ctx.job.user_id and card.category == category:
+            return card
+    if asset_kind == ImageAssetKind.CHARACTER.value:
+        existing = characters_service.find_owned_character_by_name(
+            ctx.session, user_id=ctx.job.user_id, name=subject_name
+        )
+        return existing.skill if existing is not None else None
+    return None
+
+
+def _consistency_context(
+    ctx: WorkflowContext,
+    card: CreationSkill,
+    entry: dict[str, Any],
+    config: AssetConsistencyConfig,
+) -> consistency_judge.ConsistencyContext:
+    """Where this output will be filed, as far as the rubric cares: the
+    target variant (and, for a character, whether it is another look than
+    the anchor's) and the entry type (panorama / sheet notes). Mirrors the
+    card services' `append_reference_asset` without creating anything."""
+    params = ctx.params
+    av = asset_variants_service
+    kind = av.card_kind(card)
+    source = (
+        av.find_entry(card, str(params["source_entry_id"]))
+        if params.get("asset_edit") and params.get("source_entry_id")
+        else None
+    )
+    target_variant_id = params.get("target_variant_id")
+    pinned = av.find_variant(card, str(target_variant_id)) if target_variant_id else None
+    variant: Any = None
+    outfit_change: bool | None = None
+    scoring_params: Mapping[str, Any] = params
+    if source is not None:
+        variant = source.variant
+    elif pinned is not None:
+        variant = pinned
+    elif kind == "character":
+        outfit = (
+            None if params.get("character_expressions") else params.get("character_outfit_label")
+        )
+        name = None if params.get("character_portrait") else outfit
+        variant = av.find_variant_matching(card, name=str(name) if name else None)
+        outfit_change = True if variant is None else None
+    elif kind == "scene":
+        own_presets = entry.get("presets")
+        variant = av.find_variant_matching(
+            card,
+            name=_scene_output_label(params, entry),
+            presets=own_presets or scene_presets_from(params) or None,
+        )
+        if isinstance(own_presets, dict) and own_presets:
+            # A variant-set pass: its own combo, not the job-level presets.
+            scoring_params = {f"scene_{axis}": value for axis, value in own_presets.items()}
+    else:
+        state = params.get("prop_state")
+        variant = av.find_variant_matching(card, presets={"prop_state": state} if state else None)
+    return consistency_judge.ConsistencyContext(
+        entry_type=source.entry_type
+        if source is not None
+        else _predicted_entry_type(params, entry),
+        variant=variant,
+        params=scoring_params,
+        outfit_change=outfit_change,
+        job_id=ctx.job.id,
+        user_id=ctx.job.user_id,
+        max_image_px=config.max_image_px,
+    )
+
+
+def _predicted_entry_type(params: Mapping[str, Any], entry: Mapping[str, Any]) -> str:
+    """The entry type an output will be filed as, where the rubric needs it
+    (a panorama is never scored; sheets get a whole-image note)."""
+    if params.get("asset_output_entry_type"):
+        return str(params["asset_output_entry_type"])
+    if params.get("scene_panorama"):
+        return AssetEntryType.PANORAMA.value
+    if params.get("character_portrait"):
+        return AssetEntryType.IDENTITY_PORTRAIT.value
+    if params.get("character_expressions"):
+        return AssetEntryType.EXPRESSION_SHEET.value
+    if entry.get("camera"):
+        return AssetEntryType.VIEW.value
+    if params.get("asset_kind") == ImageAssetKind.CHARACTER.value:
+        view = entry.get("view") or CharacterViewAngle.FRONT.value
+        return (
+            AssetEntryType.CHARACTER_SHEET.value
+            if view == CharacterViewAngle.FRONT.value
+            else AssetEntryType.VIEW.value
+        )
+    return AssetEntryType.MASTER.value
 
 
 def _character_output_label(params: dict[str, Any]) -> str | None:
@@ -2589,6 +2790,9 @@ def execute_settle_success(ctx: WorkflowContext, config: SettleSuccessConfig) ->
     payload: dict[str, Any] = (
         {"asset_id": asset_id} if asset_id else {"has_analysis": bool(result_json)}
     )
+    counts = ctx.state.get(CONSISTENCY_COUNTS_STATE_KEY)
+    if counts:
+        payload["consistency"] = counts
     message = "生成完成"
     if partial:
         payload.update(partial)

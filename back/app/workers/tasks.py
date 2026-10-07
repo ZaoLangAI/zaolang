@@ -15,6 +15,7 @@ from celery import Task
 from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError, OperationalError
+from sqlalchemy.orm import object_session
 
 from app.db import session_scope
 from app.domain.jobs import input_requests
@@ -31,7 +32,10 @@ from app.models import (
 )
 from app.models.base import utcnow
 from app.models.enums import JobEventType, JobStatus, SystemLogLevel, SystemLogSource
+from app.platform_config import service as config_service
+from app.platform_config.schemas import AssetConsistencyConfig
 from app.workers.celery_app import celery_app
+from app.workers.deadline import task_deadline
 from app.workers.pipeline import JobNotFoundError, run_generation_pipeline
 
 logger = logging.getLogger(__name__)
@@ -66,6 +70,11 @@ _GENERATION = {"soft_time_limit": 300, "time_limit": 360}
 _IMAGE_GENERATION = {"soft_time_limit": 660, "time_limit": 720}
 _IMAGE_EXTRA_VIEW = {"soft_time_limit": 180, "time_limit": 240}
 _IMAGE_GENERATION_CAP = {"soft_time_limit": 780, "time_limit": 960}
+# One vision consistency call per scored output (P3-3), added on top while
+# `asset_consistency.mode` is not `off` — still under `_IMAGE_GENERATION_CAP`;
+# the scoring itself skips (`budget`) what no longer fits.
+_CONSISTENCY_PER_OUTPUT = {"soft_time_limit": 45, "time_limit": 60}
+_CONSISTENCY_KINDS = frozenset({"character", "scene", "prop"})
 _LONG_GENERATION = {"soft_time_limit": 480, "time_limit": 600}
 _BATCH = {"soft_time_limit": 300, "time_limit": 450}
 # The slowest class: video/audio analysis (watching a whole clip before
@@ -113,6 +122,14 @@ def _is_transient_worker_error(exc: BaseException) -> bool:
     return isinstance(exc, DBAPIError) and bool(getattr(exc, "connection_invalidated", False))
 
 
+def _soft_time_limit(task: Task) -> float | None:
+    """This invocation's soft limit: the `apply_async` override
+    (`image_generation_time_limits`) when there is one, else the task's own."""
+    timelimit = getattr(getattr(task, "request", None), "timelimit", None) or (None, None)
+    soft = timelimit[1] if len(timelimit) > 1 else None
+    return soft or getattr(task, "soft_time_limit", None)
+
+
 def _run_generation_task(task: Task, job_id: str) -> str:
     """Execute one job for all latency-specific Celery entrypoints.
 
@@ -121,7 +138,7 @@ def _run_generation_task(task: Task, job_id: str) -> str:
     failure while preserving separate queue-visible task names.
     """
 
-    with session_scope() as session:
+    with session_scope() as session, task_deadline(_soft_time_limit(task)):
         try:
             outcome = run_generation_pipeline(session, job_id)
         except JobNotFoundError as exc:
@@ -629,7 +646,9 @@ def pull_episode_metrics() -> int:
         return distribution_service.pull_episode_metrics(session)
 
 
-def image_generation_time_limits(job: GenerationJob) -> dict[str, int]:
+def image_generation_time_limits(
+    job: GenerationJob, consistency: AssetConsistencyConfig | None = None
+) -> dict[str, int]:
     """Wall-clock budget for one `run_generation` invocation.
 
     Multiplies the single-pass floor by how many character views this job
@@ -637,6 +656,9 @@ def image_generation_time_limits(job: GenerationJob) -> dict[str, int]:
     multi-view `character` job (including a missing `request_json`) is one
     pass. Capped at the 3-view ceiling so a malformed list cannot outrun
     `visibility_timeout`.
+
+    With `consistency` scoring on for this card kind, each output it may
+    score (`max_outputs_per_job` at most) adds `_CONSISTENCY_PER_OUTPUT`.
     """
     params = job.request_json if isinstance(getattr(job, "request_json", None), dict) else {}
     raw_kind = params.get("asset_kind")
@@ -657,13 +679,34 @@ def image_generation_time_limits(job: GenerationJob) -> dict[str, int]:
     raw_poses = params.get("camera_poses")
     if isinstance(raw_poses, list) and raw_poses:
         extra = max(len(raw_poses) - 1, 0)
+    scored = 0
+    if (
+        consistency is not None
+        and consistency.mode != "off"
+        and raw_kind in _CONSISTENCY_KINDS
+        and raw_kind in consistency.kinds
+    ):
+        scored = min(extra + 1, consistency.max_outputs_per_job)
     return {
         name: min(
-            _IMAGE_GENERATION[name] + _IMAGE_EXTRA_VIEW[name] * extra,
+            _IMAGE_GENERATION[name]
+            + _IMAGE_EXTRA_VIEW[name] * extra
+            + _CONSISTENCY_PER_OUTPUT[name] * scored,
             _IMAGE_GENERATION_CAP[name],
         )
         for name in ("soft_time_limit", "time_limit")
     }
+
+
+def _consistency_config(job: GenerationJob) -> AssetConsistencyConfig | None:
+    session = object_session(job)
+    if session is None:
+        return None
+    try:
+        return config_service.get_typed(session, "asset_consistency", AssetConsistencyConfig)
+    except Exception:
+        logger.warning("could not read asset_consistency for job %s", job.id, exc_info=True)
+        return None
 
 
 def dispatch_generation(job: GenerationJob) -> None:
@@ -689,7 +732,9 @@ def dispatch_generation(job: GenerationJob) -> None:
     if job.operation == Operation.VIDEO_ANALYSIS:
         run_video_analysis.delay(job.id)
         return
-    run_generation.apply_async((job.id,), **image_generation_time_limits(job))
+    run_generation.apply_async(
+        (job.id,), **image_generation_time_limits(job, _consistency_config(job))
+    )
 
 
 __all__ = [

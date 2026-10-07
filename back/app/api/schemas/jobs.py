@@ -1117,6 +1117,10 @@ class GenerationJobResponse(ApiModel):
     # slot already held an approved image (P2-1). The studio uses it to
     # point the owner at the library to approve or discard them.
     candidate_entries: int = 0
+    # How many of them the consistency judge flagged as unlike the card's
+    # anchor under `asset_consistency.mode=enforce` (P3-3) — demoted to
+    # candidates or merely marked. Shadow-mode scores never count.
+    flagged_entries: int = 0
     draft_id: str | None = None
     # Echoes `GenerationParams.prompt` back. Lets a client (the image studio's
     # inline version-history strip) show what prompt produced each past

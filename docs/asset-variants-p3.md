@@ -1,6 +1,6 @@
 # 角色 / 场景 / 道具图片资产：P3 一致性打分设计
 
-> 状态：**已批准（2026-10-06），实施中**：P3-0 已合入 `dev` 并上线（2026-10-07，`dev` @ `a287b9c`，见第 4.5 节）；P3-1 已合入 `dev` 并上线（2026-10-07，`dev` @ `3e92f4e`，见第 5.7 节）；P3-2 已实现（`feature/p3-consistency-storage`，见第 6.4 节）；P3-3 起未开始。前置：P2-0 ~ P2-8 已上线；角色库改造 P0–P10 与资产创作 AC-1 ~ AC-10 已合入 `dev` 并上线（`dev` @ `8f95596`）。P2 设计见 [P2 生产线](asset-variants-p2.md)，数据模型见 [P1 设计](asset-variants-p1.md)。
+> 状态：**已批准（2026-10-06），实施中**：P3-0 已合入 `dev` 并上线（2026-10-07，`dev` @ `a287b9c`，见第 4.5 节）；P3-1 已合入 `dev` 并上线（2026-10-07，`dev` @ `3e92f4e`，见第 5.7 节）；P3-2 已合入 `dev` 并上线（2026-10-07，`dev` @ `4b173e4`，见第 6.4 节）；P3-3 已实现（`feature/p3-consistency-writeback`，见第 7.6 节）；P3-4 起未开始。前置：P2-0 ~ P2-8 已上线；角色库改造 P0–P10 与资产创作 AC-1 ~ AC-10 已合入 `dev` 并上线（`dev` @ `8f95596`）。P2 设计见 [P2 生产线](asset-variants-p2.md)，数据模型见 [P1 设计](asset-variants-p1.md)。
 >
 > 本文涉及的不变量编号沿用 P1 / P2，另加一项：
 >
@@ -358,6 +358,28 @@ P3-2 存储与配置 ───┴───────────────�
 
 - `tests/unit/test_look_fill.py`：低分候选不被重新生成；
 - `tests/integration/test_asset_derive_api.py`：派生和多机位的产出都打了分。
+
+### 7.6 实施记录（P3-3，2026-10-07）
+
+与上文设计的出入和补充：
+
+- **分数在哪里应用**：打分段（`nodes._score_asset_outputs`）只产出 `asset_variants.service.PendingConsistency`，随 `filing["consistency"]` 传给三类卡片的 `append_reference_asset`，再传进 `file_generated`。阈值按**实际写入的** `entry_type` 查（`threshold_for`），"空槽"也只有 `file_generated` 知道，所以 `threshold` / `below` / `mode` / `demoted` 都在写入那一刻盖章，而不是在打分段算好 `candidate`。`add_entry` 新增 `consistency` 参数；同一变体里已有的资产被重新写入时，新分数覆盖旧分数（状态不变）。
+- **打分段不写库**：卡片只读解析（`_consistency_card`：拥有的目标卡；角色另按同名卡复用，与写回一致）；写回要新建的卡记 `skipped: no_anchor`，不调用模型。目标变体和条目类型由 `_consistency_context` 只读预测：新增 `asset_variants.service.find_variant_matching`（`find_or_create_variant` 的查找部分，两者共用），写回将新建的造型记为换装（`ConsistencyContext.outfit_change`，P3-1 新增的覆盖字段）；场景变体组的每一遍用它自己的预设比较；调整沿用源条目的变体和类型。
+- **`below` 在影子模式也记录**（阈值已配置时），便于 P3-5 用真实分布试阈值；只有 `enforce` 会降级，`flagged_entries` 和事件里的 `flagged` 也只统计 `enforce` 写入的记录。没有阈值的组合 `threshold` 为 `null`、`below` 为假。
+- **存储内容**：`{"v": 1, **ConsistencyResult.as_dict(), "scored_at", "threshold", "below", "mode", "demoted", "owner_approved_at": null}`，即在第 6.1 节的字段之外还有 `status` / `skip_reason` / `error` / `degraded` / `agent_run_id` / `endpoint_id`。
+- **时间预算**：
+    - `image_generation_time_limits(job, config)` 在 `mode != off` 且卡片类型在 `kinds` 里时，每张可能打分的图加 45 / 60 秒（`min(输出数, max_outputs_per_job)` 张），仍受 `_IMAGE_GENERATION_CAP` 约束；`dispatch_generation` 从任务所在的 session 读配置。
+    - "剩余时间"来自新模块 `back/app/workers/deadline.py`：`_run_generation_task` 用本次调用的软时限设置截止时间（上下文变量），打分前剩余不足 `_CONSISTENCY_CALL_RESERVE_SECONDS`（60 秒）就记 `skipped: budget`。API、测试和内联运行没有截止时间，不受限制。
+    - 单次评审调用本身没有超时参数；若调用中途触发软时限，`score()` 会把它当作失败返回（`status=failed`），写回仍在硬时限前完成。
+- **事件**：SUCCEEDED 的 payload 在 `mode != off` 时带 `consistency: {scored, flagged}`（部分交付同样）；`mode=off` 时不带。
+- **视频产出**不打分、不记录（动作片段存在 `action_clips` JSON 里，没有条目可写）。
+- **测试**放在新文件 `tests/integration/test_consistency_writeback.py`（17 项，覆盖第 7.5 节各条和任务截止时间；第 7.5 节"补齐缺失"一条也在这里验证：降级的候选让槽位显示 `candidate`），另在 `tests/integration/test_asset_derive_api.py` 加了调整 / 派生 / 多机位都打分的端到端用例。
+- 接口：`GenerationJobResponse.flagged_entries`（新增，默认 0），已运行 `make openapi`。
+
+**发布说明**
+
+- 部署后没有行为变化：`asset_consistency.mode` 默认 `off`，不打分、不加时限。
+- 切到 `shadow` 之前：先在 `/admin/agents` 给「视觉一致性评审」绑定支持图像的端点（否则全部记为 `skipped: no_vision_endpoint`），再在 `/admin/config` 的「资产一致性打分」里改模式。影子期每张资产图多一次视觉调用（约 5–15 秒），费用记在 `agent_runs.cost_micro_usd`。
 
 ## 8. P3-4 前端标记 / P3-5 校准
 
