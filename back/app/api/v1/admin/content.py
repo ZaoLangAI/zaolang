@@ -567,13 +567,54 @@ def restore_work(
 
 @router.get("/fingerprints/duplicates", response_model=Page[FingerprintDuplicateGroup])
 def duplicates(
-    session: DbSession, user: Viewer, _: AdminRead, limit: int = Query(default=50, ge=1, le=200)
+    session: DbSession,
+    user: Viewer,
+    _: AdminRead,
+    fingerprint: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
 ) -> Page[FingerprintDuplicateGroup]:
-    """Assets sharing an identical perceptual hash.
+    """Assets sharing a perceptual hash.
 
-    Exact matches only. Near-duplicate scanning by Hamming distance is a
-    separate, heavier job and is not run from a request handler.
+    Without `fingerprint`, returns exact-match groups (`count > 1`). With
+    `fingerprint`, runs `media_service.find_near_duplicates` (`<= 8` bits
+    Hamming distance) against `fingerprint` and groups matching assets by
+    their pHash.
     """
+    if fingerprint is not None:
+        from app.domain.media import service as media_service
+
+        matches = media_service.find_near_duplicates(
+            session, fingerprint_hex=fingerprint, limit=limit
+        )
+        matched_ids = [asset.id for asset, _dist in matches]
+        if not matched_ids:
+            return Page(items=[])
+        fp_rows = session.execute(
+            select(
+                ContentFingerprint.fingerprint_hex,
+                ContentFingerprint.asset_id,
+                ContentFingerprint.created_at,
+            )
+            .where(ContentFingerprint.asset_id.in_(matched_ids))
+            .order_by(ContentFingerprint.created_at.asc())
+        ).all()
+        by_hex: dict[str, list[tuple[str, dt.datetime]]] = {}
+        for fp_hex, asset_id, created_at in fp_rows:
+            by_hex.setdefault(fp_hex, []).append((asset_id, created_at))
+        owners_by_asset = {asset.id: asset.owner_user_id for asset, _dist in matches}
+        items = [
+            FingerprintDuplicateGroup(
+                fingerprint=fp_hex,
+                asset_ids=[aid for aid, _ in entries],
+                owner_user_ids=sorted(
+                    {owners_by_asset[aid] for aid, _ in entries if aid in owners_by_asset}
+                ),
+                first_seen_at=min(ts for _, ts in entries),
+            )
+            for fp_hex, entries in by_hex.items()
+        ]
+        return Page(items=items)
+
     grouped = session.execute(
         select(
             ContentFingerprint.fingerprint_hex,

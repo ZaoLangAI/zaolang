@@ -5,8 +5,10 @@ public extension APIClient {
         try await send(.post("/v1/drafts", body: payload))
     }
 
-    func listDrafts(limit: Int = 20) async throws -> Page<DraftResponse> {
-        try await send(.get("/v1/drafts", query: [URLQueryItem(name: "limit", value: String(limit))]))
+    func listDrafts(cursor: String? = nil, limit: Int = 20) async throws -> Page<DraftResponse> {
+        var query = [URLQueryItem(name: "limit", value: String(limit))]
+        if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+        return try await send(.get("/v1/drafts", query: query))
     }
 
     func fetchDraft(id: String) async throws -> DraftResponse {

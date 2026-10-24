@@ -189,12 +189,6 @@ class ReasonRequired(DomainError):
     default_message = "该操作必须填写理由。"
 
 
-class LineageProtected(DomainError):
-    code = "LINEAGE_PROTECTED"
-    http_status = 409
-    default_message = "该记录已被后代作品引用，不能删除。"
-
-
 class AgeGateRequired(DomainError):
     code = "AGE_GATE_REQUIRED"
     http_status = 403

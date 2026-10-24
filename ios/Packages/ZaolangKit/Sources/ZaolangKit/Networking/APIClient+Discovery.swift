@@ -10,8 +10,10 @@ public extension APIClient {
         try await send(.get("/v1/profiles/\(handle)"))
     }
 
-    func profileWorks(handle: String, limit: Int = 60) async throws -> Page<WorkSummary> {
-        try await send(.get("/v1/profiles/\(handle)/works", query: [URLQueryItem(name: "limit", value: String(limit))]))
+    func profileWorks(handle: String, cursor: String? = nil, limit: Int = 60) async throws -> Page<WorkSummary> {
+        var query = [URLQueryItem(name: "limit", value: String(limit))]
+        if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+        return try await send(.get("/v1/profiles/\(handle)/works", query: query))
     }
 
     func asset(id: String) async throws -> AssetResponse {

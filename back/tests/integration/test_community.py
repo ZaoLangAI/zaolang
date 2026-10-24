@@ -713,3 +713,49 @@ def test_a_private_preset_is_not_readable_by_others(
 
     response = client.post(f"/v1/style-presets/{preset_id}/apply", headers=auth_header(remixer))
     assert response.status_code in (403, 404)
+
+
+def test_public_and_private_collection_detail_and_items_visibility(
+    client: TestClient, work: Work, author: User, remixer: User
+) -> None:
+    pub_resp = client.post(
+        "/v1/collections",
+        json={"name": "公开精选", "description": "大家可见", "is_public": True},
+        headers=auth_header(author),
+    )
+    assert pub_resp.status_code == 201
+    pub_id = pub_resp.json()["id"]
+
+    add_resp = client.post(
+        f"/v1/collections/{pub_id}/items",
+        params={"work_id": work.id},
+        headers=auth_header(author),
+    )
+    assert add_resp.status_code in (200, 201)
+
+    anon_detail = client.get(f"/v1/collections/{pub_id}")
+    assert anon_detail.status_code == 200
+    assert anon_detail.json()["name"] == "公开精选"
+    assert anon_detail.json()["item_count"] == 1
+
+    anon_items = client.get(f"/v1/collections/{pub_id}/items?limit=10")
+    assert anon_items.status_code == 200
+    assert [item["id"] for item in anon_items.json()["items"]] == [work.id]
+
+    priv_resp = client.post(
+        "/v1/collections",
+        json={"name": "私密灵感", "description": "仅自己可见", "is_public": False},
+        headers=auth_header(author),
+    )
+    assert priv_resp.status_code == 201
+    priv_id = priv_resp.json()["id"]
+
+    assert client.get(f"/v1/collections/{priv_id}").status_code == 404
+    assert client.get(f"/v1/collections/{priv_id}", headers=auth_header(remixer)).status_code == 404
+    assert (
+        client.get(f"/v1/collections/{priv_id}/items", headers=auth_header(remixer)).status_code
+        == 404
+    )
+    owner_detail = client.get(f"/v1/collections/{priv_id}", headers=auth_header(author))
+    assert owner_detail.status_code == 200
+    assert owner_detail.json()["id"] == priv_id

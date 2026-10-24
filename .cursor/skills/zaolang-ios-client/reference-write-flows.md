@@ -19,11 +19,11 @@ Paths below are relative to `ios/App/Sources/` unless they start with `ios/`.
 - `submit()`: derive the draft title (source work title, else first prompt line capped at 200) and seed `params` with `prompt` + `operation` **before** `createDraft` — the draft caption (`DraftResponse.displayTitle`, fallback `createPage.untitledDraft`) is computed from what was stored at create time. Draft and job share one idempotency key (`idempotencyKeys.key(for: draft.id)`). Then `trackJob(id:)`.
 
 ## Asset libraries (`AssetLibrary/`)
-- Hub cards 角色 / 场景 / 道具创作 → `CreateRoute.assetLibrary(AssetCardKind)` (login wall) → `AssetListView` (full `GET /v1/{characters,scenes,props}`; row = hero, name, description, completeness of the default look / variant) → `CreateRoute.assetDetail(kind:cardID:variantID:)`. New cards are made on the web (toolbar / empty-state button opens `/create/{kind}`).
+- Hub cards Character / Scene / Prop creation (`角色 / 场景 / 道具创作`) → `CreateRoute.assetLibrary(AssetCardKind)` (login wall) → `AssetListView` (full `GET /v1/{characters,scenes,props}`; row = hero, name, description, completeness of the default look / variant) → `CreateRoute.assetDetail(kind:cardID:variantID:)`. New cards are created on the web (toolbar / empty-state button opens `/create/{kind}`).
 - `AssetSlots` is the phone copy of `front/src/features/asset-workspace/kind-config.ts`, `camera.ts`, `completeness.ts` and `slot-jobs.ts` — change them together. Slot status: approved > pending (a graph `pending` job on this variant: `orbit` → pose slots, `panorama` → panorama, else the rest) > candidate > missing; the portrait slot shows only on the default look; completeness counts required slots. The turnaround ring reads entry poses (`camera`, else the coarse `view`; a sheet / master is 0°) at eye level.
 - `approve(_:)` → `POST /v1/{kind}/{id}/entries/{entry_id}:approve` (`approveAssetEntry`), from the slot sheet's candidates or the graph tab's entry viewer.
-- Primary slot only (`Slot.isPrimary`: character `portrait`, scene / prop `master`): `quotePrimary` → `POST /v1/generation-jobs/quote` with `asset_kind`; confirm dialog; `generate` submits a draftless `text_to_image` job with `AssetSlots.primaryJobParams` (prompt = name。description。non-default look description; `asset_kind` + `target_{kind}_id`, `subject_name_hint`; portrait `character_portrait` 3:4; master `target_variant_id`, scene 16:9 + `scene_*` presets, prop 1:1 + `prop_state`), `max_credits` = quote, idempotency key `asset-slot-<card>-<variant>|<slot>` reused until success; then `trackJob`, 3s poll, reload. Every other slot shows 「在网页端继续」 → `/create/{kind}/{id}?look=<variant>`.
-- Removed with AC-10: the studio's character / scene target picker (`LibraryPickerSheet`) and 补全侧面/背面 (`characterViews: [.side, .back]`); turnaround views are the web workspace's camera poses.
+- Primary slot only (`Slot.isPrimary`: character `portrait`, scene / prop `master`): `quotePrimary` → `POST /v1/generation-jobs/quote` with `asset_kind`; confirm dialog; `generate` submits a draftless `text_to_image` job with `AssetSlots.primaryJobParams` (prompt = `name。description。non-default look description`; `asset_kind` + `target_{kind}_id`, `subject_name_hint`; portrait `character_portrait` 3:4; master `target_variant_id`, scene 16:9 + `scene_*` presets, prop 1:1 + `prop_state`), `max_credits` = quote, idempotency key `asset-slot-<card>-<variant>|<slot>` reused until success; then `trackJob`, 3s poll, reload. Every other slot shows "Continue on web" ("在网页端继续") → `/create/{kind}/{id}?look=<variant>`.
+- Removed: the studio's character / scene target picker (`LibraryPickerSheet`) and side/back completion ("补全侧面/背面", `characterViews: [.side, .back]`); turnaround views are the web workspace's camera poses.
 - Reference-image editing and publishing characters / scenes / props are web-only.
 
 ## Character voices & profile (`AssetLibrary/AssetDetailViewModel.swift`, character cards only)
@@ -49,7 +49,7 @@ Paths below are relative to `ios/App/Sources/` unless they start with `ios/`.
 
 ## Push
 - `PushManager.shared.requestAuthorizationAndRegister()` has one call site: the notifications section of `Library/SettingsView.swift`. Onboarding and cold start never prompt.
-- Token → `AppEnvironment.registerPushToken` → `POST /v1/me/devices`. `signOut()` first `DELETE /v1/me/devices/{id}`, then `POST /v1/auth/logout` (see roadmap: no refresh cookie sent).
+- Token → `AppEnvironment.registerPushToken` → `POST /v1/me/devices`. `signOut()` first `DELETE /v1/me/devices/{id}`, then `SessionManager.signOut()` calls `AuthTransport.logout(refreshToken:)` with `Cookie: zl_refresh` (`POST /v1/auth/logout`) and clears Keychain.
 - Backend send is a logging stub — see `reference-roadmap.md`.
 
 ## Money

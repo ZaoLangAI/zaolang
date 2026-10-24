@@ -32,10 +32,10 @@ Backend layering: `back/app/api/v1` (HTTP contract) → `back/app/domain/*` (inv
 | Visibility, remix auth, paid unlocks, license snapshots, lineage, publish | `zaolang-domain-licensing-lineage` |
 | Credits reserve/settle, royalties, payments, redemption, reconciliation | `zaolang-credits-billing` |
 | Job state machine, SSE, Celery/Beat, retries, workflow graphs, video analysis | `zaolang-generation-jobs` |
-| Agents, LLM client, provider routing/quirks, prompt polish, `/gateway/status` | `zaolang-agent-gateway` |
+| Agents, LLM client, provider routing/quirks, prompt polish, consistency judge, `/gateway/status` | `zaolang-agent-gateway` |
 | Uploads, signed downloads, pHash, provenance, storage, assets-pack | `zaolang-media-assets` |
 | Search, tags, feeds, similar works, style presets/gallery | `zaolang-discovery-search` |
-| Skill library, characters, scenes, `/skills` plaza, @-mention apply | `zaolang-creation-library` |
+| Skill library, characters/scenes/props cards, card workspaces, asset graph, voices, `/skills` plaza, `@`-mention apply | `zaolang-creation-library` |
 | Learning posts, notifications/push devices, profiles, collections, follows, reports | `zaolang-community` |
 | Audit, SystemLog, data export/deletion, consent, retention, backups | `zaolang-compliance-audit` |
 | Consumer routes, shared components, studios, API client, login wall, Cmd+K | `zaolang-frontend-ui` |
@@ -43,8 +43,8 @@ Backend layering: `back/app/api/v1` (HTTP contract) → `back/app/domain/*` (inv
 | UI copy (zh-CN/en/ja), locale/region, formatting | `zaolang-i18n-region` |
 | Lineage-graph DAG UI, version diff | `zaolang-lineage-graph` |
 | Infinite canvas, `/graph-ops`, change feed, canvas Agent | `zaolang-canvas` |
-| Short drama: series/episodes, timeline editor, exports, MCP, 文案创作, shortform | `zaolang-editor-drama` |
-| 白膜 3D blockout studio, motion-guide reference video | `zaolang-blocking-studio` |
+| Short drama: series/episodes, timeline editor, exports, MCP, script writing (`文案创作`), breakdown, shortform | `zaolang-editor-drama` |
+| 3D blockout studio (`白膜`), motion-guide reference video | `zaolang-blocking-studio` |
 | Admin shell, admin login, RBAC, nav | `zaolang-admin-console` |
 | Admin domain endpoints/pages, moderation queue, keyword gates | `zaolang-admin-ops` |
 | Admin statistics timeseries | `zaolang-admin-statistics` |

@@ -6,6 +6,7 @@ import Foundation
 public protocol AuthTransport: Sendable {
     func login(email: String, password: String) async throws -> AuthResult
     func register(_ payload: RegisterRequest) async throws -> AuthResult
+    func logout(refreshToken: String?) async throws
 }
 
 public struct AuthResult: Sendable {
@@ -29,6 +30,22 @@ public struct URLSessionAuthTransport: AuthTransport {
 
     public func register(_ payload: RegisterRequest) async throws -> AuthResult {
         try await perform(path: "/v1/auth/register", body: payload)
+    }
+
+    public func logout(refreshToken: String?) async throws {
+        let url = baseURL.appendingPathComponent("/v1/auth/logout")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let refreshToken {
+            for (field, value) in CookieCodec.requestHeader(refreshToken: refreshToken, url: url) {
+                request.setValue(value, forHTTPHeaderField: field)
+            }
+        }
+        let (_, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw ApiError.unexpectedResponse(status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
     }
 
     private func perform<Body: Encodable>(path: String, body: Body) async throws -> AuthResult {

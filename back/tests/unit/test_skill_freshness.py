@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SKILLS_DIR = REPO_ROOT / ".cursor" / "skills"
 SKILL_FILES = sorted(SKILLS_DIR.glob("*/*.md"))
 
-_PATH_REF = re.compile(r"`((?:back|front|infra)/[^`\s]+)`")
+_PATH_REF = re.compile(r"`((?:back|front|infra|ios|docs)/[^`\s]+)`")
 _MAKE_REF = re.compile(r"`make ([a-z][a-z0-9-]*)")
 # `path:12` / `path:12-40` are line hints; `path:symbol` and `path::symbol`
 # (a pytest node id) name something that must still be defined in that file.

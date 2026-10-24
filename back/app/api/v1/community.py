@@ -23,7 +23,9 @@ from app.api.schemas.works import (
     CollectionUpdateRequest,
     StylePresetCreateRequest,
     StylePresetResponse,
+    WorkSummary,
 )
+from app.api.v1.works import _summaries
 from app.domain.access import service as access_service
 from app.domain.errors import Conflict, Forbidden, NotFound
 from app.domain.licensing import service as licensing
@@ -86,6 +88,52 @@ def list_collections(
         .order_by(Collection.created_at.desc())
     )
     return Page(items=_collection_responses(session, list(rows)))
+
+
+@router.get("/collections/{collection_id}", response_model=CollectionResponse)
+def get_collection(
+    collection_id: str,
+    session: DbSession,
+    viewer: OptionalUser,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
+) -> CollectionResponse:
+    collection = _visible_collection(session, collection_id, viewer)
+    return _collection_response(session, collection)
+
+
+@router.get("/collections/{collection_id}/items", response_model=Page[WorkSummary])
+def list_collection_items(
+    collection_id: str,
+    session: DbSession,
+    viewer: OptionalUser,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
+    cursor: str | None = None,
+    limit: int = Query(default=24, ge=1, le=60),
+) -> Page[WorkSummary]:
+    collection = _visible_collection(session, collection_id, viewer)
+    viewer_id = viewer.id if viewer else None
+    stmt = (
+        select(Work, WorkVersion, CollectionItem.id)
+        .join(CollectionItem, CollectionItem.work_id == Work.id)
+        .join(WorkVersion, WorkVersion.id == Work.current_version_id)
+        .where(CollectionItem.collection_id == collection.id)
+        .order_by(CollectionItem.position.asc(), CollectionItem.id.asc())
+    )
+    if cursor:
+        stmt = stmt.where(CollectionItem.id > cursor)
+
+    rows = [
+        (work, version, item_id)
+        for work, version, item_id in session.execute(stmt).all()
+        if licensing.can_view(work, viewer_id)
+    ]
+    has_more = len(rows) > limit
+    page = rows[:limit]
+    return Page(
+        items=_summaries(session, [(work, version) for work, version, _ in page], viewer),
+        next_cursor=page[-1][2] if has_more and page else None,
+        has_more=has_more,
+    )
 
 
 @router.patch("/collections/{collection_id}", response_model=CollectionResponse)
@@ -258,18 +306,22 @@ def list_notifications(
     session: DbSession,
     _: Annotated[None, Depends(rate_limited("public_read"))],
     unread_only: bool = False,
+    cursor: str | None = None,
     limit: int = Query(default=30, ge=1, le=60),
 ) -> Page[NotificationResponse]:
     stmt = (
         select(Notification)
         .where(Notification.user_id == user.id)
-        .order_by(Notification.updated_at.desc())
-        .limit(limit)
+        .order_by(Notification.updated_at.desc(), Notification.id.desc())
     )
     if unread_only:
         stmt = stmt.where(Notification.read_at.is_(None))
+    if cursor:
+        stmt = stmt.where(Notification.id < cursor)
 
-    rows = list(session.scalars(stmt))
+    all_rows = list(session.scalars(stmt.limit(limit + 1)))
+    has_more = len(all_rows) > limit
+    rows = all_rows[:limit]
     job_ids = [n.target_id for n in rows if n.target_type == "generation_job" and n.target_id]
     export_ids = [n.target_id for n in rows if n.target_type == "editor_export" and n.target_id]
     jobs = (
@@ -292,7 +344,9 @@ def list_notifications(
     )
 
     return Page(
-        items=[_notification_response(session, n, jobs=jobs, exports=exports) for n in rows]
+        items=[_notification_response(session, n, jobs=jobs, exports=exports) for n in rows],
+        next_cursor=rows[-1].id if has_more and rows else None,
+        has_more=has_more,
     )
 
 
@@ -460,6 +514,16 @@ def _owned_collection(session, collection_id: str, user_id: str) -> Collection: 
         raise NotFound("作品集不存在。")
     if collection.owner_user_id != user_id:
         raise Forbidden("不能修改他人的作品集。")
+    return collection
+
+
+def _visible_collection(session, collection_id: str, viewer) -> Collection:  # type: ignore[no-untyped-def]
+    collection = session.get(Collection, collection_id)
+    if collection is None:
+        raise NotFound("作品集不存在。")
+    is_owner = viewer is not None and viewer.id == collection.owner_user_id
+    if not collection.is_public and not is_owner:
+        raise NotFound("作品集不存在。")
     return collection
 
 

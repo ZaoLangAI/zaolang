@@ -60,10 +60,11 @@ public actor SessionManager: AccessTokenProviding {
         await establishSession(accessToken: result.accessToken, expiresAt: result.expiresAt, refreshToken: result.refreshToken)
     }
 
-    /// 用户主动退出。只清本地令牌——`POST /v1/auth/logout` 那次网络调用（用来让后端清
-    /// httpOnly cookie，纯粹是 Web 端会用到的语义）由调用方自己决定要不要顺带打一下，
-    /// 这里不依赖 `APIClient` 以避免和它的 `authProvider` 反向持有成环。
+    /// 用户主动退出。先带 `Cookie: zl_refresh=...` 调 `POST /v1/auth/logout` 吊销服务端
+    /// `RefreshSession`，再清空本地 Keychain 令牌。
     public func signOut() async {
+        let refreshToken = await tokenStore.refreshToken()
+        try? await authTransport.logout(refreshToken: refreshToken)
         await tokenStore.clearAll()
         isAuthenticated = false
     }

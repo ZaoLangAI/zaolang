@@ -12,7 +12,7 @@ Not here → `zaolang-generation-jobs` (when jobs reserve/settle), `zaolang-plat
 
 | Path | What |
 |---|---|
-| `back/app/domain/credits/service.py` | `grant`/`purchase`/`reserve`/`capture`/`release`/`adjust`/`royalty_transfer`/`access_transfer` → `_apply`; `list_ledger` (raw), `list_billing_history` (projection); `set_monthly_spend_limit`, `remaining_monthly_spend`; `SIGNUP_GRANT_CREDITS` |
+| `back/app/domain/credits/service.py` | `grant`/`purchase`/`reserve`/`capture`/`release`/`refund`/`adjust`/`royalty_transfer`/`access_transfer` → `_apply`; `list_ledger` (raw), `list_billing_history` (projection); `set_monthly_spend_limit`, `remaining_monthly_spend`; `SIGNUP_GRANT_CREDITS` |
 | `back/app/domain/credits/pricing.py` | `quote()` (`DEFAULT_TIER_PRICING` = fallback only), `settlement_credits()` |
 | `back/app/domain/credits/` | also `royalty.py` (`plan_royalties` pure, `distribute`), `reconciliation.py` (`build_report`), `redemption.py` (`create_code`/`redeem`, `INVITE`/`PROMO`) |
 | `back/app/api/v1/credits.py` | balance, `PUT /credits/spend-limit`, ledger, packages, redeem, checkout (`/credits/checkout`, `/checkout/{ref}`, `/checkout/confirm`), HMAC webhook `/webhooks/payments/mock` |
@@ -41,7 +41,7 @@ Not here → `zaolang-generation-jobs` (when jobs reserve/settle), `zaolang-plat
 
 ## Recipes
 
-**Add a ledger entry type**: `LedgerEntryType` value → thin wrapper calling `_apply` with explicit deltas → decide if it belongs in `reconciliation.EXTERNAL_TYPES` → property-test invariants → label in `ledger-table.tsx` + copy. `REFUND` exists with no wrapper: add `refund()` before first use.
+**Add a ledger entry type**: `LedgerEntryType` value → thin wrapper calling `_apply` with explicit deltas → decide if it belongs in `reconciliation.EXTERNAL_TYPES` → property-test invariants → label in `ledger-table.tsx` + copy.
 
 **Wire a real payment provider**: extract webhook verification from `credits.py` into an adapter; posting still via `purchase` with unique `payment_reference`.
 

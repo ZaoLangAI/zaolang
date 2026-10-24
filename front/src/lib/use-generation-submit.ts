@@ -43,6 +43,9 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
   /** Cast picked from the character library; merged server-side into the job's
    * reference images and voice hints (see `characters.service.apply_character_refs`). */
   characterIds?: string[];
+  /** Character voice profile picked in the audio studio; resolved server-side
+   * into preset voice params or a clone reference (`characters.voice_resolver.apply_voice_profile`). */
+  voiceProfileId?: string;
   /** Settings picked from the scene library; merged server-side into the job's
    * reference images (see `scenes.service.apply_scene_refs`), sharing the same
    * reference-slot budget as `characterIds` above. */
@@ -342,6 +345,7 @@ export function useGenerationSubmit(
                 reference_asset_ids: input.referenceAssetIds,
                 video_options: input.videoOptions,
                 character_ids: input.characterIds ?? [],
+                voice_profile_id: input.voiceProfileId ?? null,
                 scene_ids: input.sceneIds ?? [],
                 prop_ids: input.propIds ?? [],
                 shortform_profile: input.shortformProfile,

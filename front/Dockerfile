@@ -2,9 +2,11 @@
 
 FROM node:22-bookworm-slim AS deps
 
+ARG NPM_REGISTRY=
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
+    && npm ci
 
 
 FROM node:22-bookworm-slim AS builder
@@ -27,7 +29,11 @@ RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime
 
-RUN apt-get update \
+ARG APT_MIRROR=
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s|deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
+    fi \
+    && apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 

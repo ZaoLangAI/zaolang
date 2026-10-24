@@ -188,7 +188,11 @@ def _draft_bound_to_inaccessible_series(accessible_series_ids: list[str]) -> Col
 
 
 def list_unpublished_work_drafts(
-    session: Session, *, user_id: str, limit: int = LIST_UNPUBLISHED_WORK_DRAFTS_LIMIT
+    session: Session,
+    *,
+    user_id: str,
+    cursor: str | None = None,
+    limit: int = LIST_UNPUBLISHED_WORK_DRAFTS_LIMIT,
 ) -> list[Draft]:
     """Unpublished drafts the current user created, newest first.
 
@@ -203,7 +207,7 @@ def list_unpublished_work_drafts(
     `user_id == caller`, but the clip belongs to the other person's
     production. `GET /drafts/{id}` is unchanged.
     """
-    drafts = session.scalars(
+    stmt = (
         select(Draft)
         .outerjoin(Asset, Asset.id == Draft.output_asset_id)
         .where(
@@ -218,10 +222,11 @@ def list_unpublished_work_drafts(
                 _work_library_accessible_series_ids(session, user_id=user_id)
             ),
         )
-        .order_by(Draft.created_at.desc())
-        .limit(limit)
+        .order_by(Draft.created_at.desc(), Draft.id.desc())
     )
-    return list(drafts)
+    if cursor:
+        stmt = stmt.where(Draft.id < cursor)
+    return list(session.scalars(stmt.limit(limit)))
 
 
 def _maybe_link_draft_to_episode(session: Session, *, user_id: str, draft: Draft) -> None:

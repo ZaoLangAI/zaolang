@@ -35,6 +35,8 @@ export interface StyleAndSkillPicker {
   appliedStyleGalleryId: string | null;
   /** The look the author already committed to, so `PromptPolish` adds detail inside that style instead of proposing a different one. */
   styleHint: string;
+  /** All creation skills visible to the viewer (public + owned), including unlocked state. */
+  skills: CreationSkillSummary[];
   mentionableSkills: CreationSkillSummary[];
   applySkill: (skill: CreationSkillSummary) => void;
   /** Applied-skill chips / unlock dialog from `useAppliedSkills`. Video
@@ -257,6 +259,7 @@ export function useStyleAndSkillPicker({
     appliedSkillIds,
     appliedStyleGalleryId,
     styleHint,
+    skills,
     mentionableSkills,
     applySkill,
     chips,

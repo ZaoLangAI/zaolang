@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_, func, select
 
-from app.api.deps import CurrentUser, DbSession, OptionalUser
+from app.api.deps import CurrentUser, DbSession, OptionalUser, rate_limited
 from app.api.schemas.auth import PublicProfileResponse
 from app.api.schemas.common import Page
 from app.api.schemas.works import TrashWorkSummary, WorkSummary
@@ -20,7 +22,12 @@ router = APIRouter(tags=["profiles"])
 
 
 @router.get("/profiles/{handle}", response_model=PublicProfileResponse)
-def get_profile(handle: str, session: DbSession, viewer: OptionalUser) -> PublicProfileResponse:
+def get_profile(
+    handle: str,
+    session: DbSession,
+    viewer: OptionalUser,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
+) -> PublicProfileResponse:
     profile, is_self = _visible_profile(session, handle, viewer)
 
     return PublicProfileResponse(
@@ -51,6 +58,8 @@ def profile_works(
     handle: str,
     session: DbSession,
     viewer: OptionalUser,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
+    cursor: str | None = None,
     limit: int = Query(default=24, ge=1, le=60),
 ) -> Page[WorkSummary]:
     profile, is_self = _visible_profile(session, handle, viewer)
@@ -60,7 +69,6 @@ def profile_works(
         .where(Work.owner_user_id == profile.user_id)
         .where(Work.lifecycle_status.notin_([LifecycleStatus.TOMBSTONE, LifecycleStatus.TRASHED]))
         .order_by(Work.published_at.desc().nullslast(), Work.id.desc())
-        .limit(limit)
     )
     if not is_self:
         # Visitors see only what is listed publicly and still alive.
@@ -70,14 +78,25 @@ def profile_works(
                 [Visibility.PUBLIC_REMIXABLE.value, Visibility.PUBLIC_VIEW_ONLY.value]
             ),
         )
+    if cursor:
+        stmt = stmt.where(Work.id < cursor)
 
-    rows = session.execute(stmt).all()
-    return Page(items=_summaries(session, [(work, version) for work, version in rows], viewer))
+    rows = session.execute(stmt.limit(limit + 1)).all()
+    has_more = len(rows) > limit
+    page = rows[:limit]
+    return Page(
+        items=_summaries(session, [(work, version) for work, version in page], viewer),
+        next_cursor=page[-1][0].id if has_more and page else None,
+        has_more=has_more,
+    )
 
 
 @router.get("/me/trash", response_model=Page[TrashWorkSummary])
 def my_trash(
-    session: DbSession, viewer: CurrentUser, limit: int = Query(default=60, ge=1, le=60)
+    session: DbSession,
+    viewer: CurrentUser,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
+    limit: int = Query(default=60, ge=1, le=60),
 ) -> Page[TrashWorkSummary]:
     rows = session.execute(
         select(Work, WorkVersion)
@@ -104,17 +123,29 @@ def my_trash(
 
 @router.get("/me/bookmarks", response_model=Page[WorkSummary])
 def my_bookmarks(
-    session: DbSession, viewer: CurrentUser, limit: int = Query(default=24, ge=1, le=60)
+    session: DbSession,
+    viewer: CurrentUser,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
+    cursor: str | None = None,
+    limit: int = Query(default=24, ge=1, le=60),
 ) -> Page[WorkSummary]:
-    rows = session.execute(
+    stmt = (
         select(Work, WorkVersion)
         .join(Bookmark, Bookmark.work_id == Work.id)
         .join(WorkVersion, WorkVersion.id == Work.current_version_id)
         .where(Bookmark.user_id == viewer.id)
-        .order_by(Bookmark.created_at.desc())
-        .limit(limit)
-    ).all()
-    return Page(items=_summaries(session, [(work, version) for work, version in rows], viewer))
+        .order_by(Bookmark.created_at.desc(), Work.id.desc())
+    )
+    if cursor:
+        stmt = stmt.where(Work.id < cursor)
+    rows = session.execute(stmt.limit(limit + 1)).all()
+    has_more = len(rows) > limit
+    page = rows[:limit]
+    return Page(
+        items=_summaries(session, [(work, version) for work, version in page], viewer),
+        next_cursor=page[-1][0].id if has_more and page else None,
+        has_more=has_more,
+    )
 
 
 def _visible_profile(session, handle: str, viewer) -> tuple[Profile, bool]:  # type: ignore[no-untyped-def]

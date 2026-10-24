@@ -12,9 +12,10 @@ public extension APIClient {
         try await send(try .post("/v1/generation-jobs", body: payload, idempotencyKey: idempotencyKey))
     }
 
-    func listGenerationJobs(status: JobStatus? = nil, limit: Int = 20) async throws -> Page<GenerationJobResponse> {
+    func listGenerationJobs(status: JobStatus? = nil, cursor: String? = nil, limit: Int = 20) async throws -> Page<GenerationJobResponse> {
         var query = [URLQueryItem(name: "limit", value: String(limit))]
         if let status { query.append(URLQueryItem(name: "status", value: status.rawValue)) }
+        if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
         return try await send(.get("/v1/generation-jobs", query: query))
     }
 

@@ -1,12 +1,12 @@
 ---
 name: zaolang-editor-drama
-description: Short-drama production — /create/short dashboard, Series/DramaEpisode, co-creators, timeline editor (/studio-editor, EditCommand, leases, exports, media library /v1/assets:mine, ASR, MCP), 文案创作 /create/script, shortform profiles, platform distribution. Use when touching app.domain.editor|script_writing|shortform or features/editor|drama-dashboard|script.
+description: Short-drama production — /create/short dashboard, Series/DramaEpisode, co-creators, timeline editor (/studio-editor, EditCommand, leases, exports, media library /v1/assets:mine, ASR, MCP), script writing (文案创作) /create/script, script asset breakdown, shortform profiles, platform distribution. Use when touching app.domain.editor|script_writing|shortform or features/editor|drama-dashboard|script.
 ---
 
 # Drama Editor & Short-Drama Production
 
-**Scope**: one `Series(kind=drama)` → `DramaEpisode` model backs four surfaces: the `/create/short` dashboard (`features/drama-dashboard`), 文案创作 at `/create/script` (`features/script`), the desktop timeline editor at `/studio-editor/{cutId}` (`features/editor`), and Remote MCP. Only `EditCommand` + the canonical timeline are exposed; never an external editor's own types. Also owns shortform delivery profiles (`/v1/shortform/profiles`).
-Not here → `zaolang-canvas` (`/v1/drama-series/{id}/canvas`), `zaolang-blocking-studio` (`/create/script/{id}/blocking`), `zaolang-generation-jobs` (job SSE, terminal hook), `zaolang-agent-gateway` (`copy` slots, providers), `zaolang-data-model` (migrations, ID prefixes, status tables), `zaolang-platform-config` (flags), `zaolang-media-assets` (upload purposes, provenance), `zaolang-creation-library` (`/v1/characters`, `/v1/scenes`).
+**Scope**: one `Series(kind=drama)` → `DramaEpisode` model backs four surfaces: the `/create/short` dashboard (`features/drama-dashboard`), script writing (`文案创作`) at `/create/script` (`features/script`), the desktop timeline editor at `/studio-editor/{cutId}` (`features/editor`), and Remote MCP. Only `EditCommand` + the canonical timeline are exposed; never an external editor's own types. Also owns shortform delivery profiles (`/v1/shortform/profiles`).
+Not here → `zaolang-canvas` (`/v1/drama-series/{id}/canvas`), `zaolang-blocking-studio` (`/create/script/{id}/blocking`), `zaolang-generation-jobs` (job SSE, terminal hook), `zaolang-agent-gateway` (`copy` slots, providers), `zaolang-data-model` (migrations, ID prefixes, status tables), `zaolang-platform-config` (flags), `zaolang-media-assets` (upload purposes, provenance), `zaolang-creation-library` (`/v1/characters`, `/v1/scenes`, `/v1/props`).
 
 ## Key Paths
 
@@ -20,9 +20,9 @@ Not here → `zaolang-canvas` (`/v1/drama-series/{id}/canvas`), `zaolang-blockin
 | `back/app/domain/editor/` | also `document.py`, `time.py` (ticks, caps), `leases.py`, `exports.py`, `analysis.py`, `collaborators.py`, `flags.py`, `state_machine.py` |
 | `back/app/mcp/server.py` | self-implemented `POST /mcp` Streamable HTTP; `TOOLS` = tool→scope table |
 | `back/app/agents/editor_planner.py` | read-only AI edit planner, streamed via `stream_plan_timeline` |
-| `back/app/domain/script_writing/service.py` | 文案创作: `prepare_new_script`/`prepare_turn`, streamed draft/revise, `delete_script`, links |
+| `back/app/domain/script_writing/service.py` | script writing (`文案创作`): `prepare_new_script`/`prepare_turn`, streamed draft/revise, `delete_script`, links |
 | `back/app/api/v1/scripts.py` | `/v1/scripts` — SSE model turns + JSON edits, `POST /scripts/extract` |
-| `back/app/api/v1/script_breakdown.py` | `POST /v1/scripts/{id}:breakdown` / `:breakdown-apply` — 剧本拆解建卡 (AC-9, domain `script_writing/breakdown.py`) |
+| `back/app/api/v1/script_breakdown.py` | `POST /v1/scripts/{id}:breakdown` / `:breakdown-apply` — script asset breakdown (`剧本拆解建卡`, domain `script_writing/breakdown.py`) |
 | `back/app/domain/shortform/service.py` | delivery profiles from config (`catalog`, `resolve_profile`, `assert_params_consistent`) + `PublicationIntent` writes |
 | `back/app/api/v1/shortform.py` | `GET /v1/shortform/profiles` (catalogue for the export panel) |
 | `back/app/api/v1/distribution.py` | platform OAuth links, `publications:fanout`, work/series metrics (logic in `back/app/domain/distribution/`) |

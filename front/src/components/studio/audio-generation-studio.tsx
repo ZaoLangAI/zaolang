@@ -15,17 +15,19 @@ import {
   KNOWN_PRESET_KEYS,
   useStyleAndSkillPicker,
 } from '@/components/studio/style-and-skill-picker';
+import { VoicePlayButton } from '@/components/asset-graph/voice-play-button';
 import { IconButton } from '@/components/ui/button';
 import { Select, TextInput } from '@/components/ui/field';
 import { IconClose, IconMic, IconUpload } from '@/components/ui/icons';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import type { Locale } from '@/i18n/routing';
-import type { QualityTier, WorkDetail } from '@/lib/api/types';
+import type { CreationSkillDetail, QualityTier, WorkDetail } from '@/lib/api/types';
 import { formatCount, formatDuration } from '@/lib/format';
 import { FALLBACK_VOICES, unionVoices, useGenerationModels } from '@/lib/use-generation-models';
 import { type Asset, declareConsent, uploadFile } from '@/lib/upload';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
+import { useResource } from '@/lib/use-resource';
 
 // The shared submit schema always wants a valid `aspect_ratio` (backend
 // pattern `^\d{1,2}:\d{1,2}$`); audio has no aspect control of its own, so
@@ -37,7 +39,7 @@ const CLONE_ACCEPT = 'audio/mpeg,audio/wav';
 // `SUBJECT_MAX_LENGTH` in `app/domain/consent/service.py`.
 const CONSENT_SUBJECT_MAX_LENGTH = 255;
 
-type AudioMode = 'voice' | 'clone';
+type AudioMode = 'voice' | 'character' | 'clone';
 
 /** `/create/new`'s `audio_generation` mode. The remaining studio that still
  * shows the creation-skill Select on `useStyleAndSkillPicker` (image and
@@ -169,10 +171,34 @@ export function AudioGenerationStudio({
     node: styleAndSkillPicker,
     appliedSkillIds,
     appliedStyleGalleryId,
+    skills,
   } = useStyleAndSkillPicker({
     operation: 'audio_generation',
     onApplyParams: applyParams,
   });
+
+  // -- character voice profile picking (owned or unlocked character cards) ---
+  const usableCharacterCards = useMemo(
+    () => skills.filter((skill) => skill.category === 'character' && skill.viewer_unlocked),
+    [skills],
+  );
+  const [selectedCharacterCardId, setSelectedCharacterCardId] = useState('');
+  const activeCharacterCardId = usableCharacterCards.some(
+    (card) => card.id === selectedCharacterCardId,
+  )
+    ? selectedCharacterCardId
+    : (usableCharacterCards[0]?.id ?? '');
+  const characterCardDetail = useResource<CreationSkillDetail>(
+    mode === 'character' && activeCharacterCardId ? `/v1/skills/${activeCharacterCardId}` : null,
+  );
+  const characterVoices = characterCardDetail.data?.voices ?? [];
+  const [pickedVoiceProfileId, setPickedVoiceProfileId] = useState('');
+  const selectedCharacterVoice =
+    characterVoices.find((item) => item.id === pickedVoiceProfileId) ??
+    characterVoices.find((item) => item.is_default) ??
+    characterVoices[0] ??
+    null;
+  const activeVoiceProfileId = selectedCharacterVoice?.id ?? '';
 
   const { quote, quoteFailed, submitting, error, submit } = useGenerationSubmit(
     { operation: 'audio_generation', qualityTier: tier, durationSeconds: 0 },
@@ -184,7 +210,9 @@ export function AudioGenerationStudio({
     rightsConfirmed &&
     !submitting &&
     (quote?.sufficient ?? true) &&
-    (mode === 'voice' || cloneReady);
+    (mode === 'voice' ||
+      (mode === 'character' && activeVoiceProfileId.length > 0) ||
+      (mode === 'clone' && cloneReady));
 
   const runSubmit = async () => {
     if (mode === 'clone' && cloneAsset && !consentRecorded) {
@@ -203,7 +231,11 @@ export function AudioGenerationStudio({
       prompt: prompt.trim(),
       aspectRatio: AUDIO_ASPECT_RATIO,
       referenceAssetIds: mode === 'clone' && cloneAsset ? [cloneAsset.id] : [],
-      extra: mode === 'clone' ? { ...presetExtra } : { voice, ...presetExtra },
+      voiceProfileId: mode === 'character' && activeVoiceProfileId ? activeVoiceProfileId : undefined,
+      extra:
+        mode === 'voice'
+          ? { voice, ...presetExtra }
+          : { ...presetExtra },
       forcedModel: forcedModel || undefined,
       skillIds: appliedSkillIds,
       styleGalleryId: appliedStyleGalleryId ?? undefined,
@@ -235,9 +267,10 @@ export function AudioGenerationStudio({
         label={t('audioModeLabel')}
         value={mode}
         onChange={setMode}
-        columns={2}
+        columns={3}
         options={[
           { value: 'voice', label: t('audioModeVoice'), hint: t('audioModeVoiceHint') },
+          { value: 'character', label: t('audioModeCharacter'), hint: t('audioModeCharacterHint') },
           { value: 'clone', label: t('audioModeClone'), hint: t('audioModeCloneHint') },
         ]}
       />
@@ -253,6 +286,51 @@ export function AudioGenerationStudio({
             label: value,
           }))}
         />
+      ) : mode === 'character' ? (
+        usableCharacterCards.length === 0 ? (
+          <p className="text-xs text-muted">{t('characterVoiceEmpty')}</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <Select
+              label={t('characterVoiceCard')}
+              value={activeCharacterCardId}
+              onChange={(event) => {
+                setSelectedCharacterCardId(event.target.value);
+                setPickedVoiceProfileId('');
+              }}
+              options={usableCharacterCards.map((card) => ({
+                value: card.id,
+                label: card.title,
+              }))}
+            />
+            {characterCardDetail.status === 'loading' ? (
+              <div className="flex items-center gap-2 text-xs text-muted">
+                <Spinner className="size-3.5" />
+              </div>
+            ) : characterVoices.length === 0 ? (
+              <p className="text-xs text-muted">{t('characterVoiceNoneForCard')}</p>
+            ) : (
+              <div className="flex items-end gap-2">
+                <div className="min-w-0 flex-1">
+                  <Select
+                    label={t('characterVoiceSelect')}
+                    value={activeVoiceProfileId}
+                    onChange={(event) => setPickedVoiceProfileId(event.target.value)}
+                    options={characterVoices.map((item) => ({
+                      value: item.id,
+                      label: item.name,
+                    }))}
+                  />
+                </div>
+                {selectedCharacterVoice?.preview?.url ?? selectedCharacterVoice?.sample?.url ? (
+                  <VoicePlayButton
+                    url={(selectedCharacterVoice?.preview?.url ?? selectedCharacterVoice?.sample?.url)!}
+                  />
+                ) : null}
+              </div>
+            )}
+          </div>
+        )
       ) : (
         <div className="flex flex-col gap-2">
           <p className="text-xs text-muted">{t('cloneUploadHint')}</p>

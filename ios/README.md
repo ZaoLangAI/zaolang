@@ -1,6 +1,6 @@
 # 造浪 iOS 客户端
 
-`ios/` 是一份可以打开跑起来的 XcodeGen 工程，M0 地基 + M1 只读闭环已实现。`project.pbxproj` 不进仓，
+`ios/` 是一份可以打开跑起来的 XcodeGen 工程，M0–M5 全量功能（只读浏览、登录与社区互动、创作工作台与发布、积分与合集、分享与推送）均已实现。`project.pbxproj` 不进仓，
 工程文件由 `project.yml` 生成——改了 target/依赖/资源引用记得重新 `xcodegen generate`，手改
 `.xcodeproj` 会在下一次生成时被覆盖。**改这个客户端前先加载
 [`zaolang-ios-client`](../.cursor/skills/zaolang-ios-client/SKILL.md) skill**，规划期的线框图与效果
@@ -38,10 +38,11 @@ ios/
 | `DesignSystem/` | `Color.zl.*`、`ZLRadius`、卡片阴影、eyebrow 样式、骨架脉冲、`zlMotion` 减少动效环境值 |
 | `Common/` | 六态通用视图（`EmptyStateView`/`ErrorStateView`/`OfflineBanner`/`NotFoundView`）、登录墙 `LoginWallSheet`、`AuthorRow`/`TagChip`/`StatItem` 等共享小组件 |
 | `Media/` | `RemoteImage` + 内存态 `RemoteImageLoader`（M1 直接用后端签名 URL，未接 `ZaolangKit` 的两级 `AssetCache`） |
-| `Discover/` `WorkDetail/` `Lineage/` `Profile/` `Learn/` | 五个已实现功能栈的视图 + 视图模型（M1 只读范围） |
+| `Discover/` `WorkDetail/` `Lineage/` `Profile/` `Learn/` | 发现、作品详情、创作链图谱、个人主页、学习页视图 + 视图模型 |
+| `Auth/` `Create/` `Library/` `Account/` `Share/` `Push/` | 登录/注册 Sheet、创作工作台/SSE 任务进度/发布、我的库与合集、积分与设置、海报分享、APNs 推送 |
 
 `Packages/ZaolangKit/Sources/ZaolangKit` 内部分包：`Models/`（DTO）、`Networking/`（`APIClient`/`ApiError`/幂等键）、
-`Session/`（`SessionManager`/`TokenStore`/Cookie 手工编解码）、`Media/`（`AssetCache`）、`Streaming/`（SSE 帧解析，M1 未接界面）。
+`Session/`（`SessionManager`/`TokenStore`/Cookie 手工编解码）、`Media/`（`AssetCache`）、`Streaming/`（SSE 帧解析与 `EventStreamClient`）。
 
 ## 本地跑起来
 
@@ -81,12 +82,15 @@ python3 ios/tools/gen-strings.py   # front/src/i18n/messages/*.json 里 iOS 用�
 
 ## 当前进度与边界
 
-M0（网络/会话/设计令牌/媒体缓存/三语地基）与 M1（发现、灵感预览、搜索、作品详情、创作链图谱、
-个人主页、学习页，全部只读、游客可用）已实现。写动作（点赞/收藏/关注/二创/发布……）的入口照常渲染，
-点击统一弹 `LoginWallSheet` 登录墙占位，真实鉴权与创作流留给 M2/M3（里程碑定义、验收标准、尚未解决
-的后端契约缺口见 [`zaolang-ios-client`](../.cursor/skills/zaolang-ios-client/SKILL.md) skill 的
-「未实现范围」一节）。**不含任何 `admin*` 后台运维能力**——后台是独立桌面场景，走独立登录，C 端令牌
-打不进去。
+M0–M5 已全部实现：
+- **M0**：网络/会话/设计令牌/媒体缓存/三语地基
+- **M1**：发现、灵感预览、搜索、作品详情、创作链图谱、个人主页、学习页
+- **M2**：真实登录/注册、`requireAuth` 动作恢复、点赞/收藏/关注/举报、我的库、通知与设置
+- **M3**：二创与原创工作台、两步预签名上传、防抖报价、SSE 任务进度与断线续传、草稿发布
+- **M4**：积分余额与账单、套餐 Checkout、兑换码、合集管理、隐私导出/注销申请
+- **M5**：海报分享与深链、APNs 设备令牌登记、离线横幅
+
+**不含任何 `admin*` 后台运维能力**——后台是独立桌面场景，走独立登录，C 端令牌打不进去。
 
 ## 与 front/ back/ 的对应关系
 

@@ -376,6 +376,22 @@
             }
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -497,6 +513,22 @@
         "summary": "My Bookmarks",
         "operationId": "my_bookmarks_v1_me_bookmarks_get",
         "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
           {
             "name": "limit",
             "in": "query",
@@ -2884,6 +2916,34 @@
         "operationId": "list_drafts_v1_drafts_get",
         "parameters": [
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 60,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,
@@ -3551,6 +3611,22 @@
                 }
               ],
               "title": "Operation"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           },
           {
@@ -10990,6 +11066,62 @@
       }
     },
     "/v1/collections/{collection_id}": {
+      "get": {
+        "tags": [
+          "community"
+        ],
+        "summary": "Get Collection",
+        "operationId": "get_collection_v1_collections__collection_id__get",
+        "parameters": [
+          {
+            "name": "collection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Collection Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "patch": {
         "tags": [
           "community"
@@ -11114,6 +11246,90 @@
       }
     },
     "/v1/collections/{collection_id}/items": {
+      "get": {
+        "tags": [
+          "community"
+        ],
+        "summary": "List Collection Items",
+        "operationId": "list_collection_items_v1_collections__collection_id__items_get",
+        "parameters": [
+          {
+            "name": "collection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Collection Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 60,
+              "minimum": 1,
+              "default": 24,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_WorkSummary_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
           "community"
@@ -11450,6 +11666,22 @@
               "type": "boolean",
               "default": false,
               "title": "Unread Only"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           },
           {
@@ -20397,9 +20629,25 @@
           "admin:content"
         ],
         "summary": "Duplicates",
-        "description": "Assets sharing an identical perceptual hash.\n\nExact matches only. Near-duplicate scanning by Hamming distance is a\nseparate, heavier job and is not run from a request handler.",
+        "description": "Assets sharing a perceptual hash.\n\nWithout `fingerprint`, returns exact-match groups (`count > 1`). With\n`fingerprint`, runs `media_service.find_near_duplicates` (`<= 8` bits\nHamming distance) against `fingerprint` and groups matching assets by\ntheir pHash.",
         "operationId": "duplicates_v1_admin_fingerprints_duplicates_get",
         "parameters": [
+          {
+            "name": "fingerprint",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fingerprint"
+            }
+          },
           {
             "name": "limit",
             "in": "query",

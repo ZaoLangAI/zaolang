@@ -123,7 +123,6 @@ final class AppEnvironment {
         if let deviceID = registeredDeviceID {
             try? await apiClient.unregisterDevice(id: deviceID)
         }
-        try? await apiClient.sendDiscardingBody(.post("/v1/auth/logout"))
         await sessionManager.signOut()
         me = nil
         registeredDeviceID = nil

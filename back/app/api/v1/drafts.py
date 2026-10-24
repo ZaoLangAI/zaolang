@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.api import idempotency
 from app.api.deps import CurrentUser, DbSession, IdempotencyKey, rate_limited
@@ -45,14 +45,27 @@ def create_draft(
 
 
 @router.get("", response_model=Page[DraftResponse])
-def list_drafts(user: CurrentUser, session: DbSession) -> Page[DraftResponse]:
+def list_drafts(
+    user: CurrentUser,
+    session: DbSession,
+    cursor: str | None = None,
+    limit: int = Query(default=50, ge=1, le=60),
+) -> Page[DraftResponse]:
     """Unpublished drafts the current user created.
 
     Another user's drafts never appear. A former collaborator's jump-outs
     bound to a series they left are omitted from this list too.
     """
-    drafts = publishing.list_unpublished_work_drafts(session, user_id=user.id)
-    return Page(items=[_response(session, d) for d in drafts])
+    rows = publishing.list_unpublished_work_drafts(
+        session, user_id=user.id, cursor=cursor, limit=limit + 1
+    )
+    has_more = len(rows) > limit
+    drafts = rows[:limit]
+    return Page(
+        items=[_response(session, d) for d in drafts],
+        next_cursor=drafts[-1].id if has_more and drafts else None,
+        has_more=has_more,
+    )
 
 
 @router.get("/{draft_id}", response_model=DraftResponse)

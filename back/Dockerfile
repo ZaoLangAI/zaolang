@@ -44,12 +44,17 @@ ARG APT_MIRROR=
 # fine. The PGDG apt repo is what installs a client new enough to match.
 RUN if [ -n "$APT_MIRROR" ]; then \
         sed -i "s|deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
+        PGDG_REPO="https://mirrors.aliyun.com/postgresql/repos/apt"; \
+        PGDG_KEY="https://mirrors.aliyun.com/postgresql/repos/apt/ACCC4CF8.asc"; \
+    else \
+        PGDG_REPO="http://apt.postgresql.org/pub/repos/apt"; \
+        PGDG_KEY="https://www.postgresql.org/media/keys/ACCC4CF8.asc"; \
     fi \
     && apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates gnupg lsb-release ffmpeg \
-    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && curl -fsSL "$PGDG_KEY" \
         | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+    && echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] $PGDG_REPO $(lsb_release -cs)-pgdg main" \
         > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends postgresql-client-17 \

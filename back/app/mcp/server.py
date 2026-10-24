@@ -10,6 +10,7 @@ from fastapi import APIRouter, Header, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.api import rate_limit
 from app.api.deps import DbSession
 from app.domain.editor import analysis as media_analysis
 from app.domain.editor import document as docs
@@ -108,6 +109,7 @@ async def mcp_endpoint(
     try:
         principal = decode_mcp_token(session, token)
         editor_flags.require_flag(session, editor_flags.FLAG_MCP, user_id=principal.user_id)
+        rate_limit.enforce("mcp_tool", f"user:{principal.user_id}")
         result = _dispatch(
             session,
             principal,

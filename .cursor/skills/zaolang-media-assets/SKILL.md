@@ -35,7 +35,7 @@ Not here → `zaolang-editor-drama` (media analysis/ASR, episode previews, `/v1/
 6. `publish_asset` only flips visibility to `PUBLIC_VIEW_ONLY` in the publish transaction — no object move.
 7. `delete_exclusive_assets` skips shared assets — including any image filed on a character/scene card (`SkillAssetEntry`); a new pointer column at `Asset` needs an `_is_shared` branch.
 8. References: owner, the remixable source output, or a published skill cover (`_asset_is_usable_reference`). Providers get signed URLs only. Voice samples need `voice` consent, `depicts_real_person` refs `portrait` consent, else 422.
-9. pHash in `ContentFingerprint.fingerprint_hex` + `fingerprint_bits`, images only. `find_near_duplicates` (Hamming ≤ 6) has no prod caller; admin duplicates group exact hex.
+9. pHash in `ContentFingerprint.fingerprint_hex` + `fingerprint_bits`, images only. `/v1/admin/fingerprints/duplicates` groups exact hex by default and runs `find_near_duplicates` (Hamming ≤ 8) when `?fingerprint=` is supplied.
 10. `record_provenance` → `ProvenanceManifest` on generated outputs, editor exports and assets-pack imports; C2PA signing not implemented.
 11. Signed URLs live `download_url_ttl_seconds` (900s; PUT `upload_url_ttl_seconds` 600s, `back/app/config.py`). Never persist or cache them — store asset ids and re-sign per request; Next data-cache rule: `zaolang-frontend-ui`.
 12. One bucket may serve laptop and prod: `ensure_bucket` unions `cors_origins` into the existing rule (`merge_cors_origins`), never replaces it.

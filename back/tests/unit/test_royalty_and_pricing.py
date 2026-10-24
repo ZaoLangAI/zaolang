@@ -227,3 +227,33 @@ def test_author_never_pays_royalties_to_themselves(db: Session, author: User) ->
 
     assert result is None
     assert credits.get_account(db, author.id).available_balance == 100
+
+
+def test_refund_credits_account_with_refund_entry_type_and_idempotency(
+    db: Session, author: User
+) -> None:
+    from app.domain.errors import Conflict
+    from app.models.enums import LedgerEntryType
+
+    result = credits.refund(
+        db,
+        author.id,
+        75,
+        idempotency_key="refund-order-1",
+        reason="order refund",
+        metadata={"order_id": "ord_1"},
+    )
+
+    assert result.entry.type == LedgerEntryType.REFUND
+    assert result.entry.amount == 75
+    assert result.available_balance == 75
+    assert credits.get_account(db, author.id).available_balance == 75
+
+    with pytest.raises(Conflict):
+        credits.refund(
+            db,
+            author.id,
+            75,
+            idempotency_key="refund-order-1",
+            reason="order refund",
+        )

@@ -339,6 +339,7 @@ def list_jobs(
     status: JobStatus | None = None,
     draft_id: str | None = None,
     operation: Operation | None = None,
+    cursor: str | None = None,
     limit: int = Query(default=20, ge=1, le=50),
 ) -> Page[GenerationJobResponse]:
     """Lists the user's own jobs, optionally scoped to one draft or operation.
@@ -363,7 +364,7 @@ def list_jobs(
             GenerationJob.user_id == user.id,
             GenerationJob.origin != JobOrigin.SANDBOX,
         )
-        .order_by(GenerationJob.created_at.desc())
+        .order_by(GenerationJob.created_at.desc(), GenerationJob.id.desc())
     )
     if status is not None:
         stmt = stmt.where(GenerationJob.status == status)
@@ -378,8 +379,16 @@ def list_jobs(
         limit = 50
     if operation is not None:
         stmt = stmt.where(GenerationJob.operation == operation.value)
-    jobs = list(session.scalars(stmt.limit(limit)))
-    return Page(items=_job_responses(session, jobs))
+    if cursor:
+        stmt = stmt.where(GenerationJob.id < cursor)
+    rows = list(session.scalars(stmt.limit(limit + 1)))
+    has_more = len(rows) > limit
+    jobs = rows[:limit]
+    return Page(
+        items=_job_responses(session, jobs),
+        next_cursor=jobs[-1].id if has_more and jobs else None,
+        has_more=has_more,
+    )
 
 
 @router.get("/generation-jobs/{job_id}", response_model=GenerationJobResponse)

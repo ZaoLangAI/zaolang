@@ -40,18 +40,20 @@ public enum Operation: String, Codable, Sendable, CaseIterable {
     case imageToVideo = "image_to_video"
     case videoToVideo = "video_to_video"
     case audioGeneration = "audio_generation"
+    case musicGeneration = "music_generation"
+    case videoAnalysis = "video_analysis"
 
     public var isVideo: Bool {
         switch self {
         case .textToVideo, .imageToVideo, .videoToVideo: true
-        case .textToImage, .imageToImage, .audioGeneration: false
+        case .textToImage, .imageToImage, .audioGeneration, .musicGeneration, .videoAnalysis: false
         }
     }
 
     public var isImage: Bool {
         switch self {
         case .textToImage, .imageToImage: true
-        case .textToVideo, .imageToVideo, .videoToVideo, .audioGeneration: false
+        case .textToVideo, .imageToVideo, .videoToVideo, .audioGeneration, .musicGeneration, .videoAnalysis: false
         }
     }
 }

@@ -62,7 +62,12 @@ def list_mine(
 
 
 @router.get("/learn/posts/{post_id}", response_model=LearnPostDetail)
-def get_post(post_id: str, session: DbSession, viewer: OptionalUser) -> LearnPostDetail:
+def get_post(
+    post_id: str,
+    session: DbSession,
+    viewer: OptionalUser,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
+) -> LearnPostDetail:
     post = learning.get_visible(session, post_id=post_id, viewer_id=viewer.id if viewer else None)
     return _detail(session, post)
 

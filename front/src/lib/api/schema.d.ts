@@ -2526,7 +2526,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get Collection */
+        get: operations["get_collection_v1_collections__collection_id__get"];
         put?: never;
         post?: never;
         /** Delete Collection */
@@ -2544,7 +2545,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Collection Items */
+        get: operations["list_collection_items_v1_collections__collection_id__items_get"];
         put?: never;
         /** Add To Collection */
         post: operations["add_to_collection_v1_collections__collection_id__items_post"];
@@ -4874,10 +4876,12 @@ export interface paths {
         };
         /**
          * Duplicates
-         * @description Assets sharing an identical perceptual hash.
+         * @description Assets sharing a perceptual hash.
          *
-         *     Exact matches only. Near-duplicate scanning by Hamming distance is a
-         *     separate, heavier job and is not run from a request handler.
+         *     Without `fingerprint`, returns exact-match groups (`count > 1`). With
+         *     `fingerprint`, runs `media_service.find_near_duplicates` (`<= 8` bits
+         *     Hamming distance) against `fingerprint` and groups matching assets by
+         *     their pHash.
          */
         get: operations["duplicates_v1_admin_fingerprints_duplicates_get"];
         put?: never;
@@ -15708,6 +15712,7 @@ export interface operations {
     profile_works_v1_profiles__handle__works_get: {
         parameters: {
             query?: {
+                cursor?: string | null;
                 limit?: number;
             };
             header?: {
@@ -15776,6 +15781,7 @@ export interface operations {
     my_bookmarks_v1_me_bookmarks_get: {
         parameters: {
             query?: {
+                cursor?: string | null;
                 limit?: number;
             };
             header?: {
@@ -16967,7 +16973,10 @@ export interface operations {
     };
     list_drafts_v1_drafts_get: {
         parameters: {
-            query?: never;
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -17311,6 +17320,7 @@ export interface operations {
                 status?: components["schemas"]["JobStatus"] | null;
                 draft_id?: string | null;
                 operation?: components["schemas"]["Operation"] | null;
+                cursor?: string | null;
                 limit?: number;
             };
             header?: {
@@ -21223,6 +21233,39 @@ export interface operations {
             };
         };
     };
+    get_collection_v1_collections__collection_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                collection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollectionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_collection_v1_collections__collection_id__delete: {
         parameters: {
             query?: never;
@@ -21280,6 +21323,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CollectionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_collection_items_v1_collections__collection_id__items_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                collection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_WorkSummary_"];
                 };
             };
             /** @description Validation Error */
@@ -21468,6 +21547,7 @@ export interface operations {
         parameters: {
             query?: {
                 unread_only?: boolean;
+                cursor?: string | null;
                 limit?: number;
             };
             header?: {
@@ -26198,6 +26278,7 @@ export interface operations {
     duplicates_v1_admin_fingerprints_duplicates_get: {
         parameters: {
             query?: {
+                fingerprint?: string | null;
                 limit?: number;
             };
             header?: {

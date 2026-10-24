@@ -1,11 +1,11 @@
 ---
 name: zaolang-blocking-studio
-description: 白膜 3D blockout studio for script episodes — blocking document, sanitizer, blocking_route/derive turns, TS compiler, three.js player, motion-guide reference video. Use when touching /create/script/{id}/blocking, app.domain.blocking, features/blocking or motion_guide routing.
+description: 3D blockout studio (白膜) for script episodes — blocking document, sanitizer, blocking_route/derive turns, TS compiler, three.js player, motion-guide reference video. Use when touching /create/script/{id}/blocking, app.domain.blocking, features/blocking or motion_guide routing.
 ---
 
-# 白膜 Blockout Studio
+# Blockout Studio (`白膜`)
 
-**Scope**: 3D previs over the same `DramaEpisode` as 文案创作 — sets, mannequins, per-segment shots — edited by chat or drag, rendered per segment as a reference video. Needs `blocking_studio_enabled` **and** `script_studio_enabled` (`service.py:is_enabled`); else `ScriptDetailResponse.blocking` is `null`.
+**Scope**: 3D previs over the same `DramaEpisode` as script writing (`文案创作`) — sets, mannequins, per-segment shots — edited by chat or drag, rendered per segment as a reference video. Needs `blocking_studio_enabled` **and** `script_studio_enabled` (`service.py:is_enabled`); else `ScriptDetailResponse.blocking` is `null`.
 Not here → `zaolang-editor-drama` (scripts, turns), `zaolang-media-assets` (reference upload, CFR conform), `zaolang-generation-jobs` (submit).
 
 ## Key Paths

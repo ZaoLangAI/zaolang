@@ -38,10 +38,10 @@ Not here → `zaolang-discovery-search` (style presets in `community.py`), `zaol
 7. `/notifications/stream`: `sse_quota.reserve` before `StreamingResponse`; generator never touches `session`; 15 s heartbeat, 600 s cap, no `Last-Event-ID` backfill (REST list resyncs). `_publish` fires before the caller commits.
 8. `send_push` only logs; `_dispatch_push` fans out to all the user's `Device`s. Devices upsert on unique `push_token` (re-register moves it); delete is owner-only (403).
 9. Follow: self → 409, target needs a `Profile`; idempotent, only the first follow sends `NEW_FOLLOWER`.
-10. Collections: writes owner-only (403); adding a work needs `licensing.assert_viewable` (404), idempotent (`uq_collection_items_pair`). `is_public` is unread — a future non-owner route must gate on it and filter items via `can_view`.
+10. Collections: writes owner-only (403); adding a work needs `licensing.assert_viewable` (404), idempotent (`uq_collection_items_pair`). `GET /v1/collections/{id}` and `GET /v1/collections/{id}/items` gate on `is_public or viewer.id == owner_user_id` (404 otherwise) and filter items via `can_view`.
 11. Profiles: a non-public profile 404s for others on both routes (`_visible_profile`); visitors see `ACTIVE` + public works only.
 12. `POST /reports` writes `ReportCase` (`OPEN`) for `work|asset|user|comment`; `reason` must be a `ReportReason` (422); no dedupe.
-13. Every `community.py`/`devices.py` route declares a `rate_limited` bucket: reads `public_read`, owner writes `authenticated_write`, follow + report `social_outreach`. `test_rate_limits.py` fails on a route without one (`profiles.py`/`learning.py` aren't walked).
+13. Every `community.py`/`devices.py`/`learning.py`/`profiles.py` route declares a `rate_limited` bucket: reads `public_read`, owner writes `authenticated_write`, follow + report `social_outreach`. `test_rate_limits.py` fails on a route without one.
 
 ## Recipes
 

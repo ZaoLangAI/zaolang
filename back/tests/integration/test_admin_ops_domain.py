@@ -841,6 +841,13 @@ def test_duplicate_fingerprints_can_be_listed(client: TestClient, reviewer: User
     response = client.get("/v1/admin/fingerprints/duplicates", headers=admin_header(reviewer))
     assert response.status_code == 200
 
+    near_resp = client.get(
+        "/v1/admin/fingerprints/duplicates?fingerprint=8000000000000000",
+        headers=admin_header(reviewer),
+    )
+    assert near_resp.status_code == 200
+    assert "items" in near_resp.json()
+
 
 def test_hiding_a_work_requires_a_reason(client: TestClient, admin: User, work: Work) -> None:
     response = client.post(

@@ -36,14 +36,13 @@ public extension APIClient {
 
     // MARK: - 通知
 
-    func listNotifications(unreadOnly: Bool = false, limit: Int = 20) async throws -> Page<NotificationResponse> {
-        try await send(.get(
-            "/v1/notifications",
-            query: [
-                URLQueryItem(name: "unread_only", value: unreadOnly ? "true" : "false"),
-                URLQueryItem(name: "limit", value: String(limit)),
-            ]
-        ))
+    func listNotifications(unreadOnly: Bool = false, cursor: String? = nil, limit: Int = 20) async throws -> Page<NotificationResponse> {
+        var query = [
+            URLQueryItem(name: "unread_only", value: unreadOnly ? "true" : "false"),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ]
+        if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+        return try await send(.get("/v1/notifications", query: query))
     }
 
     func unreadNotificationCount() async throws -> CountResponse {
@@ -65,6 +64,16 @@ public extension APIClient {
 
     func listCollections(limit: Int = 20) async throws -> Page<CollectionResponse> {
         try await send(.get("/v1/collections", query: [URLQueryItem(name: "limit", value: String(limit))]))
+    }
+
+    func fetchCollection(id: String) async throws -> CollectionResponse {
+        try await send(.get("/v1/collections/\(id)"))
+    }
+
+    func listCollectionItems(collectionID: String, cursor: String? = nil, limit: Int = 24) async throws -> Page<WorkSummary> {
+        var query = [URLQueryItem(name: "limit", value: String(limit))]
+        if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+        return try await send(.get("/v1/collections/\(collectionID)/items", query: query))
     }
 
     /// 后端这个端点的 `work_id` 是普通标量参数，FastAPI 按查询参数解析（不是 JSON body）。

@@ -256,6 +256,8 @@ services:
       args:
         NEXT_PUBLIC_API_URL: http://${PUBLIC_HOST}
         APP_VERSION: ${APP_VERSION:-0.0.0-dev}
+        APT_MIRROR: ${APT_MIRROR:-mirrors.tencentyun.com}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://mirrors.cloud.tencent.com/npm/}
     image: zaolang-front:prod
     logging: *default-logging
     depends_on:

@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.api import rate_limit
-from app.api.v1 import canvas, community, devices
+from app.api.v1 import canvas, community, devices, learning, profiles
 from app.models import User
 from tests.conftest import admin_header, auth_header
 
@@ -184,8 +184,8 @@ def _route_buckets(router: APIRouter) -> dict[str, list[str]]:
 
 @pytest.mark.parametrize(
     "router",
-    [community.router, devices.router, canvas.router],
-    ids=["community", "devices", "canvas"],
+    [community.router, devices.router, canvas.router, learning.router, profiles.router],
+    ids=["community", "devices", "canvas", "learning", "profiles"],
 )
 def test_every_route_on_a_fully_bucketed_router_has_a_bucket(router: APIRouter) -> None:
     for route, names in _route_buckets(router).items():

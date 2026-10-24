@@ -488,6 +488,36 @@ def adjust(
     )
 
 
+def refund(
+    session: Session,
+    user_id: str,
+    amount: int,
+    *,
+    idempotency_key: str,
+    reason: str | None = None,
+    actor_user_id: str | None = None,
+    job_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> LedgerResult:
+    """Credits returned to available balance after a post-settlement refund."""
+    if amount <= 0:
+        raise Conflict("退还积分必须为正数。")
+    account = get_or_create_account(session, user_id)
+    return _apply(
+        session,
+        account,
+        available_delta=amount,
+        reserved_delta=0,
+        entry_type=LedgerEntryType.REFUND,
+        amount=amount,
+        job_id=job_id,
+        idempotency_key=idempotency_key,
+        reason=reason,
+        actor_user_id=actor_user_id,
+        metadata=metadata,
+    )
+
+
 def royalty_transfer(
     session: Session,
     *,

@@ -96,15 +96,6 @@ class PricingConfig(ConfigSection):
         return self
 
 
-class AgentModelBinding(ConfigSection):
-    model: str
-    max_tokens: int = Field(default=1024, ge=64, le=32_768)
-    temperature: float = Field(default=0.2, ge=0.0, le=2.0)
-    # Reasoning models spend part of the budget on hidden thinking, so their
-    # ceiling has to be raised well above the visible output length.
-    reasoning_model: bool = False
-
-
 class RoyaltyConfig(ConfigSection):
     enabled: bool = True
     first_level_rate_bps: int = Field(default=1000, ge=0, le=5000)
