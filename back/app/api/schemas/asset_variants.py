@@ -221,7 +221,7 @@ class SceneMatrixResponse(ApiModel):
 
 # ---- 补齐缺失 (P2-4) -----------------------------------------------------------
 
-FillSlot = Literal["portrait", "front", "side", "back", "left", "three_quarter", "expressions"]
+FillSlot = Literal["portrait", "front", "expressions"]
 
 
 class LookFillRequest(ApiModel):

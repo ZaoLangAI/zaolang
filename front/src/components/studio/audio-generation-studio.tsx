@@ -231,11 +231,9 @@ export function AudioGenerationStudio({
       prompt: prompt.trim(),
       aspectRatio: AUDIO_ASPECT_RATIO,
       referenceAssetIds: mode === 'clone' && cloneAsset ? [cloneAsset.id] : [],
-      voiceProfileId: mode === 'character' && activeVoiceProfileId ? activeVoiceProfileId : undefined,
-      extra:
-        mode === 'voice'
-          ? { voice, ...presetExtra }
-          : { ...presetExtra },
+      voiceProfileId:
+        mode === 'character' && activeVoiceProfileId ? activeVoiceProfileId : undefined,
+      extra: mode === 'voice' ? { voice, ...presetExtra } : { ...presetExtra },
       forcedModel: forcedModel || undefined,
       skillIds: appliedSkillIds,
       styleGalleryId: appliedStyleGalleryId ?? undefined,
@@ -322,9 +320,11 @@ export function AudioGenerationStudio({
                     }))}
                   />
                 </div>
-                {selectedCharacterVoice?.preview?.url ?? selectedCharacterVoice?.sample?.url ? (
+                {(selectedCharacterVoice?.preview?.url ?? selectedCharacterVoice?.sample?.url) ? (
                   <VoicePlayButton
-                    url={(selectedCharacterVoice?.preview?.url ?? selectedCharacterVoice?.sample?.url)!}
+                    url={
+                      (selectedCharacterVoice?.preview?.url ?? selectedCharacterVoice?.sample?.url)!
+                    }
                   />
                 ) : null}
               </div>

@@ -2,17 +2,23 @@
 
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 
-import { CharacterDescribeDialog } from '@/components/characters/character-describe-dialog';
+import {
+  CharacterImageStudio,
+  type CharacterGender,
+} from '@/components/characters/character-image-studio';
+import { CharacterVoiceStudio } from '@/components/characters/character-voice-studio';
 import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { VideoFirstFrame } from '@/components/media/video-first-frame';
+import { OptionGroup } from '@/components/studio/option-group';
 import { Button, IconButton } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog } from '@/components/ui/dialog';
-import { TextArea, TextInput } from '@/components/ui/field';
+import { Field, Select, TextInput } from '@/components/ui/field';
 import {
   IconGrid,
+  IconMic,
   IconPencil,
   IconPlus,
   IconShare,
@@ -24,44 +30,64 @@ import { MediaLightbox } from '@/components/ui/media-lightbox';
 import { Badge, Card, EmptyState, ErrorNotice } from '@/components/ui/primitives';
 import { Sheet } from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/toast';
+import { cardCompleteness } from '@/features/asset-workspace/completeness';
+import { withStyleSkill } from '@/features/asset-workspace/style-skill';
+import { AGE_STAGES, type AgeStage, keysOf } from '@/features/image-assets/vocabulary';
 import { useRouter } from '@/i18n/navigation';
-import { ScriptImportButton } from '@/features/script/script-import-button';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
-import type { Character, CharacterScriptLink } from '@/lib/api/types';
-import { cardCompleteness } from '@/features/asset-workspace/completeness';
-import { seedCardImage, workspaceHref } from '@/features/asset-workspace/new-card';
-import { withStyleSkill } from '@/features/asset-workspace/style-skill';
+import type { Character } from '@/lib/api/types';
 import { characterHeroUrl, characterManageHref } from '@/lib/characters';
+import { cn } from '@/lib/cn';
 import {
   CREATION_SKILL_STATUS_LABEL_KEY,
   CREATION_SKILL_STATUS_TONE,
 } from '@/lib/creation-skill-status';
 import { useMinWidth } from '@/lib/use-media-query';
 
-// Status badges reuse `CREATION_SKILL_STATUS_*` — a character is a
-// `CreationSkillCategory.CHARACTER` skill under the hood.
+const GENDER_KEYS: readonly CharacterGender[] = ['male', 'female', 'other'] as const;
+const PERSONALITY_PRESETS = [
+  'cold',
+  'gentle',
+  'tsundere',
+  'calm',
+  'lively',
+  'scheming',
+  'passionate',
+  'mysterious',
+] as const;
 
-interface CharacterForm {
+interface CharacterBasicForm {
   name: string;
-  description: string;
-  voiceDescription: string;
+  gender: CharacterGender | null;
+  age: AgeStage | null;
+  personality: string;
 }
 
-const EMPTY_FORM: CharacterForm = {
+const EMPTY_FORM: CharacterBasicForm = {
   name: '',
-  description: '',
-  voiceDescription: '',
+  gender: null,
+  age: null,
+  personality: '',
 };
 
+type ActiveStudioView =
+  | { kind: 'image-create' }
+  | { kind: 'image-edit'; character: Character }
+  | { kind: 'voice'; character: Character }
+  | null;
+
 /**
- * Card list of the creator's reusable cast, with a dialog to create or edit
- * one's text profile (name, description, voice description).
+ * Card list of the creator's reusable cast (`source='library'`).
  *
- * Images are managed on the card's own page (`/create/characters/[id]`):
- * the form never sends `reference_asset_ids`, which on the backend is a
- * flat replace (`asset_variants.service.set_members`) that would drop every
- * approved image the form did not list.
+ * - Script-created characters are managed centrally within the script module
+ *   (`source='script'`), so "从剧本导入" and "根据剧本 AI 生成" are not shown here.
+ * - Creating a new character or editing a character's image opens
+ *   `CharacterImageStudio` (restricted to character images).
+ * - Editing a character maintains only 4 user fields (`角色名`, `性别`, `年龄`,
+ *   `性格`), while `description` (角色图提示词) and `voice_description`
+ *   (音色提示词) are read-only and updated only when confirming a generated
+ *   character image or voice in their respective studios.
  */
 export function CharacterLibrary({
   initial,
@@ -72,37 +98,29 @@ export function CharacterLibrary({
   styleSkillId?: string | null;
 }) {
   const t = useTranslations('characters');
+  const tPreset = useTranslations('remixPage.presets');
   const tActions = useTranslations('actions');
   const tStates = useTranslations('states');
   const tMedia = useTranslations('media');
   const tWorkspace = useTranslations('assetWorkspace');
+  const tSkills = useTranslations('skillLibrary');
   const { notify } = useToast();
   const router = useRouter();
   const go = (href: string) => router.push(withStyleSkill(href, styleSkillId));
 
   const [characters, setCharacters] = useState(initial);
+  const [studioView, setStudioView] = useState<ActiveStudioView>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<Character | null>(null);
-  const [form, setForm] = useState<CharacterForm>(EMPTY_FORM);
+  const [form, setForm] = useState<CharacterBasicForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
-  // Scripts linking the card being edited — 「AI 生成」 shows only when one does.
-  const [scriptLinks, setScriptLinks] = useState<CharacterScriptLink[]>([]);
-  const [describeOpen, setDescribeOpen] = useState(false);
-  const linksFor = useRef<string | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
-  // 从图片新建: an optional first image (filed as the identity portrait).
-  const [startImage, setStartImage] = useState<File | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Character | null>(null);
-  // `Sheet` (bottom drawer) below `lg`, `Dialog` (centred) at/above it — the
-  // same breakpoint `generation-studio-shell.tsx` uses to gate its own Sheet
-  // to mobile only. Safe pre-hydration: `sheetOpen` only ever flips true from
-  // a click, never on mount, so neither container is part of the SSR markup.
   const isDesktop = useMinWidth('lg');
 
-  const tSkills = useTranslations('skillLibrary');
   const [publishTarget, setPublishTarget] = useState<Character | null>(null);
   const [publishAccessCredits, setPublishAccessCredits] = useState(0);
   const [portraitConsent, setPortraitConsent] = useState(false);
@@ -110,35 +128,52 @@ export function CharacterLibrary({
   const [publishError, setPublishError] = useState<string | null>(null);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
 
-  const openCreate = () => {
-    setStartImage(null);
-    setEditing(null);
-    setForm(EMPTY_FORM);
-    setFormError(null);
-    setNameError(null);
-    setSheetOpen(true);
+  const upsertCharacterInList = (saved: Character) => {
+    setCharacters((current) => {
+      const exists = current.some((item) => item.id === saved.id);
+      return exists
+        ? current.map((item) => (item.id === saved.id ? saved : item))
+        : [saved, ...current];
+    });
+  };
+
+  const openCreateStudio = () => {
+    setStudioView({ kind: 'image-create' });
+  };
+
+  const openImageEditStudio = async (character: Character) => {
+    setSheetOpen(false);
+    try {
+      const full = await api.get<Character>(`/v1/characters/${character.id}`);
+      upsertCharacterInList(full);
+      setStudioView({ kind: 'image-edit', character: full });
+    } catch {
+      setStudioView({ kind: 'image-edit', character });
+    }
+  };
+
+  const openVoiceStudio = async (character: Character) => {
+    setSheetOpen(false);
+    try {
+      const full = await api.get<Character>(`/v1/characters/${character.id}`);
+      upsertCharacterInList(full);
+      setStudioView({ kind: 'voice', character: full });
+    } catch {
+      setStudioView({ kind: 'voice', character });
+    }
   };
 
   const openEdit = (character: Character) => {
     setEditing(character);
     setForm({
       name: character.name,
-      description: character.description ?? '',
-      voiceDescription: character.voice_description ?? '',
+      gender: (character.gender as CharacterGender | null) ?? null,
+      age: (character.age as AgeStage | null) ?? null,
+      personality: character.personality ?? '',
     });
     setFormError(null);
     setNameError(null);
-    setScriptLinks([]);
     setSheetOpen(true);
-    // Only the card still being edited may set the links (a fast reopen
-    // on another card must not show the first card's scripts).
-    linksFor.current = character.id;
-    api
-      .get<CharacterScriptLink[]>(`/v1/characters/${character.id}/script-links`)
-      .then((rows) => {
-        if (linksFor.current === character.id) setScriptLinks(rows);
-      })
-      .catch(() => undefined);
   };
 
   const closeSheet = () => {
@@ -146,12 +181,25 @@ export function CharacterLibrary({
     setSheetOpen(false);
   };
 
-  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const togglePersonalityPreset = (presetKey: (typeof PERSONALITY_PRESETS)[number]) => {
+    const label = t(`personalityPresets.${presetKey}`);
+    const tokens = form.personality
+      .split(/[、，,\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const next = tokens.includes(label)
+      ? tokens.filter((item) => item !== label)
+      : [...tokens, label];
+    setForm((curr) => ({ ...curr, personality: next.join('、') }));
+  };
+
+  const submitBasicProfile = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!editing) return;
     const name = form.name.trim();
     if (!name) return;
     const duplicate = characters.some(
-      (item) => item.id !== editing?.id && item.name.trim() === name,
+      (item) => item.id !== editing.id && item.name.trim() === name,
     );
     if (duplicate) {
       setNameError(t('nameTaken'));
@@ -163,33 +211,16 @@ export function CharacterLibrary({
     setFormError(null);
     setNameError(null);
     try {
-      const payload = {
+      const saved = await api.patch<Character>(`/v1/characters/${editing.id}`, {
         name,
-        description: form.description.trim() || null,
-        voice_description: form.voiceDescription.trim() || null,
-      };
-      const saved = editing
-        ? await api.patch<Character>(`/v1/characters/${editing.id}`, payload)
-        : await api.post<Character>('/v1/characters', payload);
-      setCharacters((current) =>
-        editing
-          ? current.map((item) => (item.id === saved.id ? saved : item))
-          : [saved, ...current],
-      );
+        gender: form.gender,
+        age: form.age,
+        personality: form.personality.trim() || null,
+      });
+      upsertCharacterInList(saved);
+      setEditing(saved);
       setSheetOpen(false);
-      // A new card opens on its 创作 board: from an uploaded image the
-      // portrait is filed and the sheet is next, else the portrait is.
-      if (!editing) {
-        let slot = 'portrait';
-        if (startImage) {
-          try {
-            slot = await seedCardImage('character', saved.id, saved.looks ?? [], startImage);
-          } catch {
-            notify(t('startImageFailed'), 'error');
-          }
-        }
-        go(workspaceHref(characterManageHref(saved.id), slot));
-      }
+      notify(t('updated'), 'success');
     } catch (caught) {
       if (caught instanceof ApiError) {
         const taken = Boolean(caught.fieldErrors.name);
@@ -238,10 +269,6 @@ export function CharacterLibrary({
     setPublishTarget(null);
   };
 
-  // Requires a fresh, explicit consent flag on every publish — sharing (and
-  // potentially selling, via `access_credits`) a character is publishing a
-  // depicted persona, so it cannot inherit whatever consent covered the
-  // original generation request (see `characters.service.publish_character`).
   const publish = async () => {
     if (!publishTarget || !portraitConsent) return;
     setPublishBusy(true);
@@ -255,7 +282,7 @@ export function CharacterLibrary({
       const saved = await api.post<Character>(`/v1/characters/${publishTarget.id}/publish`, {
         portrait_consent: true,
       });
-      setCharacters((current) => current.map((item) => (item.id === saved.id ? saved : item)));
+      upsertCharacterInList(saved);
       notify(tSkills('publishDone'), 'success');
       setPublishTarget(null);
     } catch (caught) {
@@ -269,7 +296,7 @@ export function CharacterLibrary({
     setWithdrawingId(character.id);
     try {
       const saved = await api.post<Character>(`/v1/characters/${character.id}/withdraw`);
-      setCharacters((current) => current.map((item) => (item.id === saved.id ? saved : item)));
+      upsertCharacterInList(saved);
       notify(tSkills('withdrawDone'), 'success');
     } catch {
       notify(tSkills('saveFailed'), 'error');
@@ -278,12 +305,54 @@ export function CharacterLibrary({
     }
   };
 
-  const characterForm = (
+  // ---- Studio Views (Create Character Image Studio / Edit Image Studio / Voice Studio)
+  if (studioView?.kind === 'image-create') {
+    return (
+      <CharacterImageStudio
+        initialStyleSkillId={styleSkillId}
+        onConfirmed={(created) => {
+          upsertCharacterInList(created);
+          setStudioView(null);
+        }}
+        onCancel={() => setStudioView(null)}
+      />
+    );
+  }
+
+  if (studioView?.kind === 'image-edit') {
+    return (
+      <CharacterImageStudio
+        character={studioView.character}
+        initialStyleSkillId={styleSkillId}
+        onConfirmed={(updated) => {
+          upsertCharacterInList(updated);
+          setStudioView({ kind: 'image-edit', character: updated });
+        }}
+        onCancel={() => setStudioView(null)}
+      />
+    );
+  }
+
+  if (studioView?.kind === 'voice') {
+    return (
+      <CharacterVoiceStudio
+        character={studioView.character}
+        onCharacterUpdated={(updated) => {
+          upsertCharacterInList(updated);
+          setStudioView({ kind: 'voice', character: updated });
+        }}
+        onClose={() => setStudioView(null)}
+      />
+    );
+  }
+
+  const characterEditForm = editing ? (
     <form
       id="character-form"
-      onSubmit={(event) => void submit(event)}
+      onSubmit={(event) => void submitBasicProfile(event)}
       className="flex flex-col gap-4"
     >
+      {/* 4 User-maintained fields */}
       <TextInput
         label={t('nameLabel')}
         value={form.name}
@@ -295,50 +364,126 @@ export function CharacterLibrary({
           setForm((current) => ({ ...current, name: event.target.value }));
         }}
       />
-      {editing && scriptLinks.length > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-dashed border-border p-3">
-          <p className="text-xs text-muted">{t('describeLinked', { count: scriptLinks.length })}</p>
+
+      <OptionGroup
+        label={t('genderLabel')}
+        value={form.gender ?? ''}
+        onChange={(val) =>
+          setForm((curr) => ({ ...curr, gender: (val || null) as CharacterGender | null }))
+        }
+        columns={3}
+        options={GENDER_KEYS.map((key) => ({
+          value: key,
+          label: t(`genderOptions.${key}`),
+        }))}
+      />
+
+      <Select
+        label={t('ageLabel')}
+        value={form.age ?? ''}
+        onChange={(e) =>
+          setForm((curr) => ({ ...curr, age: (e.target.value || null) as AgeStage | null }))
+        }
+        options={[
+          { value: '', label: t('ageUnset') },
+          ...keysOf(AGE_STAGES).map((stage) => ({
+            value: stage,
+            label: tPreset(AGE_STAGES[stage].labelKey),
+          })),
+        ]}
+      />
+
+      <Field label={t('personalityLabel')} hint={t('personalityHint')}>
+        {({ controlId, describedBy }) => (
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-1.5">
+              {PERSONALITY_PRESETS.map((presetKey) => {
+                const label = t(`personalityPresets.${presetKey}`);
+                const selected = form.personality
+                  .split(/[、，,\s]+/)
+                  .map((s) => s.trim())
+                  .includes(label);
+                return (
+                  <button
+                    key={presetKey}
+                    type="button"
+                    onClick={() => togglePersonalityPreset(presetKey)}
+                    className={cn(
+                      'rounded-full border px-2.5 py-0.5 text-xs transition-colors',
+                      selected
+                        ? 'border-primary bg-primary/15 font-medium text-primary'
+                        : 'border-border bg-surface-soft text-muted hover:text-text',
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              id={controlId}
+              aria-describedby={describedBy}
+              className="w-full rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2 text-sm text-text placeholder:text-muted/70 transition-colors"
+              value={form.personality}
+              maxLength={200}
+              placeholder={t('personalityPlaceholder')}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, personality: event.target.value }))
+              }
+            />
+          </div>
+        )}
+      </Field>
+
+      {/* Read-only Character Image Base Prompt */}
+      <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-border bg-surface-soft p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-text">{t('readOnlyImagePromptLabel')}</span>
+            <span className="rounded bg-surface px-1.5 py-0.5 text-[10px] text-muted">
+              {t('readOnlyBadge')}
+            </span>
+          </div>
           <Button
             size="sm"
             variant="secondary"
             icon={<IconSparkle className="size-3.5" />}
-            onClick={() => setDescribeOpen(true)}
+            onClick={() => void openImageEditStudio(editing)}
           >
-            {t('describeOpen')}
+            {t('openImageStudioAction')}
           </Button>
         </div>
-      ) : null}
-      <TextArea
-        label={t('descriptionLabel')}
-        value={form.description}
-        maxLength={2000}
-        onChange={(event) =>
-          setForm((current) => ({ ...current, description: event.target.value }))
-        }
-      />
-      <TextArea
-        label={t('voiceLabel')}
-        hint={t('voiceHint')}
-        value={form.voiceDescription}
-        maxLength={500}
-        onChange={(event) =>
-          setForm((current) => ({ ...current, voiceDescription: event.target.value }))
-        }
-      />
-      {!editing ? (
-        <label className="flex flex-col gap-1 text-sm">
-          <span>{t('startImageLabel')}</span>
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            onChange={(event) => setStartImage(event.target.files?.[0] ?? null)}
-            className="text-xs text-muted file:mr-3 file:rounded-[var(--radius-sm)] file:border file:border-border file:bg-surface-soft file:px-3 file:py-1.5 file:text-text"
-          />
-          <span className="text-xs text-muted">{t('startImageHint')}</span>
-        </label>
-      ) : null}
+        <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted">
+          {editing.description || t('readOnlyImagePromptEmpty')}
+        </p>
+        <p className="text-[11px] text-muted">{t('readOnlyPromptExplain')}</p>
+      </div>
+
+      {/* Read-only Voice Base Prompt & Voice Studio entry */}
+      <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-border bg-surface-soft p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-text">{t('readOnlyVoicePromptLabel')}</span>
+            <span className="rounded bg-surface px-1.5 py-0.5 text-[10px] text-muted">
+              {t('readOnlyBadge')}
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<IconMic className="size-3.5" />}
+            onClick={() => void openVoiceStudio(editing)}
+          >
+            {t('openVoiceStudioAction')}
+          </Button>
+        </div>
+        <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted">
+          {editing.voice_description || t('readOnlyVoicePromptEmpty')}
+        </p>
+        <p className="text-[11px] text-muted">{t('readOnlyVoicePromptExplain')}</p>
+      </div>
     </form>
-  );
+  ) : null;
 
   const formFooter = (
     <div className="flex w-full flex-wrap justify-end gap-3">
@@ -352,7 +497,7 @@ export function CharacterLibrary({
         disabled={saving}
         className="w-28"
       >
-        {editing ? tActions('save') : t('saveAndManage')}
+        {tActions('save')}
       </Button>
     </div>
   );
@@ -360,16 +505,7 @@ export function CharacterLibrary({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap justify-end gap-2">
-        <ScriptImportButton
-          kind="character"
-          onApplied={() =>
-            void api
-              .get<Character[]>('/v1/characters')
-              .then(setCharacters)
-              .catch(() => undefined)
-          }
-        />
-        <Button onClick={openCreate} icon={<IconPlus className="size-4" />}>
+        <Button onClick={openCreateStudio} icon={<IconPlus className="size-4" />}>
           {t('newCharacter')}
         </Button>
       </div>
@@ -378,16 +514,32 @@ export function CharacterLibrary({
         <EmptyState
           title={t('emptyTitle')}
           description={t('emptyHint')}
-          action={<Button onClick={openCreate}>{t('newCharacter')}</Button>}
+          action={<Button onClick={openCreateStudio}>{t('newCharacter')}</Button>}
         />
       ) : (
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {characters.map((character) => {
             const hero = characterHeroUrl(character);
+            const ageKey = character.age as AgeStage | null | undefined;
+            const ageLabel =
+              ageKey && ageKey in AGE_STAGES ? tPreset(AGE_STAGES[ageKey].labelKey) : null;
+            const genderLabel = character.gender ? t(`genderOptions.${character.gender}`) : null;
+
             return (
               <li key={character.id}>
                 <Card className="flex h-full flex-col gap-3 p-4">
-                  <h3 className="truncate text-sm font-semibold">{character.name}</h3>
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="truncate text-sm font-semibold">{character.name}</h3>
+                    <div className="flex flex-wrap items-center gap-1">
+                      {genderLabel ? <Badge tone="neutral">{genderLabel}</Badge> : null}
+                      {ageLabel ? <Badge tone="neutral">{ageLabel}</Badge> : null}
+                    </div>
+                  </div>
+
+                  {character.personality ? (
+                    <p className="truncate text-xs text-primary">{character.personality}</p>
+                  ) : null}
+
                   <div className="relative aspect-video overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
                     {hero ? (
                       <button
@@ -401,7 +553,7 @@ export function CharacterLibrary({
                     ) : (
                       <button
                         type="button"
-                        onClick={() => go(characterManageHref(character.id))}
+                        onClick={() => void openImageEditStudio(character)}
                         className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted transition-colors hover:text-text"
                       >
                         <IconSparkle className="size-4" />
@@ -409,6 +561,7 @@ export function CharacterLibrary({
                       </button>
                     )}
                   </div>
+
                   {(() => {
                     const score = cardCompleteness('character', character.looks ?? []);
                     return score ? (
@@ -420,6 +573,7 @@ export function CharacterLibrary({
                       </Badge>
                     ) : null;
                   })()}
+
                   {character.status !== 'draft' || character.access_credits > 0 ? (
                     <div className="flex items-center gap-1.5">
                       {character.status !== 'draft' ? (
@@ -434,9 +588,12 @@ export function CharacterLibrary({
                       ) : null}
                     </div>
                   ) : null}
+
                   <div className="min-w-0 flex-1">
                     {character.description ? (
-                      <p className="line-clamp-2 text-xs text-muted">{character.description}</p>
+                      <p className="line-clamp-2 text-xs text-muted" title={character.description}>
+                        {character.description}
+                      </p>
                     ) : null}
                     {character.voice_description ? (
                       <p className="mt-1 line-clamp-1 text-[11px] text-muted">
@@ -465,13 +622,28 @@ export function CharacterLibrary({
                       </div>
                     ) : null}
                   </div>
-                  <div className="mt-auto flex items-center justify-center gap-6 border-t border-border pt-3">
+
+                  <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-3">
                     <IconButton
                       size="sm"
                       label={tActions('edit')}
                       onClick={() => openEdit(character)}
                     >
                       <IconPencil className="size-4" />
+                    </IconButton>
+                    <IconButton
+                      size="sm"
+                      label={t('openImageStudioAction')}
+                      onClick={() => void openImageEditStudio(character)}
+                    >
+                      <IconSparkle className="size-4" />
+                    </IconButton>
+                    <IconButton
+                      size="sm"
+                      label={t('openVoiceStudioAction')}
+                      onClick={() => void openVoiceStudio(character)}
+                    >
+                      <IconMic className="size-4" />
                     </IconButton>
                     <IconButton
                       size="sm"
@@ -519,37 +691,27 @@ export function CharacterLibrary({
         <Dialog
           open={sheetOpen}
           onClose={closeSheet}
-          title={editing ? t('editCharacter') : t('newCharacter')}
+          title={t('editCharacter')}
           size="lg"
           footer={formFooter}
         >
           <div className="flex flex-col gap-4">
             {formError ? <ErrorNotice title={formError} /> : null}
-            {characterForm}
+            {characterEditForm}
           </div>
         </Dialog>
       ) : (
         <Sheet
           open={sheetOpen}
           onClose={closeSheet}
-          title={editing ? t('editCharacter') : t('newCharacter')}
+          title={t('editCharacter')}
           loading={saving}
           error={formError}
           footer={formFooter}
         >
-          {characterForm}
+          {characterEditForm}
         </Sheet>
       )}
-
-      {editing && describeOpen ? (
-        <CharacterDescribeDialog
-          open
-          onClose={() => setDescribeOpen(false)}
-          characterId={editing.id}
-          current={{ description: form.description, voiceDescription: form.voiceDescription }}
-          onApply={(next) => setForm((current) => ({ ...current, ...next }))}
-        />
-      ) : null}
 
       <MediaLightbox
         open={lightboxUrl !== null}

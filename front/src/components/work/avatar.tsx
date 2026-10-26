@@ -1,4 +1,7 @@
+'use client';
+
 import Image from 'next/image';
+import { useState } from 'react';
 
 import { cn } from '@/lib/cn';
 
@@ -11,7 +14,8 @@ const sizes = {
 
 /**
  * Falls back to the first character rather than a generic silhouette, so a
- * lineage strip of avatars stays distinguishable when covers are missing.
+ * lineage strip of avatars stays distinguishable when covers are missing
+ * or when an avatar URL fails to load.
  */
 export function Avatar({
   src,
@@ -25,6 +29,9 @@ export function Avatar({
   className?: string;
 }) {
   const pixels = size === 'xs' ? 20 : size === 'sm' ? 32 : size === 'md' ? 40 : 56;
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+
+  const showFallback = !src || failedSrc === src;
 
   return (
     <span
@@ -34,11 +41,19 @@ export function Avatar({
         className,
       )}
     >
-      {src ? (
-        <Image src={src} alt="" width={pixels} height={pixels} className="size-full object-cover" />
+      {!showFallback ? (
+        <Image
+          src={src!}
+          alt=""
+          width={pixels}
+          height={pixels}
+          className="size-full object-cover"
+          onError={() => setFailedSrc(src!)}
+        />
       ) : (
-        <span aria-hidden="true">{name.slice(0, 1)}</span>
+        <span aria-hidden="true">{(name || '?').slice(0, 1)}</span>
       )}
     </span>
   );
 }
+

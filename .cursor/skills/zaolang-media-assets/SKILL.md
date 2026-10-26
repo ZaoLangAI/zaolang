@@ -39,6 +39,7 @@ Not here → `zaolang-editor-drama` (media analysis/ASR, episode previews, `/v1/
 10. `record_provenance` → `ProvenanceManifest` on generated outputs, editor exports and assets-pack imports; C2PA signing not implemented.
 11. Signed URLs live `download_url_ttl_seconds` (900s; PUT `upload_url_ttl_seconds` 600s, `back/app/config.py`). Never persist or cache them — store asset ids and re-sign per request; Next data-cache rule: `zaolang-frontend-ui`.
 12. One bucket may serve laptop and prod: `ensure_bucket` unions `cors_origins` into the existing rule (`merge_cors_origins`), never replaces it.
+13. Never put a lifecycle expiry on `staging/`: completed uploads keep their `staging/{purpose}/...` key permanently (no object move on complete or publish), so an expiry deletes live avatars, series logos, references and editor exports while their `Asset` rows survive (404 on signed URLs). `back/app/api/v1/admin/data.py:DEFAULT_LIFECYCLE_RULES` only expires `exports/` and `backups/db/`; `test_lifecycle_rules_can_be_applied_and_read_back` guards it.
 
 ## Recipes
 

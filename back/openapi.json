@@ -4348,6 +4348,26 @@
             }
           },
           {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "library",
+                    "script"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,
@@ -28934,6 +28954,52 @@
             "type": "string",
             "title": "Name"
           },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "male",
+                  "female",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
+          },
+          "age": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "child",
+                  "teen",
+                  "youth",
+                  "adult",
+                  "middle_aged",
+                  "elderly"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
+          "personality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personality"
+          },
           "description": {
             "anyOf": [
               {
@@ -31870,6 +31936,53 @@
             "minLength": 1,
             "title": "Name"
           },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "male",
+                  "female",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
+          },
+          "age": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "child",
+                  "teen",
+                  "youth",
+                  "adult",
+                  "middle_aged",
+                  "elderly"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
+          "personality": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personality"
+          },
           "description": {
             "anyOf": [
               {
@@ -31901,6 +32014,21 @@
               }
             ],
             "title": "Voice Description"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "library",
+                  "script"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
           }
         },
         "type": "object",
@@ -32170,6 +32298,61 @@
             "type": "string",
             "title": "Name"
           },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "male",
+                  "female",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
+          },
+          "age": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "child",
+                  "teen",
+                  "youth",
+                  "adult",
+                  "middle_aged",
+                  "elderly"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
+          "personality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personality"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "library",
+              "script"
+            ],
+            "title": "Source",
+            "default": "library"
+          },
           "description": {
             "anyOf": [
               {
@@ -32317,6 +32500,53 @@
               }
             ],
             "title": "Name"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "male",
+                  "female",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
+          },
+          "age": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "child",
+                  "teen",
+                  "youth",
+                  "adult",
+                  "middle_aged",
+                  "elderly"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
+          "personality": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personality"
           },
           "description": {
             "anyOf": [
@@ -39709,10 +39939,6 @@
               "enum": [
                 "portrait",
                 "front",
-                "side",
-                "back",
-                "left",
-                "three_quarter",
                 "expressions"
               ]
             },
@@ -39747,10 +39973,6 @@
                   "enum": [
                     "portrait",
                     "front",
-                    "side",
-                    "back",
-                    "left",
-                    "three_quarter",
                     "expressions"
                   ]
                 },
@@ -39827,10 +40049,6 @@
               "enum": [
                 "portrait",
                 "front",
-                "side",
-                "back",
-                "left",
-                "three_quarter",
                 "expressions"
               ]
             },
@@ -39888,10 +40106,6 @@
               "enum": [
                 "portrait",
                 "front",
-                "side",
-                "back",
-                "left",
-                "three_quarter",
                 "expressions"
               ]
             },

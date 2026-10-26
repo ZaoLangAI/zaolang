@@ -222,7 +222,9 @@ def match_voice(
     _: Annotated[None, Depends(rate_limited("script_studio_write"))],
 ) -> VoiceMatchResponse:
     _skill, character = _card(session, user.id, card_id)
-    description = (payload.voice_description or character.voice_description or "").strip()
+    description = characters_service.synthesize_voice_profile_description(
+        character, extra_note=payload.voice_description
+    ).strip()
     if not description:
         raise ValidationFailed(
             "先写一段音色描述，再让 AI 匹配。", fields={"voice_description": "不能为空"}

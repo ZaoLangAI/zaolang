@@ -42,26 +42,18 @@ def test_a_dry_run_reports_gaps_and_prices_every_wave(
 
     body = client.post(_url(character), json={}, headers=auth_header(author)).json()
 
-    assert body["gaps"] == dict.fromkeys(
-        ["portrait", "front", "side", "back", "left", "three_quarter", "expressions"], "missing"
-    )
+    assert body["gaps"] == dict.fromkeys(["portrait", "front", "expressions"], "missing")
     assert [line["slots"] for line in body["lines"]] == [
         ["portrait"],
         ["front"],
-        ["side", "back", "left", "three_quarter"],
         ["expressions"],
     ]
     unit = jobs_service.quote_for(
         db, operation=Operation.TEXT_TO_IMAGE, quality_tier="standard"
     ).credits
     assert body["total_credits"] == sum(line["credits"] for line in body["lines"])
-    assert (
-        body["lines"][2]["credits"]
-        == jobs_service.quote_for(
-            db, operation=Operation.IMAGE_TO_IMAGE, quality_tier="standard", output_count=5
-        ).credits
-    )
-    assert body["lines"][2]["output_count"] == 5
+    assert body["lines"][2]["credits"] == unit
+    assert body["lines"][2]["output_count"] == 1
     assert body["lines"][0]["credits"] == unit
     assert body["submitted_job_id"] is None and dispatched == []
 

@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.domain.asset_variants import service as asset_variants_service
 from app.domain.errors import NotFound, ValidationFailed
 from app.domain.image_assets import camera as camera_vocab
+from app.domain.image_assets.vocabulary import AGE_STAGE_PRESETS
 from app.domain.skill_library import service as skill_library_service
 from app.models import Asset, CreationSkill, SkillAssetVariant
 from app.models.base import utcnow
@@ -104,6 +105,26 @@ class CharacterView:
     @property
     def voice_description(self) -> str | None:
         return _payload(self.skill).get("voice_description") or None
+
+    @property
+    def gender(self) -> str | None:
+        raw = _payload(self.skill).get("gender")
+        return str(raw) if raw in ("male", "female", "other") else None
+
+    @property
+    def age(self) -> str | None:
+        raw = _payload(self.skill).get("age")
+        return str(raw) if isinstance(raw, str) and raw in AGE_STAGE_PRESETS else None
+
+    @property
+    def personality(self) -> str | None:
+        raw = _payload(self.skill).get("personality")
+        return str(raw).strip() if isinstance(raw, str) and raw.strip() else None
+
+    @property
+    def source(self) -> str:
+        raw = _payload(self.skill).get("source")
+        return "script" if raw == "script" else "library"
 
     @property
     def reference_assets(self) -> list[dict[str, Any]]:
@@ -312,6 +333,37 @@ def _require_unique_character_name(
     return title
 
 
+_GENDER_LABELS: dict[str, str] = {
+    "male": "男性",
+    "female": "女性",
+    "other": "中性/其他性别",
+}
+
+
+def synthesize_voice_profile_description(
+    character: CharacterView, extra_note: str | None = None
+) -> str:
+    """Builds a voice-matching description from the character's profile
+    (`gender`, `age`, `personality`), read-only `voice_description`, and
+    fallback `description` so AI voice matching works even before a
+    `voice_description` has been saved."""
+    parts: list[str] = []
+    if character.gender and character.gender in _GENDER_LABELS:
+        parts.append(_GENDER_LABELS[character.gender])
+    if character.age:
+        preset = AGE_STAGE_PRESETS.get(character.age)
+        parts.append(f"{preset.label}阶段" if preset else character.age)
+    if character.personality:
+        parts.append(f"性格：{character.personality}")
+    if extra_note and extra_note.strip():
+        parts.append(extra_note.strip())
+    elif character.voice_description:
+        parts.append(character.voice_description)
+    elif character.description:
+        parts.append(character.description)
+    return "，".join(parts)
+
+
 def create_character(
     session: Session,
     *,
@@ -320,30 +372,48 @@ def create_character(
     description: str | None,
     reference_asset_ids: list[str],
     voice_description: str | None,
+    gender: str | None = None,
+    age: str | None = None,
+    personality: str | None = None,
+    source: str | None = None,
 ) -> CharacterView:
     title = _require_unique_character_name(session, user_id=user_id, name=name)
     refs = _validate_reference_assets(session, user_id=user_id, asset_ids=reference_asset_ids)
     clean_description = (description or "").strip() or None
+    clean_gender = gender if gender in ("male", "female", "other") else None
+    clean_age = (age or "").strip() or None
+    clean_personality = (personality or "").strip() or None
+    clean_source = "script" if source == "script" else "library"
+    char_payload: dict[str, Any] = {
+        "description": clean_description,
+        "voice_description": (voice_description or "").strip() or None,
+        "source": clean_source,
+    }
+    if clean_gender is not None:
+        char_payload["gender"] = clean_gender
+    if clean_age is not None:
+        char_payload["age"] = clean_age
+    if clean_personality is not None:
+        char_payload["personality"] = clean_personality
     skill = skill_library_service.create(
         session,
         owner_user_id=user_id,
         title=title,
-        description=_short_description(clean_description),
+        description=_short_description(clean_description or clean_personality),
         category=CreationSkillCategory.CHARACTER,
-        params_json={
-            CHARACTER_PARAMS_KEY: {
-                "description": clean_description,
-                "voice_description": (voice_description or "").strip() or None,
-            }
-        },
+        params_json={CHARACTER_PARAMS_KEY: char_payload},
         cover_asset_id=None,
     )
-    asset_variants_service.ensure_default(session, skill)
+    default_look = asset_variants_service.ensure_default(session, skill)
+    if clean_age in AGE_STAGE_PRESETS:
+        default_look.presets_json = {**default_look.presets_json, "age_stage": clean_age}
     asset_variants_service.set_members(session, skill, refs)
     return CharacterView(skill)
 
 
-def list_characters(session: Session, *, user_id: str) -> list[CharacterView]:
+def list_characters(
+    session: Session, *, user_id: str, source: str | None = None
+) -> list[CharacterView]:
     stmt = (
         select(CreationSkill)
         .where(
@@ -354,7 +424,10 @@ def list_characters(session: Session, *, user_id: str) -> list[CharacterView]:
         .options(selectinload(CreationSkill.asset_variants).selectinload(SkillAssetVariant.entries))
         .order_by(CreationSkill.created_at.desc())
     )
-    return [CharacterView(skill) for skill in session.scalars(stmt)]
+    items = [CharacterView(skill) for skill in session.scalars(stmt)]
+    if source in ("library", "script"):
+        return [item for item in items if item.source == source]
+    return items
 
 
 def get_character(session: Session, *, user_id: str, character_id: str) -> CharacterView:
@@ -372,6 +445,9 @@ def update_character(
     description: str | None = None,
     reference_asset_ids: list[str] | None = None,
     voice_description: str | None = None,
+    gender: str | None = None,
+    age: str | None = None,
+    personality: str | None = None,
 ) -> CharacterView:
     skill = _owned_character_skill(session, user_id=user_id, character_id=character_id)
     payload = _payload(skill)
@@ -385,6 +461,27 @@ def update_character(
         skill.description = _short_description(clean)
     if voice_description is not None:
         payload["voice_description"] = voice_description.strip() or None
+    if gender is not None:
+        clean_gender = gender.strip()
+        if clean_gender in ("male", "female", "other"):
+            payload["gender"] = clean_gender
+        elif not clean_gender:
+            payload.pop("gender", None)
+    if age is not None:
+        clean_age = age.strip() or None
+        if clean_age:
+            payload["age"] = clean_age
+            default_look = asset_variants_service.find_default(skill)
+            if default_look is not None and clean_age in AGE_STAGE_PRESETS:
+                default_look.presets_json = {**default_look.presets_json, "age_stage": clean_age}
+        else:
+            payload.pop("age", None)
+    if personality is not None:
+        clean_personality = personality.strip() or None
+        if clean_personality:
+            payload["personality"] = clean_personality
+        else:
+            payload.pop("personality", None)
     _set_payload(skill, payload)
     if reference_asset_ids is not None:
         refs = _validate_reference_assets(session, user_id=user_id, asset_ids=reference_asset_ids)

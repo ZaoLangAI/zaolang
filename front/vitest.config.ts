@@ -15,7 +15,10 @@ export default defineConfig({
       '@': path.resolve(dirname, './src'),
       // Next resolves this marker itself (to this same file on the server) and
       // it isn't installed as a package, so server modules would not import here.
-      'server-only': path.resolve(dirname, './node_modules/next/dist/compiled/server-only/empty.js'),
+      'server-only': path.resolve(
+        dirname,
+        './node_modules/next/dist/compiled/server-only/empty.js',
+      ),
     },
   },
 });

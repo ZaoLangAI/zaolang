@@ -627,3 +627,47 @@ def test_a_content_edit_keeps_each_known_entrys_view_and_label(db: Session, auth
         (upload.id, "general", None),
         (wedding.id, "front", "婚礼"),
     ]
+
+
+def test_profile_attributes_and_source_filter_survive_reload(db: Session, author: User) -> None:
+    lib_char = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林夏",
+        gender="female",
+        age="youth",
+        personality="外冷内热、坚韧",
+        description="齐肩黑发",
+        reference_asset_ids=[],
+        voice_description="清冷柔和",
+        source="library",
+    )
+    script_char = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="顾沉",
+        gender="male",
+        age="middle_aged",
+        personality="沉稳腹黑",
+        description="灰色风衣",
+        reference_asset_ids=[],
+        voice_description=None,
+        source="script",
+    )
+    db.expire_all()
+
+    reloaded = characters_service.get_character(db, user_id=author.id, character_id=lib_char.id)
+    assert reloaded.gender == "female"
+    assert reloaded.age == "youth"
+    assert reloaded.personality == "外冷内热、坚韧"
+    assert reloaded.source == "library"
+
+    lib_list = characters_service.list_characters(db, user_id=author.id, source="library")
+    script_list = characters_service.list_characters(db, user_id=author.id, source="script")
+    assert [c.id for c in lib_list] == [lib_char.id]
+    assert [c.id for c in script_list] == [script_char.id]
+
+    synthesized = characters_service.synthesize_voice_profile_description(
+        characters_service.get_character(db, user_id=author.id, character_id=script_char.id)
+    )
+    assert "男性" in synthesized and "中年阶段" in synthesized and "沉稳腹黑" in synthesized

@@ -19,17 +19,19 @@ describe('fillStep', () => {
 
   it('stops when the same wave comes back after it succeeded', () => {
     expect(
-      fillStep({ submitted_job_id: 'job_2', submitted_slots: ['front', 'side'] }, [
+      fillStep({ submitted_job_id: 'job_2', submitted_slots: ['front', 'expressions'] }, [
         'front',
-        'side',
+        'expressions',
       ]),
-    ).toEqual({ kind: 'stuck', slots: ['front', 'side'] });
+    ).toEqual({ kind: 'stuck', slots: ['front', 'expressions'] });
   });
 
   it('continues with a narrower wave after a partial delivery', () => {
     expect(
-      fillStep({ submitted_job_id: 'job_3', submitted_slots: ['back'] }, ['front', 'side', 'back'])
-        .kind,
+      fillStep({ submitted_job_id: 'job_3', submitted_slots: ['expressions'] }, [
+        'front',
+        'expressions',
+      ]).kind,
     ).toBe('running');
   });
 });

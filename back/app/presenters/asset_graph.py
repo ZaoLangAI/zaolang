@@ -13,6 +13,7 @@ from app.api.schemas.asset_graph import (
 from app.domain.asset_graph import service as graph_service
 from app.domain.asset_graph.service import CardGraph
 from app.domain.asset_variants import service as av
+from app.domain.characters import service as characters_service
 from app.domain.characters import voices as voices_service
 from app.models import SkillAssetEdge
 from app.models.enums import AssetEdgeOrigin, AssetGraphLevel, AssetRelation
@@ -46,10 +47,14 @@ def graph_response(
     is a 300-char preview)."""
     skill = graph.skill
     character = av.is_character(skill)
+    char_view = characters_service.CharacterView(skill) if character else None
     return AssetGraphResponse(
         card_id=skill.id,
         card_kind=av.card_kind(skill),
         name=skill.title,
+        gender=char_view.gender if char_view else None,
+        age=char_view.age if char_view else None,
+        personality=char_view.personality if char_view else None,
         description=description,
         voice_description=voice_description,
         anchor_entry_id=variant_presenter.anchor_entry_id(skill),

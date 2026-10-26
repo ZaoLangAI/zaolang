@@ -32,33 +32,19 @@ describe('slotStates', () => {
     const look = variant([
       entry('p', { entry_type: 'identity_portrait' }),
       entry('s', { entry_type: 'character_sheet' }),
-      entry('side', { entry_type: 'view', view: 'side' }),
-      entry('left', {
-        entry_type: 'view',
-        view: 'side',
-        camera: { azimuth: 270, elevation: 0, distance: 'medium' },
-        status: 'candidate',
-      }),
+      entry('x', { entry_type: 'expression_sheet', status: 'candidate' }),
     ]);
     const states = slotStates('character', look, look.entries ?? []);
     const byId = Object.fromEntries(states.map((s) => [s.slot.id, s.status]));
     expect(byId).toMatchObject({
       portrait: 'approved',
       sheet: 'approved',
-      side: 'approved',
-      left: 'candidate',
-      back: 'missing',
-      expressions: 'missing',
+      expressions: 'candidate',
     });
-  });
-
-  it('marks pose slots pending while an orbit job runs', () => {
-    const look = variant([entry('s', { entry_type: 'character_sheet' })]);
-    const states = slotStates('character', look, look.entries ?? [], [
-      { job_id: 'j', status: 'running', mode: 'orbit', target_variant_id: 'v1' },
-    ]);
-    expect(states.find((s) => s.slot.id === 'back')?.status).toBe('pending');
-    expect(states.find((s) => s.slot.id === 'expressions')?.status).toBe('missing');
+    // The turnaround poses are gone from a character's board.
+    for (const id of ['front_figure', 'side', 'back', 'left', 'three_quarter']) {
+      expect(byId).not.toHaveProperty(id);
+    }
   });
 
   it('only shows the card-wide portrait on the default look', () => {

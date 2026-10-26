@@ -285,7 +285,15 @@ export function SlotPanel({
         approved={state.approved}
         candidates={state.candidates}
         wide={slot.kind === 'panorama'}
-        onApprove={(entry) => void actions.approveEntry(entry.id)}
+        onApprove={async (entry) => {
+          if (kind === 'character' && extra.trim()) {
+            const nextDesc = [graph.description?.trim(), extra.trim()].filter(Boolean).join('\n');
+            await api
+              .patch(`/v1/characters/${graph.card_id}`, { description: nextDesc })
+              .catch(() => null);
+          }
+          await actions.approveEntry(entry.id);
+        }}
         onDelete={(entries) => void actions.deleteEntries(entries.map((e) => e.id))}
       />
 

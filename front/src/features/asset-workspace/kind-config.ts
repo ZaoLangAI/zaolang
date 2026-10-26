@@ -32,8 +32,8 @@ const poseSlot = (id: string, value: CameraPose, required = true): SlotDef => ({
   pose: value,
 });
 
-/** The standard set per card kind — the plan's slot table. A character's
- * turnaround matches `characters.fill.ORBIT_SLOT_AZIMUTH`. */
+/** The standard set per card kind — the plan's slot table.
+ * A character's set matches `characters.fill.SLOTS` (turnaround poses were dropped). */
 export const KIND_CONFIG: Record<CardKind, KindConfig> = {
   character: {
     api: 'characters',
@@ -43,11 +43,6 @@ export const KIND_CONFIG: Record<CardKind, KindConfig> = {
     slots: [
       { id: 'portrait', kind: 'portrait', required: true },
       { id: 'sheet', kind: 'sheet', required: true },
-      poseSlot('front_figure', pose(0), false),
-      poseSlot('side', pose(90)),
-      poseSlot('back', pose(180)),
-      poseSlot('left', pose(270)),
-      poseSlot('three_quarter', pose(45)),
       { id: 'expressions', kind: 'expressions', required: true },
       { id: 'in_scene', kind: 'in_scene', required: false },
     ],

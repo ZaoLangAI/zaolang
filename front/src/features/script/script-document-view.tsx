@@ -176,6 +176,7 @@ export function ScriptDocumentView({
         const card = await api.post<Character>('/v1/characters', {
           name: character.name.slice(0, 80),
           description: character.traits.trim().slice(0, 2000) || null,
+          source: 'script',
         });
         onLink({ kind: 'character', name: character.name, refId: card.id });
         characters.refetch();

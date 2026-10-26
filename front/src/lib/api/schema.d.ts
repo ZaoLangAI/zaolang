@@ -7334,6 +7334,12 @@ export interface components {
             card_kind: "character" | "scene" | "prop";
             /** Name */
             name: string;
+            /** Gender */
+            gender?: ("male" | "female" | "other") | null;
+            /** Age */
+            age?: ("child" | "teen" | "youth" | "adult" | "middle_aged" | "elderly") | null;
+            /** Personality */
+            personality?: string | null;
             /** Description */
             description?: string | null;
             /** Voice Description */
@@ -8477,12 +8483,20 @@ export interface components {
         CharacterCreateRequest: {
             /** Name */
             name: string;
+            /** Gender */
+            gender?: ("male" | "female" | "other") | null;
+            /** Age */
+            age?: ("child" | "teen" | "youth" | "adult" | "middle_aged" | "elderly") | null;
+            /** Personality */
+            personality?: string | null;
             /** Description */
             description?: string | null;
             /** Reference Asset Ids */
             reference_asset_ids?: string[];
             /** Voice Description */
             voice_description?: string | null;
+            /** Source */
+            source?: ("library" | "script") | null;
         };
         /** CharacterDescribeRequest */
         CharacterDescribeRequest: {
@@ -8579,6 +8593,18 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Gender */
+            gender?: ("male" | "female" | "other") | null;
+            /** Age */
+            age?: ("child" | "teen" | "youth" | "adult" | "middle_aged" | "elderly") | null;
+            /** Personality */
+            personality?: string | null;
+            /**
+             * Source
+             * @default library
+             * @enum {string}
+             */
+            source: "library" | "script";
             /** Description */
             description?: string | null;
             /** Reference Assets */
@@ -8628,6 +8654,12 @@ export interface components {
         CharacterUpdateRequest: {
             /** Name */
             name?: string | null;
+            /** Gender */
+            gender?: ("male" | "female" | "other") | null;
+            /** Age */
+            age?: ("child" | "teen" | "youth" | "adult" | "middle_aged" | "elderly") | null;
+            /** Personality */
+            personality?: string | null;
             /** Description */
             description?: string | null;
             /** Reference Asset Ids */
@@ -11411,7 +11443,7 @@ export interface components {
             /** Wave */
             wave: number;
             /** Slots */
-            slots: ("portrait" | "front" | "side" | "back" | "left" | "three_quarter" | "expressions")[];
+            slots: ("portrait" | "front" | "expressions")[];
             /** Output Count */
             output_count: number;
             /** Credits */
@@ -11420,7 +11452,7 @@ export interface components {
         /** LookFillRequest */
         LookFillRequest: {
             /** Slots */
-            slots?: ("portrait" | "front" | "side" | "back" | "left" | "three_quarter" | "expressions")[] | null;
+            slots?: ("portrait" | "front" | "expressions")[] | null;
             /** Expressions */
             expressions?: ("neutral" | "smile" | "laugh" | "smirk" | "restrained" | "breakdown" | "anger" | "shock" | "fear" | "sad" | "shy" | "cold_gaze")[] | null;
             /** @default standard */
@@ -11457,7 +11489,7 @@ export interface components {
             /** Submitted Job Id */
             submitted_job_id?: string | null;
             /** Submitted Slots */
-            submitted_slots?: ("portrait" | "front" | "side" | "back" | "left" | "three_quarter" | "expressions")[];
+            submitted_slots?: ("portrait" | "front" | "expressions")[];
         };
         /** McpTokenCreateRequest */
         McpTokenCreateRequest: {
@@ -17699,6 +17731,7 @@ export interface operations {
         parameters: {
             query?: {
                 view?: "full" | "summary";
+                source?: ("library" | "script") | null;
             };
             header?: {
                 authorization?: string | null;

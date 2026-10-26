@@ -418,11 +418,11 @@ def test_storage_usage_is_reported(client: TestClient, admin: User) -> None:
 def test_lifecycle_rules_can_be_applied_and_read_back(client: TestClient, admin: User) -> None:
     response = client.post("/v1/admin/storage/lifecycle", headers=admin_header(admin))
     assert response.status_code == 200, response.text
-    assert {r["ID"] for r in response.json()["lifecycle_rules"]} == {
-        "expire-staging",
-        "expire-exports",
-        "expire-backups",
-    }
+    rules = response.json()["lifecycle_rules"]
+    assert {r["ID"] for r in rules} == {"expire-exports", "expire-backups"}
+    # Upload purposes live under `staging/` permanently; expiring it deletes
+    # live avatars, logos and references.
+    assert not any(r["Filter"]["Prefix"].startswith("staging") for r in rules)
 
 
 def test_applying_lifecycle_rules_is_audited(client: TestClient, db: Session, admin: User) -> None:

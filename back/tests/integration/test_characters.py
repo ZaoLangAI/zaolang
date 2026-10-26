@@ -289,3 +289,47 @@ def test_the_summary_list_drops_looks_but_keeps_the_hero(
 
     bad = client.get("/v1/characters", params={"view": "tiny"}, headers=auth_header(author))
     assert bad.status_code == 422
+
+
+def test_character_profile_attributes_and_source_filtering(
+    client: TestClient, db: Session, author: User
+) -> None:
+    lib_res = client.post(
+        "/v1/characters",
+        json={
+            "name": "林夏",
+            "gender": "female",
+            "age": "youth",
+            "personality": "冷峻、敏锐",
+            "description": "黑色短夹克，齐肩黑发",
+        },
+        headers=auth_header(author),
+    )
+    assert lib_res.status_code == 201
+    lib_body = lib_res.json()
+    assert lib_body["gender"] == "female"
+    assert lib_body["age"] == "youth"
+    assert lib_body["personality"] == "冷峻、敏锐"
+    assert lib_body["source"] == "library"
+
+    script_res = client.post(
+        "/v1/characters",
+        json={"name": "剧本配角", "gender": "male", "age": "adult", "source": "script"},
+        headers=auth_header(author),
+    )
+    assert script_res.status_code == 201
+    assert script_res.json()["source"] == "script"
+
+    only_lib = client.get(
+        "/v1/characters", params={"source": "library"}, headers=auth_header(author)
+    )
+    assert [c["name"] for c in only_lib.json()] == ["林夏"]
+
+    patched = client.patch(
+        f"/v1/characters/{lib_body['id']}",
+        json={"personality": "温柔坚定", "age": "adult"},
+        headers=auth_header(author),
+    )
+    assert patched.status_code == 200
+    assert patched.json()["personality"] == "温柔坚定"
+    assert patched.json()["age"] == "adult"

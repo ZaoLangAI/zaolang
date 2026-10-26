@@ -16,12 +16,17 @@ from app.api.schemas.asset_variants import (
     VariantPresets,
 )
 from app.api.schemas.character_voices import CharacterVoiceView
+from app.api.schemas.characters import CharacterGender
 from app.api.schemas.common import ApiModel
 from app.domain.asset_graph.derive import MAX_INSTRUCTION_LEN, DeriveOutput
 from app.domain.asset_graph.service import MAX_EDGE_LABEL_LEN, MAX_RELATIONS_PER_EDGE
 from app.domain.asset_variants.service import MAX_VARIANT_NAME_LEN
 from app.domain.image_assets.camera import MAX_CAMERA_POSES
-from app.domain.image_assets.vocabulary import MAX_CHARACTER_EXPRESSIONS, CharacterExpression
+from app.domain.image_assets.vocabulary import (
+    MAX_CHARACTER_EXPRESSIONS,
+    AgeStage,
+    CharacterExpression,
+)
 from app.models.enums import AssetEdgeOrigin, AssetGraphLevel, AssetRelation, QualityTier
 
 
@@ -62,6 +67,9 @@ class AssetGraphResponse(ApiModel):
     card_id: str
     card_kind: Literal["character", "scene", "prop"]
     name: str
+    gender: CharacterGender | None = None
+    age: AgeStage | None = None
+    personality: str | None = None
     description: str | None = None
     # Characters: the card's 音色描述 (what 「AI 按描述匹配」 reads).
     voice_description: str | None = None

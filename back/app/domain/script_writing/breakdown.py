@@ -336,6 +336,8 @@ def _create_card(session: Session, *, user_id: str, item: ApplyItem) -> Creation
             description=description,
             reference_asset_ids=[],
             voice_description=None,
+            age=item.age_stage,
+            source="script",
         ).skill
     elif item.kind == SCENE:
         skill = scenes_service.create_scene(

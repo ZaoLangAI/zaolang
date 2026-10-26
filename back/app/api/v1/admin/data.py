@@ -27,14 +27,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["admin:data"])
 
-# Staged uploads that were never completed are garbage after a day.
+# There is deliberately no rule for `staging/`: every upload purpose in
+# `app.storage.s3.PURPOSE_PREFIXES` lives under it *permanently* — a completed
+# upload keeps its `staging/...` object key (avatars, series logos, references,
+# editor exports), and `publish_asset` never moves objects. An expiry rule on
+# that prefix silently deletes live user media a day after upload (avatars
+# 404 while their `Asset` rows survive).
 DEFAULT_LIFECYCLE_RULES = [
-    {
-        "ID": "expire-staging",
-        "Status": "Enabled",
-        "Filter": {"Prefix": "staging/"},
-        "Expiration": {"Days": 1},
-    },
     {
         "ID": "expire-exports",
         "Status": "Enabled",

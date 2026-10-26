@@ -19,6 +19,7 @@ from app.api.schemas.characters import (
     CharacterReferenceAssetUpdateRequest,
     CharacterResponse,
     CharacterScriptLinkView,
+    CharacterSource,
     CharacterUpdateRequest,
 )
 from app.domain.asset_variants import service as asset_variants_service
@@ -45,6 +46,10 @@ def create_character(
         description=payload.description,
         reference_asset_ids=payload.reference_asset_ids,
         voice_description=payload.voice_description,
+        gender=payload.gender,
+        age=payload.age,
+        personality=payload.personality,
+        source=payload.source,
     )
     session.commit()
     return _character_response(session, character)
@@ -56,10 +61,11 @@ def list_characters(
     session: DbSession,
     _: Annotated[None, Depends(rate_limited("public_read"))],
     view: Annotated[LibraryListView, Query()] = "full",
+    source: Annotated[CharacterSource | None, Query()] = None,
 ) -> list[CharacterResponse]:
     return [
         _character_response(session, character, summary=view == "summary")
-        for character in characters.list_characters(session, user_id=user.id)
+        for character in characters.list_characters(session, user_id=user.id, source=source)
     ]
 
 
@@ -140,6 +146,9 @@ def update_character(
         description=payload.description,
         reference_asset_ids=payload.reference_asset_ids,
         voice_description=payload.voice_description,
+        gender=payload.gender,
+        age=payload.age,
+        personality=payload.personality,
     )
     session.commit()
     return _character_response(session, character)
@@ -250,6 +259,10 @@ def _character_response(
     return CharacterResponse(
         id=character.id,
         name=character.name,
+        gender=character.gender,
+        age=character.age,
+        personality=character.personality,
+        source=character.source,
         description=character.description,
         reference_assets=[
             CharacterReferenceAsset(

@@ -16,19 +16,30 @@ from pydantic import Field
 from app.api.schemas.asset_variants import AssetVariantView
 from app.api.schemas.common import ApiModel, Timestamped
 from app.domain.characters.service import MAX_REFERENCE_ASSETS
+from app.domain.image_assets.vocabulary import AgeStage
 from app.models.enums import CharacterViewAngle, CreationSkillStatus, CreationSkillVisibility
+
+CharacterGender = Literal["male", "female", "other"]
+CharacterSource = Literal["library", "script"]
 
 
 class CharacterCreateRequest(ApiModel):
     # Stored as `CreationSkill.title` (`VARCHAR(80)`).
     name: str = Field(min_length=1, max_length=80)
+    gender: CharacterGender | None = None
+    age: AgeStage | None = None
+    personality: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
     reference_asset_ids: list[str] = Field(default_factory=list, max_length=MAX_REFERENCE_ASSETS)
     voice_description: str | None = Field(default=None, max_length=500)
+    source: CharacterSource | None = None
 
 
 class CharacterUpdateRequest(ApiModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
+    gender: CharacterGender | None = None
+    age: AgeStage | None = None
+    personality: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
     reference_asset_ids: list[str] | None = Field(default=None, max_length=MAX_REFERENCE_ASSETS)
     voice_description: str | None = Field(default=None, max_length=500)
@@ -66,6 +77,10 @@ class CharacterActionClip(ApiModel):
 class CharacterResponse(Timestamped):
     id: str
     name: str
+    gender: CharacterGender | None = None
+    age: AgeStage | None = None
+    personality: str | None = None
+    source: CharacterSource = "library"
     description: str | None = None
     reference_assets: list[CharacterReferenceAsset] = Field(default_factory=list)
     # Generated video clips (`video_asset_kind=character_action`) — separate

@@ -40,9 +40,12 @@ export default async function CharactersPage({
   }
   if (!(await isSignedIn())) return <SignInPrompt />;
 
-  const characters = await serverFetchOrNull<Character[]>('/v1/characters?view=summary', {
-    authenticated: true,
-  });
+  const characters = await serverFetchOrNull<Character[]>(
+    '/v1/characters?view=summary&source=library',
+    {
+      authenticated: true,
+    },
+  );
   if (!characters) return <SignInPrompt />;
 
   return (
