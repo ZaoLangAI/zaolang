@@ -62,7 +62,7 @@ export function CharacterVoiceStudio({
   onClose?: () => void;
 }) {
   const t = useTranslations('characters');
-  const tVoice = useTranslations('assetGraph.voices');
+  const tAssetGraph = useTranslations('assetGraph');
   const tPreset = useTranslations('remixPage.presets');
   const tActions = useTranslations('actions');
   const locale = useLocale() as Locale;
@@ -112,7 +112,7 @@ export function CharacterVoiceStudio({
   );
   const [uploadingSample, setUploadingSample] = useState(false);
   const [previewText, setPreviewText] = useState(
-    () => firstInitialVoice?.preview_text ?? tVoice('previewPlaceholder'),
+    () => firstInitialVoice?.preview_text ?? tAssetGraph('previewTextHint'),
   );
   const [matchReason, setMatchReason] = useState<string | null>(null);
   const [matching, setMatching] = useState(false);
@@ -173,7 +173,7 @@ export function CharacterVoiceStudio({
         setSampleAssetId(null);
         setSampleUrl(null);
         setConsentChecked(false);
-        setPreviewText(tVoice('previewPlaceholder'));
+        setPreviewText(tAssetGraph('previewTextHint'));
         setPreviewAudioUrl(null);
         return;
       }
@@ -191,10 +191,10 @@ export function CharacterVoiceStudio({
       setSampleAssetId(target.sample?.asset_id ?? null);
       setSampleUrl(target.sample?.url ?? null);
       setConsentChecked(Boolean(target.sample?.asset_id));
-      setPreviewText(target.preview_text ?? tVoice('previewPlaceholder'));
+      setPreviewText(target.preview_text ?? tAssetGraph('previewTextHint'));
       setPreviewAudioUrl(target.preview?.url ?? null);
     },
-    [models, readOnlyVoicePrompt, t, tVoice],
+    [models, readOnlyVoicePrompt, t, tAssetGraph],
   );
 
   useEffect(() => {
@@ -335,7 +335,7 @@ export function CharacterVoiceStudio({
     try {
       const asset = await uploadFile(file, 'voice_sample');
       if (asset.media_type !== 'audio') {
-        setError(tVoice('audioOnly'));
+        setError(tAssetGraph('genericError'));
         return;
       }
       if (consentChecked) {
@@ -357,15 +357,15 @@ export function CharacterVoiceStudio({
   const upsertVoiceRecord = async (): Promise<CharacterVoice | null> => {
     const cleanName = name.trim() || t('voiceStudioDefaultName');
     if (source === 'preset' && (!model || !voiceId)) {
-      setError(tVoice('selectModelAndVoice'));
+      setError(tAssetGraph('genericError'));
       return null;
     }
     if (source === 'clone' && !sampleAssetId) {
-      setError(tVoice('uploadSampleFirst'));
+      setError(tAssetGraph('cloneConsentFirst'));
       return null;
     }
     if (source === 'clone' && !consentChecked) {
-      setError(tVoice('consentRequired'));
+      setError(tAssetGraph('cloneConsentFirst'));
       return null;
     }
 
@@ -426,7 +426,7 @@ export function CharacterVoiceStudio({
       const res = await api.post<VoicePreviewResponse>(
         `/v1/characters/${character.id}/voices/${savedVoice.id}:preview`,
         {
-          text: (previewText.trim() || tVoice('previewPlaceholder')).slice(0, 120),
+          text: (previewText.trim() || tAssetGraph('previewTextHint')).slice(0, 120),
           dry_run: false,
         },
         { idempotencyKey: newIdempotencyKey() },
@@ -543,14 +543,14 @@ export function CharacterVoiceStudio({
 
           <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-border bg-surface p-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-text">{tVoice('heading')}</span>
+              <span className="text-xs font-semibold text-text">{tAssetGraph('voicesTitle')}</span>
               <Button
                 size="sm"
                 variant="secondary"
                 icon={<IconPlus className="size-3.5" />}
                 onClick={() => handleSelectVoice('new')}
               >
-                {tVoice('add')}
+                {tAssetGraph('newVoice')}
               </Button>
             </div>
 
@@ -578,14 +578,14 @@ export function CharacterVoiceStudio({
                         <span className="truncate text-xs font-semibold text-text">{v.name}</span>
                         {v.is_default ? (
                           <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                            {tVoice('defaultBadge')}
+                            {tAssetGraph('defaultBadge')}
                           </span>
                         ) : null}
                       </div>
                       <span className="truncate text-[11px] text-muted">
                         {v.source === 'preset'
                           ? `${v.voice ?? '—'} · ${v.params?.speed ?? 1}x`
-                          : tVoice('source.clone')}
+                          : tAssetGraph('voiceClone')}
                       </span>
                     </button>
                   );
@@ -617,11 +617,11 @@ export function CharacterVoiceStudio({
                     <span className="rounded-full border border-border bg-surface-soft px-2 py-0.5 text-[11px] text-muted">
                       {source === 'preset'
                         ? `${voiceId || '—'} · ${speed.toFixed(1)}x`
-                        : tVoice('source.clone')}
+                        : tAssetGraph('voiceClone')}
                     </span>
                   </div>
                   <p className="mt-0.5 text-xs text-muted">
-                    {emotion ? `${tVoice('emotion')}：${emotion}` : t('voiceStageReadySubtitle')}
+                    {emotion ? `${tAssetGraph('voiceEmotionParam')}：${emotion}` : t('voiceStageReadySubtitle')}
                   </p>
                 </div>
               </div>
@@ -726,7 +726,7 @@ export function CharacterVoiceStudio({
                 icon={<IconSparkle className="size-3.5" />}
                 onClick={() => void handleAiMatchVoice()}
               >
-                {tVoice('aiMatch')}
+                {tAssetGraph('matchVoice')}
               </Button>
             </div>
 
@@ -742,7 +742,7 @@ export function CharacterVoiceStudio({
               placeholder={t('voiceHint')}
             />
 
-            <Field label={tVoice('previewText')}>
+            <Field label={tAssetGraph('previewText')}>
               {({ controlId, describedBy }) => (
                 <div className="flex flex-col gap-2">
                   <div className="flex flex-wrap gap-1.5">
@@ -768,7 +768,7 @@ export function CharacterVoiceStudio({
                       maxLength={120}
                       value={previewText}
                       onChange={(e) => setPreviewText(e.target.value)}
-                      placeholder={tVoice('previewPlaceholder')}
+                      placeholder={tAssetGraph('previewTextHint')}
                     />
                     <Button
                       size="sm"
@@ -777,11 +777,7 @@ export function CharacterVoiceStudio({
                       icon={<IconMic className="size-4" />}
                       onClick={() => void handleGeneratePreview()}
                     >
-                      {quote
-                        ? tVoice('previewWithCredits', {
-                            credits: formatCount(quote.credits, locale),
-                          })
-                        : tVoice('preview')}
+                      {tAssetGraph('generatePreview')}
                     </Button>
                   </div>
                 </div>
@@ -795,22 +791,22 @@ export function CharacterVoiceStudio({
           <h3 className="text-sm font-semibold text-text">{t('voiceParamsHeading')}</h3>
 
           <TextInput
-            label={tVoice('name')}
+            label={tAssetGraph('voiceName')}
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={40}
-            placeholder={tVoice('namePlaceholder')}
+            placeholder={tAssetGraph('voiceNamePlaceholder')}
           />
 
           <OptionGroup
-            label={tVoice('sourceLabel')}
+            label={tAssetGraph('voiceSource')}
             value={source}
             onChange={setSource}
             columns={2}
             options={[
-              { value: 'preset', label: tVoice('source.preset') },
-              { value: 'clone', label: tVoice('source.clone') },
+              { value: 'preset', label: tAssetGraph('voicePreset') },
+              { value: 'clone', label: tAssetGraph('voiceClone') },
             ]}
           />
 
@@ -818,7 +814,7 @@ export function CharacterVoiceStudio({
             <div className="flex flex-col gap-3">
               {models.length > 0 ? (
                 <Select
-                  label={tVoice('model')}
+                  label={tAssetGraph('voiceModel')}
                   value={model}
                   onChange={(e) => {
                     const nextModel = e.target.value;
@@ -833,7 +829,7 @@ export function CharacterVoiceStudio({
               ) : null}
 
               <Select
-                label={tVoice('presetVoice')}
+                label={tAssetGraph('voicePick')}
                 value={voiceId}
                 onChange={(e) => setVoiceId(e.target.value)}
                 options={availableVoices.map((v) => ({ value: v, label: v }))}
@@ -842,7 +838,7 @@ export function CharacterVoiceStudio({
               {supportsSpeed ? (
                 <label className="flex flex-col gap-1 text-xs text-muted">
                   <div className="flex justify-between">
-                    <span>{tVoice('speed')}</span>
+                    <span>{tAssetGraph('voiceSpeed')}</span>
                     <span className="tabular font-medium text-text">{speed.toFixed(1)}x</span>
                   </div>
                   <input
@@ -860,21 +856,21 @@ export function CharacterVoiceStudio({
               {supportsEmotion ? (
                 emotionChoices.length > 0 ? (
                   <Select
-                    label={tVoice('emotion')}
+                    label={tAssetGraph('voiceEmotionParam')}
                     value={emotion}
                     onChange={(e) => setEmotion(e.target.value)}
                     options={[
-                      { value: '', label: tVoice('unset') },
+                      { value: '', label: tAssetGraph('emotionNone') },
                       ...emotionChoices.map((item) => ({ value: item, label: item })),
                     ]}
                   />
                 ) : (
                   <TextInput
-                    label={tVoice('emotion')}
+                    label={tAssetGraph('voiceEmotionParam')}
                     maxLength={20}
                     value={emotion}
                     onChange={(e) => setEmotion(e.target.value)}
-                    placeholder={tVoice('emotionPlaceholder')}
+                    placeholder={tAssetGraph('voiceAttributeEmotionHint')}
                   />
                 )
               ) : null}
@@ -888,7 +884,7 @@ export function CharacterVoiceStudio({
                   onChange={(e) => setConsentChecked(e.target.checked)}
                   className="mt-0.5 size-4 accent-[var(--primary)]"
                 />
-                <span>{tVoice('consentLabel')}</span>
+                <span>{tAssetGraph('cloneConsent')}</span>
               </label>
               {sampleUrl ? <audio controls src={sampleUrl} className="w-full" /> : null}
               <input
@@ -908,24 +904,24 @@ export function CharacterVoiceStudio({
                 loading={uploadingSample}
                 onClick={() => fileInputRef.current?.click()}
               >
-                {sampleAssetId ? tVoice('replaceSample') : tVoice('uploadSample')}
+                {sampleAssetId ? tAssetGraph('replaceSample') : tAssetGraph('uploadSample')}
               </Button>
             </div>
           )}
 
           <Select
-            label={tVoice('useLabel')}
+            label={tAssetGraph('voiceUseLabel')}
             value={use}
             onChange={(e) => setUse(e.target.value as VoiceUse | '')}
             options={[
-              { value: '', label: tVoice('unset') },
-              ...USES.map((item) => ({ value: item, label: tVoice(`use.${item}`) })),
+              { value: '', label: tAssetGraph('emotionNone') },
+              ...USES.map((item) => ({ value: item, label: item })),
             ]}
           />
 
           {looks.length > 0 ? (
             <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-muted">{tVoice('bindLooks')}</span>
+              <span className="text-xs font-medium text-muted">{tAssetGraph('saveVoiceLooks')}</span>
               <div className="flex flex-wrap gap-1.5">
                 {looks.map((look) => {
                   const bound = lookIds.includes(look.id);
@@ -956,7 +952,7 @@ export function CharacterVoiceStudio({
               onChange={(e) => setMakeDefault(e.target.checked)}
               className="size-4 accent-[var(--primary)]"
             />
-            <span>{tVoice('makeDefault')}</span>
+            <span>{tAssetGraph('makeDefaultVoice')}</span>
           </label>
 
           {error ? <ErrorNotice title={error} /> : null}
